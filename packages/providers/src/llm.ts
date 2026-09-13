@@ -137,7 +137,9 @@ export class FixedResponseLlmProvider implements LlmProvider {
 
 export type LlmErrorCode = "cancelled" | "timeout" | "network_error" | "provider_error" | "response_too_large" | "invalid_response" | "schema_mismatch";
 export class LlmProviderError extends Error {
-  constructor(readonly code: LlmErrorCode, message: string, readonly options: { readonly retryable?: boolean; readonly schemaIssues?: readonly string[] } = {}) { super(message); }
+  readonly code: LlmErrorCode;
+  readonly options: { readonly retryable?: boolean; readonly schemaIssues?: readonly string[] };
+  constructor(code: LlmErrorCode, message: string, options: { readonly retryable?: boolean; readonly schemaIssues?: readonly string[] } = {}) { super(message); this.code = code; this.options = options; }
 }
 
 interface Envelope { content: string; model: string; usage: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } }

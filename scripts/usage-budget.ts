@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { BudgetedLlmProvider, BudgetedSpeechProvider, isLocalLlmBaseUrl, type LlmProvider, type OpenAiCompatibleLlmOptions, type TextToSpeechProvider, type UsageScope } from "../packages/providers/src/index.ts";
-import { ResourceBudgetStore } from "../packages/storage/src/index.ts";
+import { BudgetedLlmProvider, BudgetedSpeechProvider, isLocalLlmBaseUrl, type LlmProvider, type OpenAiCompatibleLlmOptions, type TextToSpeechProvider, type UsageScope } from "../packages/providers/dist/index.js";
+import { ResourceBudgetStore } from "../packages/storage/dist/index.js";
 
 export function createScriptBudget(env: Readonly<Record<string, string | undefined>> = process.env): ResourceBudgetStore {
   const dataDirectory = resolve(env.AITUBER_DATA_DIR ?? ".data");

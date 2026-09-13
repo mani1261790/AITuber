@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { FISH_STANDARD_VOICE_ID, FishAudioTtsProvider } from "../packages/providers/src/index.ts";
+import { FISH_STANDARD_VOICE_ID, FishAudioTtsProvider } from "../packages/providers/dist/index.js";
 import { budgetSpeech, createScriptBudget } from "./usage-budget.ts";
 
 const apiKey = process.env.AITUBER_FISH_AUDIO_API_KEY ?? "";

@@ -1,4 +1,4 @@
-import { OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv } from "../packages/providers/src/index.ts";
+import { OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv } from "../packages/providers/dist/index.js";
 import { budgetLlm, createScriptBudget } from "./usage-budget.ts";
 
 const options = openAiCompatibleOptionsFromEnv(process.env);
