@@ -80,7 +80,11 @@ importers:
 
   apps/server: {}
 
-  packages/content: {}
+  packages/content:
+    dependencies:
+      '@aituber/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/contracts:
     dependencies:

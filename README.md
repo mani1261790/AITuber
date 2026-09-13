@@ -15,6 +15,7 @@
 - [ローカル保存とイベント再生](./docs/storage.md)
 - [講義状態機械](./docs/lesson-state-machine.md)
 - [教室ステージ デザイン契約](./docs/design/classroom-stage-contract.md)
+- [MVP検証教材](./docs/fixtures.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
 
