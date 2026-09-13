@@ -1,11 +1,13 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { CourseSummary, FixedSessionView, SessionCommandRequest } from "@aituber/contracts";
+import type { ClassroomRoomView, CourseSummary, FixedSessionView, SessionCommandRequest } from "@aituber/contracts";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "./styles.css";
+
+declare const __AITUBER_CLASSROOM_HOST__: string;
 
 const statusLabels: Record<FixedSessionView["status"], string> = {
   PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了",
@@ -16,17 +18,19 @@ function OperatorApp() {
   const [courseId, setCourseId] = useState("");
   const [duration, setDuration] = useState(6);
   const [session, setSession] = useState<FixedSessionView | null>(null);
+  const [classroom, setClassroom] = useState<ClassroomRoomView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedCourse = courses.find((course) => course.id === courseId) ?? null;
 
   useEffect(() => {
-    void Promise.all([fetchJson<{ courses: CourseSummary[] }>("/api/courses"), fetchJson<{ session: FixedSessionView | null }>("/api/sessions/current")])
+    void Promise.all([fetchJson<{ courses: CourseSummary[] }>("/api/courses"), fetchJson<{ session: FixedSessionView | null; classroom: ClassroomRoomView | null }>("/api/sessions/current")])
       .then(([courseResult, sessionResult]) => {
         setCourses(courseResult.courses);
         const first = courseResult.courses[0];
         if (first) { setCourseId(first.id); setDuration(first.durationMinutes); }
         setSession(sessionResult.session);
+        setClassroom(sessionResult.classroom);
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));
   }, []);
@@ -35,8 +39,8 @@ function OperatorApp() {
     if (!session || session.status === "FINISHED") return;
     let active = true;
     const timer = window.setInterval(() => {
-      void fetchJson<{ session: FixedSessionView }>(`/api/sessions/${encodeURIComponent(session.id)}`)
-        .then((result) => { if (active) setSession(result.session); })
+      void fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>(`/api/sessions/${encodeURIComponent(session.id)}`)
+        .then((result) => { if (active) { setSession(result.session); setClassroom(result.classroom); } })
         .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
     }, 100);
     return () => { active = false; window.clearInterval(timer); };
@@ -45,10 +49,11 @@ function OperatorApp() {
   async function startLecture() {
     setBusy(true); setError(null);
     try {
-      const result = await fetchJson<{ session: FixedSessionView }>("/api/sessions", {
+      const result = await fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>("/api/sessions", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coursePackageId: courseId, durationMinutes: duration }),
       });
       setSession(result.session);
+      setClassroom(result.classroom);
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   }
 
@@ -56,10 +61,11 @@ function OperatorApp() {
     if (!session) return;
     setBusy(true); setError(null);
     try {
-      const result = await fetchJson<{ session: FixedSessionView }>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, {
+      const result = await fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
       });
       setSession(result.session);
+      setClassroom(result.classroom);
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   }
 
@@ -100,7 +106,8 @@ function OperatorApp() {
             <div className="session-heading"><div><p className={`status status--${session.status.toLowerCase()}`}><span aria-hidden="true" />{statusLabels[session.status]}</p><h3 id="session-heading">{session.course.title}</h3></div><strong><span>UNIT</span>{session.progress.completed}<b>/</b>{session.progress.total}</strong></div>
             <progress value={session.progress.completed} max={session.progress.total}>{session.progress.completed} / {session.progress.total}</progress>
             {session.speech.mode === "caption-fallback" && <p className="speech-warning">音声合成に失敗したため、字幕で講義を続けています。</p>}
-            <a className="classroom-link" href={`http://127.0.0.1:4311/?session=${encodeURIComponent(session.id)}`} target="_blank" rel="noreferrer"><span>教室画面を開く</span><b aria-hidden="true">↗</b></a>
+            {classroom && <div className="classroom-access"><div><span>教室コード</span><strong>{classroom.code}</strong></div><p>{classroom.participantCount} / {classroom.capacity} 人参加</p></div>}
+            {classroom && <a className="classroom-link" href={`${window.location.protocol}//${__AITUBER_CLASSROOM_HOST__}:4311/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer"><span>教室画面を開く</span><b aria-hidden="true">↗</b></a>}
             {session.status !== "FINISHED" && <div className="actions">
               {session.status === "PAUSED"
                 ? <button type="button" disabled={busy} onClick={() => void command({ command: "resume" })}>再開</button>

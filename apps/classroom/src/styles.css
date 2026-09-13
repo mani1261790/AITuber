@@ -160,6 +160,15 @@ button { cursor: pointer; }
 .centered-message .section-kicker { color: #aaa7ff; }
 .centered-message h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); font-weight: 500; }
 .centered-message > p:last-child { color: #b7b8c6; line-height: 1.8; }
+.join-card form { display: grid; gap: 14px; margin-top: 24px; }
+.join-card label { display: grid; gap: 8px; font-weight: 700; }
+.join-card input { min-height: 58px; padding: 8px 14px; border: 1px solid #686a80; border-radius: 6px; color: #fff; background: #24263e; font: 500 1.5rem/1 "IBM Plex Mono", monospace; letter-spacing: 0.16em; text-transform: uppercase; }
+.join-card button { min-height: 52px; border: 0; border-radius: 6px; color: #171826; background: var(--live); font-weight: 700; }
+.join-card .error { color: #ffd0bd; background: #2c2025; }
+.lesson-meta { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.connection { display: flex; align-items: center; gap: 7px; margin: 0; color: #c9cad5; font-size: 0.7rem; white-space: nowrap; }
+.connection span { width: 7px; height: 7px; border-radius: 50%; background: #efba4b; }
+.connection--live span { background: #50d890; box-shadow: 0 0 0 4px rgba(80, 216, 144, 0.14); }
 @keyframes pulse { from { opacity: 0.42; } to { opacity: 1; box-shadow: 0 0 12px rgba(255, 107, 53, 0.8); } }
 
 @media (max-width: 1023px) {

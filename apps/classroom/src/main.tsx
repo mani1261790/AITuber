@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import type { FixedSessionView } from "@aituber/contracts";
+import type { ClassroomJoinResponse, ClassroomParticipantAccess, ClassroomRoomView, ClassroomStreamMessage, FixedSessionView } from "@aituber/contracts";
 import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveMascotPresentation, resolveStageScene } from "@aituber/presentation";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
@@ -18,6 +18,12 @@ const statusLabels: Record<FixedSessionView["status"], string> = {
 
 function ClassroomApp() {
   const [session, setSession] = useState<FixedSessionView | null>(null);
+  const [code, setCode] = useState(() => new URLSearchParams(window.location.search).get("code") ?? "");
+  const [participant, setParticipant] = useState<ClassroomParticipantAccess | null>(null);
+  const [room, setRoom] = useState<ClassroomRoomView | null>(null);
+  const [connection, setConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
+  const [joining, setJoining] = useState(false);
+  const [audioFloorMs, setAudioFloorMs] = useState(0);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
@@ -27,18 +33,47 @@ function ClassroomApp() {
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const previousStatusRef = useRef<FixedSessionView["status"] | null>(null);
-  const sessionId = new URLSearchParams(window.location.search).get("session");
+  const latestSeqRef = useRef(0);
 
   useEffect(() => {
+    const normalized = code.replaceAll(/[-\s]/g, "").toUpperCase();
+    const saved = readSavedParticipant();
+    if (!saved || saved.code !== normalized) return;
     let active = true;
-    const path = sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}` : "/api/sessions/current";
-    const load = () => void fetchJson<{ session: FixedSessionView | null }>(path)
-      .then((result) => { if (active) { setSession(result.session); setError(null); } })
-      .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
-    load();
-    const timer = window.setInterval(load, 100);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [sessionId]);
+    setJoining(true);
+    void fetchJson<ClassroomJoinResponse>(`/api/classrooms/${encodeURIComponent(saved.code)}/reconnect`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: saved.participant.accessToken }),
+    }).then((result) => {
+      if (!active) return;
+      latestSeqRef.current = result.snapshot.seq; setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setAudioFloorMs(result.snapshot.audioOffsetMs); setError(null);
+    }).catch(() => { if (active) window.sessionStorage.removeItem("aituber.classroom.participant"); })
+      .finally(() => { if (active) setJoining(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!participant || !room) return;
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer = 0;
+    const connect = () => {
+      if (disposed) return;
+      setConnection(latestSeqRef.current ? "reconnecting" : "connecting");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(`${protocol}//${window.location.host}/api/classrooms/${encodeURIComponent(room.code)}/stream?token=${encodeURIComponent(participant.accessToken)}&afterSeq=${latestSeqRef.current}`);
+      socket.onopen = () => setConnection("live");
+      socket.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as ClassroomStreamMessage;
+        if (message.snapshot.seq < latestSeqRef.current) return;
+        latestSeqRef.current = message.snapshot.seq;
+        setSession(message.snapshot.session); setRoom(message.room); setAudioFloorMs(message.snapshot.audioOffsetMs); setError(null);
+      };
+      socket.onclose = () => { if (!disposed) reconnectTimer = window.setTimeout(connect, 600); };
+      socket.onerror = () => socket?.close();
+    };
+    connect();
+    return () => { disposed = true; window.clearTimeout(reconnectTimer); socket?.close(); };
+  }, [participant?.accessToken, room?.code]);
 
   useEffect(() => {
     const startedAt = session?.speech.startedAt;
@@ -69,13 +104,27 @@ function ClassroomApp() {
     if (!audio || !startedAt || !session.speech.audioUrl) return;
     const synchronize = () => {
       audio.volume = 0.8;
-      audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, Math.max(0, Date.now() - Date.parse(startedAt)) / 1_000);
+      const targetMs = Math.max(audioFloorMs, Math.max(0, Date.now() - Date.parse(startedAt)));
+      audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, targetMs / 1_000);
       void audio.play().catch(() => { /* The visible controls let the viewer start audio when autoplay is blocked. */ });
     };
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) synchronize();
     else audio.addEventListener("loadedmetadata", synchronize, { once: true });
     return () => audio.removeEventListener("loadedmetadata", synchronize);
-  }, [session?.speech.audioUrl, session?.speech.startedAt]);
+  }, [session?.speech.audioUrl, session?.speech.startedAt, audioFloorMs]);
+
+  async function joinClassroom(event: FormEvent) {
+    event.preventDefault();
+    if (!code.trim()) return;
+    setJoining(true); setError(null);
+    try {
+      const normalized = code.replaceAll(/[-\s]/g, "").toUpperCase();
+      const result = await fetchJson<ClassroomJoinResponse>("/api/classrooms/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: normalized }) });
+      latestSeqRef.current = result.snapshot.seq; setCode(normalized); setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setAudioFloorMs(result.snapshot.audioOffsetMs);
+      window.sessionStorage.setItem("aituber.classroom.participant", JSON.stringify({ code: normalized, participant: result.participant }));
+      window.history.replaceState(null, "", `?code=${encodeURIComponent(normalized)}`);
+    } catch (reason) { setError(errorMessage(reason)); } finally { setJoining(false); }
+  }
 
   const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
   const activeSpeechSegment = session?.speech.segments.find((segment) => speechElapsedMs >= segment.startMs && speechElapsedMs < segment.endMs) ?? null;
@@ -103,18 +152,17 @@ function ClassroomApp() {
 
   async function submitAnswer(event: FormEvent) {
     event.preventDefault();
-    if (!session || !answer.trim()) return;
+    if (!session || !participant || !room || !answer.trim()) return;
     setAnswering(true); setError(null);
     try {
-      const result = await fetchJson<{ session: FixedSessionView }>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "answer", answer: answer.trim() }),
+      const result = await fetchJson<{ snapshot: ClassroomStreamMessage["snapshot"] }>(`/api/classrooms/${encodeURIComponent(room.code)}/answer`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, answer: answer.trim() }),
       });
-      setSession(result.session); setAnswer("");
+      setSession(result.snapshot.session); setAnswer("");
     } catch (reason) { setError(errorMessage(reason)); } finally { setAnswering(false); }
   }
 
-  if (error && !session) return <CenteredMessage title="教室を開けません" detail={error} />;
-  if (!session) return <CenteredMessage title="開始を待っています" detail="運営画面で教材を選び、講義を開始してください。" />;
+  if (!session) return <JoinClassroom code={code} setCode={setCode} joining={joining} error={error} onSubmit={joinClassroom} />;
 
   return (
     <main className="classroom-shell">
@@ -127,7 +175,7 @@ function ClassroomApp() {
           <p className={`lesson-status lesson-status--${session.status.toLowerCase()}`}><span aria-hidden="true" />{statusLabels[session.status]}</p>
           <h1>{session.course.title}</h1>
         </div>
-        <p className="lesson-progress" aria-label="講義の進行状況"><span>UNIT</span>{session.progress.completed}<b>/</b>{session.progress.total}</p>
+        <div className="lesson-meta"><p className={`connection connection--${connection}`} role="status"><span aria-hidden="true" />{connection === "live" ? `同期中 · ${room?.participantCount ?? 0}人` : "再接続中"}</p><p className="lesson-progress" aria-label="講義の進行状況"><span>UNIT</span>{session.progress.completed}<b>/</b>{session.progress.total}</p></div>
       </header>
 
       <div className="broadcast-layout">
@@ -171,9 +219,18 @@ function ClassroomApp() {
   );
 }
 
-function CenteredMessage({ title, detail }: { title: string; detail: string }) { return <main className="centered-message"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>{title}</h1><p>{detail}</p></main>; }
+function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
+  return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;
+}
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> { const response = await fetch(input, init); const value = await response.json() as T & { message?: string }; if (!response.ok) throw new Error(value.message ?? `HTTP ${response.status}`); return value; }
 function errorMessage(reason: unknown) { return reason instanceof Error ? reason.message : "処理に失敗しました。"; }
+function readSavedParticipant(): { code: string; participant: ClassroomParticipantAccess } | null {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem("aituber.classroom.participant") ?? "null") as { code?: unknown; participant?: Partial<ClassroomParticipantAccess> } | null;
+    return value && typeof value.code === "string" && typeof value.participant?.id === "string" && typeof value.participant.accessToken === "string"
+      ? { code: value.code, participant: { id: value.participant.id, accessToken: value.participant.accessToken } } : null;
+  } catch { return null; }
+}
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Classroom root element was not found");

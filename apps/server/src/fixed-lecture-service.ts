@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CourseSummary,
+  ClassroomSnapshot,
   CreateSessionRequest,
   FixedSessionView,
   ReadonlyCoursePackage,
@@ -26,7 +27,10 @@ interface RuntimeSession {
   timer: ReturnType<typeof setTimeout> | null;
   speechAbort: AbortController | null;
   speech: FixedSessionView["speech"];
+  revision: number;
 }
+
+type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
 
 export class FixedLectureService {
   readonly #courses: ReadonlyMap<string, ReadonlyCoursePackage>;
@@ -36,6 +40,7 @@ export class FixedLectureService {
   readonly #speechProvider: TextToSpeechProvider | null;
   readonly #voiceId: string;
   readonly #speechArtifacts = new Map<string, SpeechArtifact>();
+  readonly #listeners = new Set<SessionListener>();
   #currentSessionId: string | null = null;
 
   constructor(options: {
@@ -86,6 +91,7 @@ export class FixedLectureService {
       timer: null,
       speechAbort: null,
       speech: emptySpeech(1),
+      revision: 0,
     };
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
@@ -121,6 +127,22 @@ export class FixedLectureService {
     };
   }
 
+  getSnapshot(sessionId: string): ClassroomSnapshot {
+    const runtime = this.#requireSession(sessionId);
+    return {
+      seq: runtime.revision,
+      serverTime: new Date().toISOString(),
+      audioEpoch: runtime.speech.epoch,
+      audioOffsetMs: speechOffsetMs(runtime.speech),
+      session: this.getSession(sessionId),
+    };
+  }
+
+  subscribe(listener: SessionListener): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): Pick<SpeechArtifact, "audio" | "mimeType"> {
     const runtime = this.#requireSession(sessionId);
     if (!runtime.speech.playing || runtime.speech.epoch !== epoch || !runtime.speech.audioUrl?.includes(cacheKey)) {
@@ -154,6 +176,7 @@ export class FixedLectureService {
       this.#recordAnswer(runtime, request.answer.trim());
       this.#apply(runtime, { type: "BRANCH_SELECTED", epoch: runtime.state.epoch, supplementRequired: false });
       runtime.assessmentId = null;
+      this.#publish(runtime);
       this.#schedule(runtime);
     }
     return this.getSession(sessionId);
@@ -171,6 +194,7 @@ export class FixedLectureService {
       return;
     }
     runtime.displayUnitId = unitId;
+    this.#publish(runtime);
     this.#apply(runtime, { type: "UNIT_PRESENTED", epoch: runtime.state.epoch, unitId });
     const unit = runtime.course.teachingUnits.find((candidate) => candidate.id === unitId)!;
     const finalizedText = applyPronunciationDictionary(unit.speechText, runtime.course.pronunciationDictionary);
@@ -183,6 +207,7 @@ export class FixedLectureService {
       return;
     }
     runtime.speech = { ...emptySpeech(epoch), mode: "preparing", unitId };
+    this.#publish(runtime);
     const controller = new AbortController();
     runtime.speechAbort = controller;
     void this.#speechProvider.synthesize({
@@ -214,6 +239,7 @@ export class FixedLectureService {
 
   #startPlayback(runtime: RuntimeSession, unitId: string, epoch: number, speech: FixedSessionView["speech"]) {
     runtime.speech = speech;
+    this.#publish(runtime);
     runtime.timer = setTimeout(() => this.#completeUnit(runtime.id, unitId, epoch), Math.max(1, speech.durationMs));
   }
 
@@ -223,6 +249,7 @@ export class FixedLectureService {
     if (runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     this.#apply(runtime, { type: "UNIT_AUDIO_COMPLETED", epoch, unitId });
     runtime.speech = { ...runtime.speech, playing: false };
+    this.#publish(runtime);
     const assessment = runtime.course.assessments.find((item) => item.afterUnitId === unitId);
     if (assessment) {
       runtime.assessmentId = assessment.id;
@@ -247,6 +274,7 @@ export class FixedLectureService {
       payload: event,
     });
     runtime.state = nextState;
+    this.#publish(runtime);
   }
 
   #recordAnswer(runtime: RuntimeSession, answer: string) {
@@ -270,6 +298,14 @@ export class FixedLectureService {
     if (runtime.timer) clearTimeout(runtime.timer);
     runtime.timer = null;
     runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null };
+    this.#publish(runtime);
+  }
+
+  #publish(runtime: RuntimeSession) {
+    runtime.revision += 1;
+    if (this.#listeners.size === 0) return;
+    const snapshot = this.getSnapshot(runtime.id);
+    this.#listeners.forEach((listener) => listener(runtime.id, snapshot));
   }
 
   #requireSession(sessionId: string): RuntimeSession {
@@ -277,6 +313,11 @@ export class FixedLectureService {
     if (!runtime) throw new RangeError(`Unknown session ${sessionId}`);
     return runtime;
   }
+}
+
+function speechOffsetMs(speech: FixedSessionView["speech"]): number {
+  if (!speech.playing || !speech.startedAt) return 0;
+  return Math.min(speech.durationMs, Math.max(0, Date.now() - Date.parse(speech.startedAt)));
 }
 
 function emptySpeech(epoch: number): FixedSessionView["speech"] {

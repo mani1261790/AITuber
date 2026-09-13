@@ -74,6 +74,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 progress { width: 100%; height: 7px; margin: 22px 0 18px; overflow: hidden; border: 0; border-radius: 0; accent-color: var(--live); background: #35374f; }
 progress::-webkit-progress-bar { background: #35374f; }
 progress::-webkit-progress-value { background: linear-gradient(90deg, var(--live), #ffad6a); }
+.classroom-access { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; padding: 13px; border: 1px solid #46485f; border-radius: 6px; }
+.classroom-access div { display: flex; align-items: baseline; gap: 12px; }
+.classroom-access span, .classroom-access p { margin: 0; color: #9fa0af; font-size: 0.72rem; }
+.classroom-access strong { color: #fff; font: 500 1.45rem/1 "IBM Plex Mono", monospace; letter-spacing: 0.12em; }
 .classroom-link { display: flex; min-height: 48px; align-items: center; justify-content: space-between; padding: 10px 13px; border: 1px solid #46485f; border-radius: 6px; color: #dedee7; text-decoration: none; }
 .classroom-link:hover { border-color: #8581f8; background: rgba(98, 93, 245, 0.1); }
 .classroom-link b { color: #aaa7ff; font-family: "IBM Plex Mono", monospace; font-weight: 500; }

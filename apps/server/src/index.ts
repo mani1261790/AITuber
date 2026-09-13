@@ -5,7 +5,7 @@ import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, Tes
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 
-const host = process.env.AITUBER_HOST ?? "127.0.0.1";
+const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
 const databasePath = resolve(process.env.AITUBER_DB_PATH ?? ".data/aituber.db");
 const playbackUnitMs = Number.parseInt(process.env.AITUBER_FIXED_PLAYBACK_MS ?? "2000", 10);
@@ -33,11 +33,13 @@ const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvi
 const server = createApp(lecture);
 
 server.listen(port, host, () => {
-  process.stdout.write(`AITuber server listening on http://${host}:${port}\n`);
+  const lanHost = process.env.AITUBER_LAN_HOST ?? host;
+  process.stdout.write(`AITuber API: http://${host}:${port}\nOperator: http://127.0.0.1:4312\nClassroom: http://${lanHost}:4311\n`);
 });
 
 function shutdown() {
   lecture.close();
+  server.emit("aituber:shutdown");
   server.close((error) => {
     store.close();
     if (error) {

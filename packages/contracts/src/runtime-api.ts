@@ -55,3 +55,42 @@ export interface SessionCommandRequest {
   readonly command: "pause" | "resume" | "finish" | "answer";
   readonly answer?: string;
 }
+
+export interface ClassroomRoomView {
+  readonly code: string;
+  readonly participantCount: number;
+  readonly capacity: number;
+}
+
+export interface ClassroomSnapshot {
+  readonly seq: number;
+  readonly serverTime: string;
+  readonly audioEpoch: number;
+  readonly audioOffsetMs: number;
+  readonly session: FixedSessionView;
+}
+
+export interface ClassroomParticipantAccess {
+  readonly id: string;
+  readonly accessToken: string;
+}
+
+export interface ClassroomJoinRequest {
+  readonly code: string;
+}
+
+export interface ClassroomJoinResponse {
+  readonly participant: ClassroomParticipantAccess;
+  readonly room: ClassroomRoomView;
+  readonly snapshot: ClassroomSnapshot;
+}
+
+export interface ClassroomReconnectRequest {
+  readonly accessToken: string;
+}
+
+export interface ClassroomStreamMessage {
+  readonly type: "snapshot";
+  readonly snapshot: ClassroomSnapshot;
+  readonly room: ClassroomRoomView;
+}

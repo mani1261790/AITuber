@@ -59,6 +59,22 @@ describe("FixedLectureService", () => {
     expect(store.loadEvents(started.id).map((event) => event.epoch)).toContain(2);
   });
 
+  it("publishes monotonic snapshots with a reconnect-safe audio offset", () => {
+    vi.setSystemTime(new Date("2026-09-14T00:00:00.000Z"));
+    const observed: number[] = [];
+    const unsubscribe = service.subscribe((_sessionId, snapshot) => observed.push(snapshot.seq));
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    const initial = service.getSnapshot(started.id);
+    vi.advanceTimersByTime(40);
+    const reconnect = service.getSnapshot(started.id);
+
+    expect(reconnect.seq).toBe(initial.seq);
+    expect(reconnect.audioOffsetMs).toBe(40);
+    expect(observed.length).toBeGreaterThan(0);
+    expect(observed).toEqual([...observed].sort((left, right) => left - right));
+    unsubscribe();
+  });
+
   it("reports completed and unfinished units when an operator ends early", () => {
     const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     vi.advanceTimersByTime(200);

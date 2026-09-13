@@ -5,6 +5,7 @@ import { LectureEventStore } from "@aituber/storage";
 import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
+import WebSocket from "ws";
 
 const servers = new Set<ReturnType<typeof createApp>>();
 const resources = new Set<{ service: FixedLectureService; store: LectureEventStore }>();
@@ -46,7 +47,7 @@ describe("server boundary", () => {
 
   it("returns a bounded JSON error for unknown routes", async () => {
     const origin = await startServer();
-    const response = await fetch(`${origin}/unknown`);
+    const response = await fetch(`${origin}/unknown`, { headers: { "x-aituber-surface": "operator" } });
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not_found" });
@@ -63,31 +64,47 @@ describe("server boundary", () => {
     const address = server.address() as AddressInfo;
     const origin = `http://127.0.0.1:${address.port}`;
 
-    const courses = await fetch(`${origin}/api/courses`);
+    expect((await fetch(`${origin}/api/courses`)).status).toBe(403);
+    const operatorHeaders = { "x-aituber-surface": "operator" };
+    const courses = await fetch(`${origin}/api/courses`, { headers: operatorHeaders });
     const courseResult = await courses.json() as { courses: { id: string; durationMinutes: number }[] };
     expect(courseResult.courses).toHaveLength(3);
     const course = courseResult.courses[0]!;
 
     const started = await fetch(`${origin}/api/sessions`, {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json", ...operatorHeaders },
       body: JSON.stringify({ coursePackageId: course.id, durationMinutes: course.durationMinutes }),
     });
     expect(started.status).toBe(201);
-    const startedResult = await started.json() as { session: { id: string; status: string } };
+    const startedResult = await started.json() as { session: { id: string; status: string }; classroom: { code: string } };
 
     await new Promise<void>((resolve) => setImmediate(resolve));
-    const live = await fetch(`${origin}/api/sessions/${startedResult.session.id}`);
+    const live = await fetch(`${origin}/api/sessions/${startedResult.session.id}`, { headers: operatorHeaders });
     const liveResult = await live.json() as { session: { speech: { audioUrl: string | null } } };
     expect(liveResult.session.speech.audioUrl).toMatch(/^\/api\/sessions\/session\.[^/]+\/speech\/[a-f0-9]{64}\?epoch=1$/);
-    const audio = await fetch(`${origin}${liveResult.session.speech.audioUrl}`);
+    const audio = await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { headers: { "x-aituber-surface": "classroom" } });
     expect(audio.headers.get("content-type")).toBe("audio/wav");
     expect(audio.headers.get("cache-control")).toBe("no-store");
     expect((await audio.arrayBuffer()).byteLength).toBeGreaterThan(44);
 
     const paused = await fetch(`${origin}/api/sessions/${startedResult.session.id}/commands`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "pause" }),
+      method: "POST", headers: { "content-type": "application/json", ...operatorHeaders }, body: JSON.stringify({ command: "pause" }),
     });
     expect((await paused.json() as { session: { status: string } }).session.status).toBe("PAUSED");
-    expect((await fetch(`${origin}${liveResult.session.speech.audioUrl}`)).status).toBe(404);
+    expect((await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { headers: operatorHeaders })).status).toBe(404);
+
+    const joined = await fetch(`${origin}/api/classrooms/join`, { method: "POST", headers: { "content-type": "application/json", "x-aituber-surface": "classroom" }, body: JSON.stringify({ code: startedResult.classroom.code }) });
+    expect(joined.status).toBe(201);
+    const joinResult = await joined.json() as { participant: { id: string; accessToken: string }; snapshot: { seq: number; session: { id: string } } };
+    expect(joinResult.snapshot.session.id).toBe(startedResult.session.id);
+    expect((await fetch(`${origin}/api/sessions/${startedResult.session.id}`, { headers: { "x-aituber-surface": "classroom" } })).status).toBe(403);
+    const reconnected = await fetch(`${origin}/api/classrooms/${startedResult.classroom.code}/reconnect`, {
+      method: "POST", headers: { "content-type": "application/json", "x-aituber-surface": "classroom" }, body: JSON.stringify({ accessToken: joinResult.participant.accessToken }),
+    });
+    expect((await reconnected.json() as { participant: { id: string } }).participant.id).toBe(joinResult.participant.id);
+    const webSocket = new WebSocket(`${origin.replace("http", "ws")}/api/classrooms/${startedResult.classroom.code}/stream?token=${joinResult.participant.accessToken}&afterSeq=${joinResult.snapshot.seq}`, { headers: { "x-aituber-surface": "classroom" } });
+    const [message] = await once(webSocket, "message") as [Buffer];
+    expect(JSON.parse(message.toString()).snapshot.seq).toBeGreaterThanOrEqual(joinResult.snapshot.seq);
+    webSocket.close();
   });
 });
