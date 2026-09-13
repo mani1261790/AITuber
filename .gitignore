@@ -10,5 +10,6 @@ coverage/
 *.db-wal
 .DS_Store
 .cache/
+.data/
 tmp/
 *.tsbuildinfo

@@ -1,75 +1,107 @@
-import { StrictMode, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { parseCoursePackage, type CoursePackage } from "@aituber/contracts";
-import { createBoardState, focusSemanticTarget, resolveStageScene } from "@aituber/presentation";
+import type { FixedSessionView } from "@aituber/contracts";
+import { applyBoardPatches, createBoardState, focusSemanticTarget, resolveStageScene } from "@aituber/presentation";
 import { TargetView } from "./target-view.tsx";
 import "./styles.css";
 
-const HASH = `sha256:${"c".repeat(64)}`;
-const demoCourse = parseCoursePackage({
-  schemaVersion: "1.0.0", id: "course.preview", version: 1, status: "available", contentHash: HASH,
-  title: "二次関数：放物線の頂点", targetLevel: "高校数学", durationMinutes: 6,
-  sources: [{ id: "source.preview", kind: "markdown", fileName: "preview.md", contentHash: HASH, rights: { basis: "owned" } }],
-  learningGoals: [{ id: "goal.vertex", description: "平方完成した式から放物線の頂点を読み取る" }],
-  concepts: [{ id: "concept.vertex", label: "放物線の頂点", prerequisiteConceptIds: [] }],
-  scenes: [{ id: "scene.vertex", title: "平方完成と頂点", templateId: "split", targetIds: ["target.explanation", "target.reading", "target.formula"] }],
-  semanticTargets: [
-    { id: "target.explanation", sceneId: "scene.vertex", kind: "text", label: "頂点の見つけ方", content: "平方完成すると、放物線の頂点を式から直接読み取れます。", sourceIds: ["source.preview"] },
-    { id: "target.formula", sceneId: "scene.vertex", kind: "formula", label: "平方完成した式", content: "y = (x − 2)² − 1", sourceIds: ["source.preview"] },
-    { id: "target.reading", sceneId: "scene.vertex", kind: "diagram", label: "頂点の読み取り", content: "x = 2 のとき最小値 −1。頂点は (2, −1)。", sourceIds: ["source.preview"] },
-  ],
-  teachingUnits: [{ id: "unit.vertex", kind: "main", learningGoalIds: ["goal.vertex"], prerequisiteUnitIds: [], postconditions: ["頂点を読み取れる"], sceneId: "scene.vertex", boardPatches: [], focusTargetIds: ["target.formula"], speechText: "平方完成した式の2とマイナス1に注目してください。", captionText: "平方完成した式の2とマイナス1に注目してください。", skippable: false, estimatedDurationMs: 8_000, sourceIds: ["source.preview"] }],
-  assessments: [], preGeneratedSupplements: [], pronunciationDictionary: [], schedule: { orderedUnitIds: ["unit.vertex"], optionalUnitIds: [] },
-} satisfies CoursePackage);
+const statusLabels: Record<FixedSessionView["status"], string> = {
+  PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "講義終了",
+};
 
 function ClassroomApp() {
-  const [selectedTargetId, setSelectedTargetId] = useState<string | null>("target.formula");
+  const [session, setSession] = useState<FixedSessionView | null>(null);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [answering, setAnswering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sessionId = new URLSearchParams(window.location.search).get("session");
+
+  useEffect(() => {
+    let active = true;
+    const path = sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}` : "/api/sessions/current";
+    const load = () => void fetchJson<{ session: FixedSessionView | null }>(path)
+      .then((result) => { if (active) { setSession(result.session); setError(null); } })
+      .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
+    load();
+    const timer = window.setInterval(load, 400);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [sessionId]);
+
+  const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
   const scene = useMemo(() => {
-    const board = focusSemanticTarget(demoCourse, createBoardState(demoCourse, "scene.vertex"), selectedTargetId);
-    return resolveStageScene(demoCourse, "scene.vertex", board);
-  }, [selectedTargetId]);
+    if (!session || !displayUnit) return null;
+    let board = applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches);
+    board = focusSemanticTarget(session.course, board, selectedTargetId ?? displayUnit.focusTargetIds[0] ?? null);
+    return resolveStageScene(session.course, displayUnit.sceneId, board);
+  }, [session, displayUnit, selectedTargetId]);
+  const currentGoal = displayUnit
+    ? session?.course.learningGoals.find((goal) => displayUnit.learningGoalIds.includes(goal.id))?.description
+    : null;
+
+  async function submitAnswer(event: FormEvent) {
+    event.preventDefault();
+    if (!session || !answer.trim()) return;
+    setAnswering(true); setError(null);
+    try {
+      const result = await fetchJson<{ session: FixedSessionView }>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "answer", answer: answer.trim() }),
+      });
+      setSession(result.session); setAnswer("");
+    } catch (reason) { setError(errorMessage(reason)); } finally { setAnswering(false); }
+  }
+
+  if (error && !session) return <CenteredMessage title="教室を開けません" detail={error} />;
+  if (!session) return <CenteredMessage title="開始を待っています" detail="運営画面で教材を選び、講義を開始してください。" />;
 
   return (
     <main className="classroom-shell">
       <header className="lesson-header">
         <div>
-          <p className="lesson-status"><span aria-hidden="true">●</span> 講義中</p>
-          <h1>{demoCourse.title}</h1>
-          <p className="current-concept">現在の概念: <strong>放物線の頂点</strong></p>
+          <p className={`lesson-status lesson-status--${session.status.toLowerCase()}`}><span aria-hidden="true">●</span> {statusLabels[session.status]}</p>
+          <h1>{session.course.title}</h1>
+          <p className="current-concept">現在の学習目標: <strong>{currentGoal ?? "講義のまとめ"}</strong></p>
         </div>
-        <p className="lesson-progress" aria-label="講義の進行状況">2 / 5</p>
+        <p className="lesson-progress" aria-label="講義の進行状況">{session.progress.completed} / {session.progress.total}</p>
       </header>
 
-      <section className="stage" aria-labelledby="scene-title">
-        <div className="scene-heading">
-          <h2 id="scene-title">{scene.title}</h2>
-          <p>質問したい箇所を選べます</p>
-        </div>
+      {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
+      {session.testAudio.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />固定テスト音声を再生中</div>}
+      {error && <p className="error" role="alert">{error}</p>}
+
+      {scene && <section className="stage" aria-labelledby="scene-title">
+        <div className="scene-heading"><h2 id="scene-title">{scene.title}</h2><p>質問したい箇所を選べます</p></div>
         <div className={`scene-grid scene-grid--${scene.templateId}`}>
-          {scene.targets.filter((target) => target.visible).map((target) => (
-            <TargetView key={target.id} target={target} onSelect={setSelectedTargetId} />
-          ))}
+          {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={setSelectedTargetId} />)}
         </div>
-      </section>
+      </section>}
 
-      <section className="caption" aria-labelledby="caption-title" aria-live="polite">
-        <h2 id="caption-title">字幕</h2>
-        <p>平方完成した式の2とマイナス1に注目してください。</p>
-      </section>
+      {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title">字幕</h2><p>{displayUnit.captionText}</p></section>}
 
-      <nav className="target-list" aria-label="質問対象">
-        <h2>質問する箇所</h2>
-        <div className="target-controls">
-          {scene.targets.map((target) => (
-            <button key={target.id} type="button" aria-pressed={target.focused} onClick={() => setSelectedTargetId(target.id)}>
-              {target.label}{target.focused ? "（選択中）" : ""}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
+        <h2 id="checkpoint-title">確認問題</h2><p>{session.assessment.prompt}</p>
+        <form onSubmit={(event) => void submitAnswer(event)}>
+          {session.assessment.responseKind === "multiple-choice" ? <fieldset><legend>回答を一つ選んでください</legend>{session.assessment.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => setAnswer(option)} /> {option}</label>)}</fieldset>
+            : <label className="answer-field">回答<input value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>}
+          <button type="submit" disabled={answering || !answer.trim()}>回答して続ける</button>
+        </form>
+      </section>}
+
+      {session.status === "FINISHED" && <section className="finish-result" aria-labelledby="result-title">
+        <h2 id="result-title">講義結果</h2>
+        <p>{session.unfinishedUnitIds.length === 0 ? "予定していた説明をすべて完了しました。" : "途中で終了しました。未完了の説明は次回へ残ります。"}</p>
+        <dl><div><dt>説明完了</dt><dd>{session.completedUnitIds.length} 件</dd></div><div><dt>未完了</dt><dd>{session.unfinishedUnitIds.length} 件</dd></div></dl>
+      </section>}
+
+      {scene && session.status !== "FINISHED" && <nav className="target-list" aria-label="質問対象"><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={target.focused} onClick={() => setSelectedTargetId(target.id)}>{target.label}{target.focused ? "（選択中）" : ""}</button>)}</div></nav>}
     </main>
   );
 }
+
+function CenteredMessage({ title, detail }: { title: string; detail: string }) { return <main className="centered-message"><h1>{title}</h1><p>{detail}</p></main>; }
+async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> { const response = await fetch(input, init); const value = await response.json() as T & { message?: string }; if (!response.ok) throw new Error(value.message ?? `HTTP ${response.status}`); return value; }
+function errorMessage(reason: unknown) { return reason instanceof Error ? reason.message : "処理に失敗しました。"; }
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Classroom root element was not found");

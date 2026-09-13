@@ -9,7 +9,7 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @aituber/server --filter @aituber/classroom --filter @aituber/operator dev",
+    "dev": "pnpm --filter './packages/**' build && pnpm --parallel --filter @aituber/server --filter @aituber/classroom --filter @aituber/operator dev",
     "build": "pnpm -r --if-present build",
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
