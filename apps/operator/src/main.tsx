@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { ClassroomRoomView, CourseSummary, FixedSessionView, SessionCommandRequest } from "@aituber/contracts";
+import type { ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
@@ -21,6 +21,10 @@ function OperatorApp() {
   const [classroom, setClassroom] = useState<ClassroomRoomView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [llmSettings, setLlmSettings] = useState<LlmSettingsView | null>(null);
+  const [llmKey, setLlmKey] = useState("");
+  const [llmModel, setLlmModel] = useState("");
+  const [llmBaseUrl, setLlmBaseUrl] = useState("");
   const selectedCourse = courses.find((course) => course.id === courseId) ?? null;
 
   useEffect(() => {
@@ -33,6 +37,12 @@ function OperatorApp() {
         setClassroom(sessionResult.classroom);
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));
+  }, []);
+
+  useEffect(() => {
+    void fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm").then(({ settings }) => {
+      setLlmSettings(settings); setLlmModel(settings.model); setLlmBaseUrl(settings.baseUrl);
+    }).catch((reason: unknown) => setError(errorMessage(reason)));
   }, []);
 
   useEffect(() => {
@@ -69,6 +79,14 @@ function OperatorApp() {
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   }
 
+  async function saveLlmSettings() {
+    setBusy(true); setError(null);
+    try {
+      const result = await fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...(llmKey ? { apiKey: llmKey } : {}), model: llmModel, baseUrl: llmBaseUrl }) });
+      setLlmSettings(result.settings); setLlmKey("");
+    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  }
+
   return (
     <main className="operator-shell">
       <header className="page-header">
@@ -81,6 +99,15 @@ function OperatorApp() {
       <div className="operator-grid">
         <section className="panel setup-panel" aria-labelledby="course-heading">
           <div className="panel-heading"><span>01</span><div><p>SESSION SETUP</p><h2 id="course-heading">授業設定</h2></div></div>
+          <details className="llm-settings">
+            <summary><span>LLM接続</span><b>{llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || llmSettings.baseUrl.startsWith("http://localhost") ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
+            <div className="llm-fields">
+              <label>APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={(event) => setLlmKey(event.target.value)} placeholder={llmSettings?.apiKeyConfigured ? "設定済み（変更時だけ入力）" : "APIキー"} /></label>
+              <label>モデル<input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="モデル名" /></label>
+              <details><summary>詳細設定</summary><label>Base URL<input value={llmBaseUrl} onChange={(event) => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label></details>
+              <button type="button" disabled={busy || !llmModel.trim()} onClick={() => void saveLlmSettings()}>接続設定を保存</button>
+            </div>
+          </details>
           <label className="field">教材
             <select value={courseId} onChange={(event) => {
               const nextId = event.target.value; setCourseId(nextId);

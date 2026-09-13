@@ -4,6 +4,7 @@ import { LectureEventStore } from "@aituber/storage";
 import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
+import { LlmSettingsStore } from "./llm-settings-store.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
@@ -30,7 +31,8 @@ if (ttsTestMode === "tone") {
   speechProvider = new CachedSpeechProvider(new FishAudioTtsProvider({ apiKey: fishApiKey, model: process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2.1-pro-free" }), resolve(".data/tts-cache"));
 }
 const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}) });
-const server = createApp(lecture);
+const llmSettings = new LlmSettingsStore(resolve(".data/llm-settings.json"));
+const server = createApp(lecture, llmSettings);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;

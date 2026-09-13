@@ -17,6 +17,7 @@
 - [教室ステージ デザイン契約](./docs/design/classroom-stage-contract.md)
 - [MVP検証教材](./docs/fixtures.md)
 - [音声、字幕、取消し](./docs/audio.md)
+- [OpenAI互換LLM接続](./docs/llm.md)
 - [LAN教室の参加と同期](./docs/lan-classroom.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
@@ -49,6 +50,13 @@ Fish Audioを接続するときは、[APIキーの設定手順](./docs/audio.md#
 pnpm configure:tts
 pnpm verify:tts
 pnpm measure:tts
+```
+
+LLMはAPIキー、モデル、必要な場合だけBase URLを一組設定します。Ollamaも同じ契約で接続できます。
+
+```sh
+pnpm configure:llm
+pnpm verify:llm
 ```
 
 - server: `http://127.0.0.1:4310`

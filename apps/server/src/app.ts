@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { ClassroomJoinRequest, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateSessionRequest, FixedSessionView, SessionCommandRequest } from "@aituber/contracts";
+import type { ClassroomJoinRequest, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateSessionRequest, FixedSessionView, LlmSettingsView, SessionCommandRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
+
+export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
 
 export interface LectureApi {
   listCourses(): unknown;
@@ -20,7 +22,7 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi): Server {
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
@@ -34,6 +36,12 @@ export function createApp(api: LectureApi = unavailableApi): Server {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
       if (request.method === "GET" && url.pathname === "/healthz") return json(response, 200, { status: "ok" });
+      if (url.pathname === "/api/settings/llm") {
+        requireSurface(request, "operator");
+        if (!settings) throw new RangeError("LLM settings are unavailable");
+        if (request.method === "GET") return json(response, 200, { settings: settings.get() });
+        if (request.method === "PUT") return json(response, 200, { settings: settings.save(await readJson<UpdateLlmSettingsRequest>(request)) });
+      }
       if (request.method === "POST" && url.pathname === "/api/classrooms/join") {
         requireSurface(request, "classroom");
         const access = classrooms.join((await readJson<ClassroomJoinRequest>(request)).code);

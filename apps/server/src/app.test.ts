@@ -6,6 +6,7 @@ import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import WebSocket from "ws";
+import type { LlmSettingsView } from "@aituber/contracts";
 
 const servers = new Set<ReturnType<typeof createApp>>();
 const resources = new Set<{ service: FixedLectureService; store: LectureEventStore }>();
@@ -51,6 +52,16 @@ describe("server boundary", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not_found" });
+  });
+
+  it("keeps LLM settings on the operator-only surface without returning the key", async () => {
+    let value: LlmSettingsView = { apiKeyConfigured: false, model: "", baseUrl: "" };
+    const server = createApp(undefined, { get: () => value, save: (request) => (value = { apiKeyConfigured: Boolean(request.apiKey), model: request.model, baseUrl: request.baseUrl ?? "" }) });
+    servers.add(server); server.listen(0, "127.0.0.1"); await once(server, "listening");
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    expect((await fetch(`${origin}/api/settings/llm`, { headers: { "x-aituber-surface": "classroom" } })).status).toBe(403);
+    const saved = await fetch(`${origin}/api/settings/llm`, { method: "PUT", headers: { "content-type": "application/json", "x-aituber-surface": "operator" }, body: JSON.stringify({ apiKey: "secret", model: "model" }) });
+    expect(await saved.json()).toEqual({ settings: { apiKeyConfigured: true, model: "model", baseUrl: "" } });
   });
 
   it("starts and controls a fixed lecture through JSON endpoints", async () => {

@@ -94,3 +94,15 @@ export interface ClassroomStreamMessage {
   readonly snapshot: ClassroomSnapshot;
   readonly room: ClassroomRoomView;
 }
+
+export interface LlmSettingsView {
+  readonly apiKeyConfigured: boolean;
+  readonly model: string;
+  readonly baseUrl: string;
+}
+
+export interface UpdateLlmSettingsRequest {
+  readonly apiKey?: string;
+  readonly model: string;
+  readonly baseUrl?: string;
+}

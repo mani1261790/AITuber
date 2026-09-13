@@ -38,6 +38,17 @@ button, select { cursor: pointer; }
 .panel-heading > span, .monitor-empty > span { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: var(--paper-high); background: var(--ink); font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; }
 .panel-heading p, .monitor-empty p { margin: 0 0 3px; color: var(--focus); font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; letter-spacing: 0.13em; }
 .panel h2, .monitor-empty h2 { margin: 0; font-size: 1.25rem; font-weight: 500; }
+.llm-settings { margin-top: 18px; border: 1px solid var(--line); border-radius: 7px; background: #f7f2e8; }
+.llm-settings > summary { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; cursor: pointer; }
+.llm-settings > summary span { font-weight: 700; }
+.llm-settings > summary b { color: var(--muted); font-size: 0.74rem; font-weight: 500; }
+.llm-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 13px 13px; }
+.llm-fields label { display: grid; gap: 5px; font-size: 0.75rem; font-weight: 700; }
+.llm-fields input { min-width: 0; min-height: 42px; padding: 8px 10px; border: 1px solid #aaa18f; border-radius: 5px; background: var(--paper-high); }
+.llm-fields > details, .llm-fields > button { grid-column: 1 / -1; }
+.llm-fields > details summary { margin: 2px 0 8px; color: var(--focus); cursor: pointer; font-size: 0.75rem; }
+.llm-fields > details:not([open]) > :not(summary) { display: none; }
+.llm-fields > button { min-height: 42px; border: 0; border-radius: 5px; color: #fff; background: var(--focus); font-weight: 700; }
 .field { display: grid; gap: 8px; margin-top: 22px; font-size: 0.88rem; font-weight: 700; }
 .field select, .field input { min-height: 50px; padding: 10px 13px; border: 1px solid #aaa18f; border-radius: 5px; color: var(--ink); background: var(--paper-high); }
 .field select:hover, .field input:hover { border-color: var(--focus); }

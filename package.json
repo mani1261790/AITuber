@@ -15,6 +15,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "configure:tts": "zsh scripts/configure-fish-audio.zsh",
+    "configure:llm": "zsh scripts/configure-llm.zsh",
+    "verify:llm": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-llm.ts",
     "verify:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-fish-audio.ts",
     "measure:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/measure-fish-audio.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
