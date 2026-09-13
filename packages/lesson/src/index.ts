@@ -1,1 +1,1 @@
-export const LESSON_PACKAGE = "@aituber/lesson" as const;
+export * from "./lesson-machine.ts";
