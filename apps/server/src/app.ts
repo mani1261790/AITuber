@@ -1,9 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { ClassroomJoinRequest, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateSessionRequest, FixedSessionView, LlmSettingsView, SessionCommandRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
+import type { AuthoringJobView, ClassroomJoinRequest, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
+export interface AuthoringApi { list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
 
 export interface LectureApi {
   listCourses(): unknown;
@@ -22,7 +23,7 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi): Server {
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
@@ -41,6 +42,15 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         if (!settings) throw new RangeError("LLM settings are unavailable");
         if (request.method === "GET") return json(response, 200, { settings: settings.get() });
         if (request.method === "PUT") return json(response, 200, { settings: settings.save(await readJson<UpdateLlmSettingsRequest>(request)) });
+      }
+      if (url.pathname === "/api/authoring/jobs" && request.method === "GET") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 200, { jobs: authoring.list() }); }
+      if (url.pathname === "/api/authoring/jobs" && request.method === "POST") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 202, { job: await authoring.begin(await readJson<CreateAuthoringRequest>(request, 28 * 1024 * 1024)) }); }
+      const authoringMatch = url.pathname.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart))?$/);
+      if (authoringMatch) {
+        requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable");
+        if (request.method === "GET" && !authoringMatch[2]) return json(response, 200, { job: authoring.get(authoringMatch[1]!) });
+        if (request.method === "POST" && authoringMatch[2] === "resume") return json(response, 202, { job: authoring.beginResume(authoringMatch[1]!, await readOptionalJson<ResumeAuthoringRequest>(request)) });
+        if (request.method === "POST" && authoringMatch[2] === "restart") return json(response, 202, { job: authoring.beginRestart(authoringMatch[1]!) });
       }
       if (request.method === "POST" && url.pathname === "/api/classrooms/join") {
         requireSurface(request, "classroom");
@@ -119,9 +129,10 @@ class SurfaceAccessError extends Error {}
 function surface(request: IncomingMessage): string { return String(request.headers["x-aituber-surface"] ?? ""); }
 function requireSurface(request: IncomingMessage, expected: "operator" | "classroom") { if (surface(request) !== expected) throw new SurfaceAccessError(); }
 function requireAnySurface(request: IncomingMessage) { if (!new Set(["operator", "classroom"]).has(surface(request))) throw new SurfaceAccessError(); }
-async function readJson<T>(request: IncomingMessage): Promise<T> {
+async function readJson<T>(request: IncomingMessage, maximumBytes = 64 * 1024): Promise<T> {
   const chunks: Buffer[] = []; let length = 0;
-  for await (const chunk of request) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); length += buffer.length; if (length > 64 * 1024) throw new TypeError("request body is too large"); chunks.push(buffer); }
+  for await (const chunk of request) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); length += buffer.length; if (length > maximumBytes) throw new TypeError("request body is too large"); chunks.push(buffer); }
   if (chunks.length === 0) throw new TypeError("JSON request body is required"); return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
 }
+async function readOptionalJson<T>(request: IncomingMessage): Promise<T | undefined> { if (request.headers["content-length"] === "0" || !request.headers["content-length"]) return undefined; return readJson<T>(request); }
 function json(response: ServerResponse, status: number, value: unknown) { response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); response.end(JSON.stringify(value)); }

@@ -1,17 +1,19 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { LlmSettingsView, UpdateLlmSettingsRequest } from "@aituber/contracts";
-import { OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type OpenAiCompatibleLlmOptions } from "@aituber/providers";
+import { OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions } from "@aituber/providers";
 
 interface StoredLlmSettings { apiKey: string; model: string; baseUrl: string }
 
 export class LlmSettingsStore {
   readonly #path: string;
+  readonly #pricing: Pick<OpenAiCompatibleLlmOptions, "inputUsdPerMillionTokens" | "outputUsdPerMillionTokens">;
   #value: StoredLlmSettings;
 
   constructor(path: string, env: Readonly<Record<string, string | undefined>> = process.env) {
     this.#path = path;
     const configured = openAiCompatibleOptionsFromEnv(env);
+    this.#pricing = { ...(configured?.inputUsdPerMillionTokens !== undefined ? { inputUsdPerMillionTokens: configured.inputUsdPerMillionTokens } : {}), ...(configured?.outputUsdPerMillionTokens !== undefined ? { outputUsdPerMillionTokens: configured.outputUsdPerMillionTokens } : {}) };
     this.#value = existsSync(path) ? parseStored(readFileSync(path, "utf8")) : { apiKey: configured?.apiKey ?? "", model: configured?.model ?? "", baseUrl: configured?.baseUrl ?? "" };
   }
 
@@ -30,7 +32,14 @@ export class LlmSettingsStore {
   }
 
   connectionOptions(): OpenAiCompatibleLlmOptions | null {
-    return openAiCompatibleOptionsFromEnv({ AITUBER_LLM_API_KEY: this.#value.apiKey, AITUBER_LLM_MODEL: this.#value.model, AITUBER_LLM_BASE_URL: this.#value.baseUrl });
+    const options = openAiCompatibleOptionsFromEnv({ AITUBER_LLM_API_KEY: this.#value.apiKey, AITUBER_LLM_MODEL: this.#value.model, AITUBER_LLM_BASE_URL: this.#value.baseUrl });
+    return options ? { ...options, ...this.#pricing } : null;
+  }
+
+  createProvider(): LlmProvider {
+    const options = this.connectionOptions();
+    if (!options) throw new TypeError("LLM接続を先に設定してください。");
+    return new OpenAiCompatibleLlmProvider(options);
   }
 }
 

@@ -9,6 +9,7 @@
     "@aituber/lesson": "workspace:*",
     "@aituber/providers": "workspace:*",
     "@aituber/storage": "workspace:*",
+    "unpdf": "1.8.1",
     "ws": "8.21.3"
   },
   "scripts": {

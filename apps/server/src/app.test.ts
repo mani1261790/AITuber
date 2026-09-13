@@ -6,7 +6,7 @@ import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import WebSocket from "ws";
-import type { LlmSettingsView } from "@aituber/contracts";
+import type { AuthoringJobView, CreateAuthoringRequest, LlmSettingsView, ResumeAuthoringRequest } from "@aituber/contracts";
 
 const servers = new Set<ReturnType<typeof createApp>>();
 const resources = new Set<{ service: FixedLectureService; store: LectureEventStore }>();
@@ -64,6 +64,28 @@ describe("server boundary", () => {
     expect(await saved.json()).toEqual({ settings: { apiKeyConfigured: true, model: "model", baseUrl: "" } });
   });
 
+  it("exposes course authoring creation, monitoring, resume, and restart only to the operator", async () => {
+    const job = authoringJob(); const calls: string[] = [];
+    const authoring = {
+      list: () => [job], get: (id: string) => { calls.push(`get:${id}`); return job; },
+      begin: async (request: CreateAuthoringRequest) => { calls.push(`begin:${request.durationMinutes}:${request.sources.length}`); return job; },
+      beginResume: (id: string, request?: ResumeAuthoringRequest) => { calls.push(`resume:${id}:${request?.additionalTimeBudgetMs ?? "default"}`); return job; },
+      beginRestart: (id: string) => { calls.push(`restart:${id}`); return job; },
+    };
+    const server = createApp(undefined, undefined, authoring);
+    servers.add(server); server.listen(0, "127.0.0.1"); await once(server, "listening");
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`; const operator = { "x-aituber-surface": "operator" };
+
+    expect((await fetch(`${origin}/api/authoring/jobs`, { headers: { "x-aituber-surface": "classroom" } })).status).toBe(403);
+    expect((await fetch(`${origin}/api/authoring/jobs`, { headers: operator })).status).toBe(200);
+    const created = await fetch(`${origin}/api/authoring/jobs`, { method: "POST", headers: { ...operator, "content-type": "application/json" }, body: JSON.stringify({ durationMinutes: 15, sources: [{ fileName: "note.md", mimeType: "text/markdown", dataBase64: "YQ==", rights: { basis: "owned" } }] }) });
+    expect(created.status).toBe(202);
+    expect((await fetch(`${origin}/api/authoring/jobs/${job.id}`, { headers: operator })).status).toBe(200);
+    expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/resume`, { method: "POST", headers: operator })).status).toBe(202);
+    expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/restart`, { method: "POST", headers: operator })).status).toBe(202);
+    expect(calls).toEqual(["begin:15:1", `get:${job.id}`, `resume:${job.id}:default`, `restart:${job.id}`]);
+  });
+
   it("starts and controls a fixed lecture through JSON endpoints", async () => {
     const store = new LectureEventStore(":memory:");
     const service = new FixedLectureService({ store, playbackUnitMs: 10_000, speechProvider: new TestToneSpeechProvider(1_000), voiceId: "voice.test-tone" });
@@ -119,3 +141,8 @@ describe("server boundary", () => {
     webSocket.close();
   });
 });
+
+function authoringJob(): AuthoringJobView {
+  const now = new Date(0).toISOString();
+  return { id: "authoring.123e4567-e89b-12d3-a456-426614174000", status: "running", createdAt: now, updatedAt: now, request: { durationMinutes: 15, timeBudgetMs: 300_000, costBudgetUsd: 2 }, review: null, attempts: 0, elapsedMs: 0, estimatedCostUsd: 0, error: null, sourceCount: 1, course: null };
+}

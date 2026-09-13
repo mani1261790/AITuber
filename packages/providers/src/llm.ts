@@ -20,6 +20,7 @@ export interface LlmResult<T> {
 
 export interface StructuredGenerationRequest<T> {
   readonly prompt: string;
+  readonly images?: readonly { readonly mimeType: "image/png" | "image/jpeg" | "image/webp"; readonly dataBase64: string }[];
   readonly schemaName: string;
   readonly schema: JsonSchema;
   readonly maxOutputTokens?: number;
@@ -88,7 +89,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         headers: { "content-type": "application/json", ...(this.#options.apiKey ? { authorization: `Bearer ${this.#options.apiKey}` } : {}) },
         body: JSON.stringify({
           model: this.#options.model,
-          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.prompt }],
+          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.images?.length ? [{ type: "text", text: request.prompt }, ...request.images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.dataBase64}` } }))] : request.prompt }],
           response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
           temperature: request.temperature ?? 0,
           max_tokens: request.maxOutputTokens ?? 4_096,
@@ -114,9 +115,10 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
 export class FixedResponseLlmProvider implements LlmProvider {
   readonly calls: { readonly purpose: LlmPurpose; readonly systemInstruction: string; readonly prompt: string }[] = [];
   readonly #responses: readonly unknown[];
+  readonly #usage: LlmUsage;
   #index = 0;
 
-  constructor(responses: readonly unknown[]) { this.#responses = structuredClone(responses); }
+  constructor(responses: readonly unknown[], usage: LlmUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }) { this.#responses = structuredClone(responses); this.#usage = usage; }
 
   createContext(options: { purpose: LlmPurpose; systemInstruction: string }): LlmContext {
     return {
@@ -127,7 +129,7 @@ export class FixedResponseLlmProvider implements LlmProvider {
         if (this.#index >= this.#responses.length) throw new LlmProviderError("provider_error", "No fixed LLM response remains");
         this.calls.push({ purpose: options.purpose, systemInstruction: options.systemInstruction, prompt: request.prompt });
         const value = parseAndValidate<T>(JSON.stringify(this.#responses[this.#index++]), request.schema, request.validate);
-        return { value, model: "fixed-response-v1", provider: "fixed", usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }, latencyMs: 0 };
+        return { value, model: "fixed-response-v1", provider: "fixed", usage: this.#usage, latencyMs: 0 };
       },
     };
   }
@@ -174,6 +176,7 @@ function validateRequest(request: StructuredGenerationRequest<unknown>) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(request.schemaName)) throw new TypeError("schemaName must contain 1-64 letters, digits, underscores, or hyphens");
   const maxBytes = request.maxOutputBytes ?? 1_000_000;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 10_000_000) throw new TypeError("maxOutputBytes must be between 1 and 10000000");
+  if ((request.images?.length ?? 0) > 16 || request.images?.some((image) => image.dataBase64.length > 14_000_000)) throw new TypeError("images exceed the request limit");
 }
 function boundedText(value: string, max: number, name: string): string { if (!value.trim() || new TextEncoder().encode(value).byteLength > max) throw new TypeError(`${name} must contain 1-${max} bytes`); return value; }
 function normalizeBaseUrl(value: string): string { const url = new URL(value); if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError("LLM Base URL must use http or https"); return url.toString().replace(/\/$/, ""); }

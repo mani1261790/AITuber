@@ -21,4 +21,11 @@ describe("LlmSettingsStore", () => {
     expect(store.save({ model: "qwen3:8b", baseUrl: "http://localhost:11434/v1" }).apiKeyConfigured).toBe(false);
     expect(() => store.save({ model: "remote", baseUrl: "https://example.com/v1" })).toThrow(/API key/);
   });
+
+  it("keeps environment pricing when UI connection settings are used", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "aituber-llm-")), "settings.json");
+    const store = new LlmSettingsStore(path, { AITUBER_LLM_MODEL: "initial", AITUBER_LLM_API_KEY: "secret", AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS: "1.5", AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS: "6" });
+    store.save({ model: "updated" });
+    expect(store.connectionOptions()).toMatchObject({ model: "updated", inputUsdPerMillionTokens: 1.5, outputUsdPerMillionTokens: 6 });
+  });
 });

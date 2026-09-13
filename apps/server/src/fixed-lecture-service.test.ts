@@ -131,6 +131,14 @@ describe("FixedLectureService", () => {
     vi.advanceTimersByTime(quadraticFunctionsFixture.teachingUnits[0]!.estimatedDurationMs);
     expect(service.getSession(started.id).progress.completed).toBe(1);
   });
+
+  it("registers only reviewed available Course Packages for lecture use", () => {
+    expect(service.listCourses().some((course) => course.id === vaeReparameterizationFixture.id)).toBe(false);
+    service.registerCourse(vaeReparameterizationFixture);
+    expect(service.listCourses().some((course) => course.id === vaeReparameterizationFixture.id)).toBe(true);
+    expect(service.createSession({ coursePackageId: vaeReparameterizationFixture.id, durationMinutes: 8 }).course.id).toBe(vaeReparameterizationFixture.id);
+    expect(() => service.registerCourse({ ...vaeReparameterizationFixture, status: "reviewing" })).toThrow("Only an available");
+  });
 });
 
 describe("pronunciation dictionary", () => {

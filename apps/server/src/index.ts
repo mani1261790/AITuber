@@ -5,10 +5,13 @@ import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, Tes
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
+import { CourseAuthoringService } from "./course-authoring-service.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
 const databasePath = resolve(process.env.AITUBER_DB_PATH ?? ".data/aituber.db");
+const llmSettingsPath = resolve(process.env.AITUBER_LLM_SETTINGS_PATH ?? ".data/llm-settings.json");
+const authoringPath = resolve(process.env.AITUBER_AUTHORING_PATH ?? ".data/authoring");
 const playbackUnitMs = Number.parseInt(process.env.AITUBER_FIXED_PLAYBACK_MS ?? "2000", 10);
 const fishApiKey = process.env.AITUBER_FISH_AUDIO_API_KEY ?? "";
 const fishVoiceId = process.env.AITUBER_FISH_AUDIO_VOICE_ID ?? FISH_STANDARD_VOICE_ID;
@@ -31,8 +34,10 @@ if (ttsTestMode === "tone") {
   speechProvider = new CachedSpeechProvider(new FishAudioTtsProvider({ apiKey: fishApiKey, model: process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2.1-pro-free" }), resolve(".data/tts-cache"));
 }
 const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}) });
-const llmSettings = new LlmSettingsStore(resolve(".data/llm-settings.json"));
-const server = createApp(lecture, llmSettings);
+const llmSettings = new LlmSettingsStore(llmSettingsPath);
+const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider(), onAvailable: (course) => lecture.registerCourse(course) });
+authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
+const server = createApp(lecture, llmSettings, authoring);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;

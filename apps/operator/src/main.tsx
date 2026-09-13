@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
+import type { AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
@@ -11,6 +11,9 @@ declare const __AITUBER_CLASSROOM_HOST__: string;
 
 const statusLabels: Record<FixedSessionView["status"], string> = {
   PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了",
+};
+const gateLabels: Record<NonNullable<AuthoringJobView["review"]>["gates"][number]["id"], string> = {
+  "source-alignment": "出典と内容", "factual-consistency": "事実・式・数値", "goal-alignment": "学習目標", prerequisites: "前提関係", references: "参照ID", renderability: "描画可能性", "speech-caption": "発話と字幕", "safe-content": "安全な内容", rights: "利用権",
 };
 
 function OperatorApp() {
@@ -25,6 +28,12 @@ function OperatorApp() {
   const [llmKey, setLlmKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmBaseUrl, setLlmBaseUrl] = useState("");
+  const [sourceFiles, setSourceFiles] = useState<File[]>([]);
+  const [sourceNote, setSourceNote] = useState("");
+  const [sourceRights, setSourceRights] = useState<AuthoringSourceUpload["rights"]["basis"]>("owned");
+  const [targetLevel, setTargetLevel] = useState("");
+  const [learningGoals, setLearningGoals] = useState("");
+  const [authoringJob, setAuthoringJob] = useState<AuthoringJobView | null>(null);
   const selectedCourse = courses.find((course) => course.id === courseId) ?? null;
 
   useEffect(() => {
@@ -38,6 +47,25 @@ function OperatorApp() {
       })
       .catch((reason: unknown) => setError(errorMessage(reason)));
   }, []);
+
+  useEffect(() => {
+    void fetchJson<{ jobs: AuthoringJobView[] }>("/api/authoring/jobs").then(({ jobs }) => setAuthoringJob(jobs[0] ?? null)).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!authoringJob || authoringJob.status !== "running") return;
+    const timer = window.setInterval(() => void fetchJson<{ job: AuthoringJobView }>(`/api/authoring/jobs/${encodeURIComponent(authoringJob.id)}`).then(({ job }) => {
+      setAuthoringJob(job);
+      if (job.status === "available" && job.course) void refreshCourses(job.course.id);
+    }).catch((reason: unknown) => setError(errorMessage(reason))), 500);
+    return () => window.clearInterval(timer);
+  }, [authoringJob?.id, authoringJob?.status]);
+
+  useEffect(() => {
+    if (!authoringJob?.course) return;
+    setTargetLevel(authoringJob.course.targetLevel);
+    setLearningGoals(authoringJob.course.learningGoals.map((goal) => goal.description).join("\n"));
+  }, [authoringJob?.course]);
 
   useEffect(() => {
     void fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm").then(({ settings }) => {
@@ -87,6 +115,28 @@ function OperatorApp() {
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   }
 
+  async function refreshCourses(preferredId?: string) {
+    const result = await fetchJson<{ courses: CourseSummary[] }>("/api/courses"); setCourses(result.courses);
+    if (preferredId) { setCourseId(preferredId); const course = result.courses.find((item) => item.id === preferredId); if (course) setDuration(course.durationMinutes); }
+  }
+
+  async function startAuthoring() {
+    setBusy(true); setError(null);
+    try {
+      const sources: AuthoringSourceUpload[] = await Promise.all(sourceFiles.map(async (file) => ({ fileName: file.name, mimeType: supportedMimeType(file), dataBase64: await fileBase64(file), rights: { basis: sourceRights } })));
+      if (sourceNote.trim()) sources.push({ fileName: "instructor-note.txt", mimeType: "text/plain", dataBase64: utf8Base64(sourceNote.trim()), rights: { basis: sourceRights } });
+      const result = await fetchJson<{ job: AuthoringJobView }>("/api/authoring/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ durationMinutes: duration, sources, ...(targetLevel.trim() ? { targetLevel: targetLevel.trim() } : {}), ...(learningGoals.trim() ? { learningGoals: learningGoals.split("\n").map((value) => value.trim()).filter(Boolean) } : {}) }) });
+      setAuthoringJob(result.job);
+    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  }
+
+  async function continueAuthoring(action: "resume" | "restart") {
+    if (!authoringJob) return;
+    setBusy(true); setError(null);
+    try { const result = await fetchJson<{ job: AuthoringJobView }>(`/api/authoring/jobs/${encodeURIComponent(authoringJob.id)}/${action}`, { method: "POST", ...(action === "resume" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ additionalTimeBudgetMs: 300_000, additionalCostBudgetUsd: 2 }) } : {}) }); setAuthoringJob(result.job); }
+    catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  }
+
   return (
     <main className="operator-shell">
       <header className="page-header">
@@ -100,12 +150,23 @@ function OperatorApp() {
         <section className="panel setup-panel" aria-labelledby="course-heading">
           <div className="panel-heading"><span>01</span><div><p>SESSION SETUP</p><h2 id="course-heading">授業設定</h2></div></div>
           <details className="llm-settings">
-            <summary><span>LLM接続</span><b>{llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || llmSettings.baseUrl.startsWith("http://localhost") ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
+            <summary><span>LLM接続</span><b>{llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
             <div className="llm-fields">
               <label>APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={(event) => setLlmKey(event.target.value)} placeholder={llmSettings?.apiKeyConfigured ? "設定済み（変更時だけ入力）" : "APIキー"} /></label>
               <label>モデル<input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="モデル名" /></label>
               <details><summary>詳細設定</summary><label>Base URL<input value={llmBaseUrl} onChange={(event) => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label></details>
               <button type="button" disabled={busy || !llmModel.trim()} onClick={() => void saveLlmSettings()}>接続設定を保存</button>
+            </div>
+          </details>
+          <details className="authoring-settings">
+            <summary><span>教材を作成・取り込む</span><b>{authoringJob ? authoringStatus(authoringJob.status) : "授業前に実行"}</b></summary>
+            <div className="authoring-fields">
+              <label>教材ファイル（PDF・画像・Markdown）<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt,application/pdf,image/png,image/jpeg,image/webp,text/markdown,text/plain" onChange={(event) => setSourceFiles([...event.target.files ?? []])} /></label>
+              <label>任意ノート<textarea value={sourceNote} onChange={(event) => setSourceNote(event.target.value)} placeholder="ファイルに加えたい指示や教材本文" /></label>
+              <label>利用権<select value={sourceRights} onChange={(event) => setSourceRights(event.target.value as typeof sourceRights)}><option value="owned">自分が権利を保有</option><option value="licensed">ライセンス済み</option><option value="public-domain">パブリックドメイン</option><option value="permission">利用許可あり</option></select></label>
+              <details><summary>推定結果を指定・修正する</summary><label>対象レベル<input value={targetLevel} onChange={(event) => setTargetLevel(event.target.value)} placeholder="空欄なら自動推定" /></label><label>学習目標（1行に1件）<textarea value={learningGoals} onChange={(event) => setLearningGoals(event.target.value)} placeholder="空欄なら自動推定" /></label></details>
+              <button type="button" disabled={busy || (sourceFiles.length === 0 && !sourceNote.trim())} onClick={() => void startAuthoring()}>自動作成と審査を開始</button>
+              {authoringJob && <AuthoringResult job={authoringJob} onContinue={continueAuthoring} busy={busy} />}
             </div>
           </details>
           <label className="field">教材
@@ -151,6 +212,17 @@ function OperatorApp() {
     </main>
   );
 }
+
+function AuthoringResult({ job, onContinue, busy }: { job: AuthoringJobView; onContinue(action: "resume" | "restart"): Promise<void>; busy: boolean }) {
+  return <section className={`authoring-result authoring-result--${job.status}`} aria-live="polite"><div><strong>{authoringStatus(job.status)}</strong><span>{job.attempts}回試行 · {job.sourceCount}資料</span></div>{job.course && <><h3>{job.course.title}</h3><p>{job.course.targetLevel} · {job.course.durationMinutes}分</p><ul>{job.course.learningGoals.map((goal) => <li key={goal.id}>{goal.description}</li>)}</ul></>}{job.review && <details><summary>審査結果 {job.review.gates.filter((gate) => gate.passed).length}/9</summary><ul>{job.review.gates.map((gate) => <li key={gate.id} className={gate.passed ? "passed" : "failed"}><b>{gate.passed ? "合格" : "不合格"}</b> {gateLabels[gate.id]}: {gate.rationale}{!gate.passed && gate.locations.length > 0 && <small>箇所: {gate.locations.join(", ")}</small>}{!gate.passed && gate.repairInstruction && <small>修正: {gate.repairInstruction}</small>}</li>)}</ul></details>}{job.error && <p>{job.error}</p>}{(job.status === "budget-exhausted" || job.status === "failed") && <div className="authoring-actions"><button type="button" disabled={busy} onClick={() => void onContinue("resume")}>checkpointから再開</button><button type="button" disabled={busy} onClick={() => void onContinue("restart")}>最初から作り直す</button></div>}</section>;
+}
+
+function authoringStatus(status: AuthoringJobView["status"]) { return status === "running" ? "自動作成・審査中" : status === "available" ? "講義に利用可能" : status === "budget-exhausted" ? "上限で一時停止" : "作成失敗"; }
+function isLocalLlmUrl(value: string) { return /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value); }
+function supportedMimeType(file: File): AuthoringSourceUpload["mimeType"] { const byExtension: Record<string, AuthoringSourceUpload["mimeType"]> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", md: "text/markdown", txt: "text/plain" }; const value = (file.type || byExtension[file.name.split(".").at(-1)?.toLowerCase() ?? ""]) as AuthoringSourceUpload["mimeType"] | undefined; if (!value || !Object.values(byExtension).includes(value)) throw new TypeError(`${file.name} は対応していない形式です。`); return value; }
+async function fileBase64(file: File): Promise<string> { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary); }
+function utf8Base64(value: string): string { return fileBytesBase64(new TextEncoder().encode(value)); }
+function fileBytesBase64(bytes: Uint8Array): string { let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary); }
 
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);

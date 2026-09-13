@@ -33,7 +33,7 @@ interface RuntimeSession {
 type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
 
 export class FixedLectureService {
-  readonly #courses: ReadonlyMap<string, ReadonlyCoursePackage>;
+  readonly #courses: Map<string, ReadonlyCoursePackage>;
   readonly #sessions = new Map<string, RuntimeSession>();
   readonly #store: LectureEventStore;
   readonly #playbackUnitMs: number;
@@ -65,6 +65,11 @@ export class FixedLectureService {
       durationMinutes: course.durationMinutes,
       learningGoals: course.learningGoals,
     }));
+  }
+
+  registerCourse(course: ReadonlyCoursePackage): void {
+    if (course.status !== "available") throw new TypeError("Only an available Course Package can be registered");
+    this.#courses.set(course.id, course);
   }
 
   createSession(request: CreateSessionRequest): FixedSessionView {

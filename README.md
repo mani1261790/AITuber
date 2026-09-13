@@ -18,6 +18,7 @@
 - [MVP検証教材](./docs/fixtures.md)
 - [音声、字幕、取消し](./docs/audio.md)
 - [OpenAI互換LLM接続](./docs/llm.md)
+- [教材の取り込み・生成・審査](./docs/course-authoring.md)
 - [LAN教室の参加と同期](./docs/lan-classroom.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
@@ -58,6 +59,8 @@ LLMはAPIキー、モデル、必要な場合だけBase URLを一組設定しま
 pnpm configure:llm
 pnpm verify:llm
 ```
+
+接続後は運営画面の「教材を作成・取り込む」からPDF、画像、Markdown、テキストまたは講師ノートを登録します。授業時間だけを指定すれば対象レベルと学習目標を推定し、9項目の審査と自動修復を終えた教材だけが講義の選択肢に加わります。
 
 - server: `http://127.0.0.1:4310`
 - classroom: `http://127.0.0.1:4311`

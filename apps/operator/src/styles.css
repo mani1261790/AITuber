@@ -49,6 +49,31 @@ button, select { cursor: pointer; }
 .llm-fields > details summary { margin: 2px 0 8px; color: var(--focus); cursor: pointer; font-size: 0.75rem; }
 .llm-fields > details:not([open]) > :not(summary) { display: none; }
 .llm-fields > button { min-height: 42px; border: 0; border-radius: 5px; color: #fff; background: var(--focus); font-weight: 700; }
+.authoring-settings { margin-top: 10px; border: 1px solid var(--line); border-radius: 7px; }
+.authoring-settings > summary { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; cursor: pointer; }
+.authoring-settings > summary span { font-weight: 700; }
+.authoring-settings > summary b { color: var(--focus); font-size: 0.72rem; font-weight: 500; }
+.authoring-fields { display: grid; gap: 11px; padding: 0 13px 13px; }
+.authoring-fields > label, .authoring-fields > details label { display: grid; gap: 5px; font-size: 0.75rem; font-weight: 700; }
+.authoring-fields input, .authoring-fields select, .authoring-fields textarea { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid #aaa18f; border-radius: 5px; background: var(--paper-high); }
+.authoring-fields textarea { min-height: 66px; resize: vertical; }
+.authoring-fields > details summary { margin-bottom: 8px; color: var(--focus); cursor: pointer; font-size: 0.75rem; }
+.authoring-fields > details:not([open]) > :not(summary) { display: none; }
+.authoring-fields > details label + label { margin-top: 9px; }
+.authoring-fields > button { min-height: 44px; border: 0; border-radius: 5px; color: #fff; background: var(--focus); font-weight: 700; }
+.authoring-result { padding: 12px; border: 1px solid #b8ae9e; border-radius: 6px; background: #fffdf7; }
+.authoring-result > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.authoring-result > div:first-child span { color: var(--muted); font-size: 0.7rem; }
+.authoring-result h3 { margin: 10px 0 2px; font-size: 1rem; }
+.authoring-result p { margin: 5px 0; font-size: 0.78rem; }
+.authoring-result ul { margin: 8px 0; padding-left: 1.1rem; font-size: 0.75rem; }
+.authoring-result details { margin-top: 8px; }
+.authoring-result details summary { cursor: pointer; font-size: 0.76rem; }
+.authoring-result li.failed { color: #8a2e25; }
+.authoring-result li.passed b { color: #27744d; }
+.authoring-result li small { display: block; margin-top: 2px; color: inherit; }
+.authoring-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.authoring-actions button { min-height: 40px; border: 1px solid #8f86de; border-radius: 5px; background: #f0edff; font-size: 0.75rem; font-weight: 700; }
 .field { display: grid; gap: 8px; margin-top: 22px; font-size: 0.88rem; font-weight: 700; }
 .field select, .field input { min-height: 50px; padding: 10px 13px; border: 1px solid #aaa18f; border-radius: 5px; color: var(--ink); background: var(--paper-high); }
 .field select:hover, .field input:hover { border-color: var(--focus); }
