@@ -7,6 +7,7 @@ import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
+import "katex/dist/katex.min.css";
 import { TargetView } from "./target-view.tsx";
 import "./styles.css";
 

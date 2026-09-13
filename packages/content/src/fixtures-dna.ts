@@ -32,7 +32,7 @@ const dna = {
     { id: "target.dna.polymerase", sceneId: "scene.dna.fork", kind: "diagram", label: "3 DNAポリメラーゼ", content: "プライマーから新生鎖を5'→3'へ伸ばす。", sourceIds: [sourceId] },
     { id: "target.dna.leading", sceneId: "scene.dna.strands", kind: "text", label: "リーディング鎖", content: "複製フォークへ向かい、連続的に合成される。", sourceIds: [sourceId] },
     { id: "target.dna.lagging", sceneId: "scene.dna.strands", kind: "text", label: "ラギング鎖", content: "フォークと反対向きに、岡崎フラグメントとして合成される。", sourceIds: [sourceId] },
-    { id: "target.dna.direction", sceneId: "scene.dna.strands", kind: "formula", label: "合成方向", content: "5' → 3'", sourceIds: [sourceId] },
+    { id: "target.dna.direction", sceneId: "scene.dna.strands", kind: "formula", label: "合成方向", content: "5^\\prime \\to 3^\\prime", sourceIds: [sourceId] },
     { id: "target.dna.remove-primer", sceneId: "scene.dna.finish", kind: "diagram", label: "4 プライマー除去・置換", content: "RNA部分を除きDNAへ置き換える。", sourceIds: [sourceId] },
     { id: "target.dna.ligase", sceneId: "scene.dna.finish", kind: "diagram", label: "5 DNAリガーゼ", content: "岡崎フラグメント間の切れ目をつなぐ。", sourceIds: [sourceId] },
     { id: "target.dna.sequence", sceneId: "scene.dna.finish", kind: "text", label: "全体の順序", content: "ほどく → 始点を置く → 伸ばす → RNAを置換 → つなぐ", sourceIds: [sourceId] },

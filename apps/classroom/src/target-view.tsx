@@ -1,4 +1,5 @@
 import { localAssetUrl, type StageTarget } from "@aituber/presentation";
+import { FormulaView } from "./formula-view.tsx";
 
 export function TargetView({ target, onSelect }: { target: StageTarget; onSelect: (targetId: string) => void }) {
   return (
@@ -6,7 +7,6 @@ export function TargetView({ target, onSelect }: { target: StageTarget; onSelect
       className={`target target--${target.kind}`}
       data-semantic-id={target.id}
       aria-pressed={target.focused}
-      aria-label={`${target.label}を質問対象に選ぶ`}
       onClick={() => onSelect(target.id)}
       type="button"
     >
@@ -14,11 +14,12 @@ export function TargetView({ target, onSelect }: { target: StageTarget; onSelect
       {target.kind === "image" && target.assetId ? (
         <img src={localAssetUrl(target.assetId)} alt={target.altText ?? target.label} />
       ) : target.kind === "formula" ? (
-        <span className="formula" role="math" aria-label={target.label}>{target.content}</span>
+        <FormulaView tex={target.content} />
       ) : (
         <span className="target-content">{target.content}</span>
       )}
       {target.focused && <span className="selected-cue">選択中</span>}
+      <span className="sr-only">について質問する</span>
     </button>
   );
 }
