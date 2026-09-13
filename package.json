@@ -26,6 +26,8 @@
     "restore": "node --env-file-if-exists=.env --experimental-strip-types scripts/restore-self-host.ts",
     "verify:self-host": "node --experimental-strip-types scripts/verify-self-host.ts",
     "study:new": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts new",
+    "study:record": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts record",
+    "study:ready": "pnpm check && pnpm verify:llm && pnpm verify:tts",
     "study:status": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts status",
     "study:summarize": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts summarize",
     "study:delete": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete",

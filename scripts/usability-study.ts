@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
 export const STUDY_FORMAT = "aituber-usability-v1" as const;
@@ -104,6 +105,33 @@ export function renderSummary(summary: StudySummary, generatedAt = new Date()): 
   return `# AITuber ユーザビリティ評価 集計\n\n生成: ${generatedAt.toISOString()}\n\n製品公開判断: **${summary.readyForPublicRelease ? "公開準備へ進める" : "公開を保留する"}**\n\n## 対象\n\n- 参加者: ${summary.participants}人\n- 評価セッション: ${summary.sessions}件\n- 高校教材と大学教材を各参加者が1本ずつ評価\n\n## 公開ゲート\n\n| 項目 | 結果 | 値 |\n|---|---|---|\n${summary.gates.map((gate) => `| ${gate.label} | ${gate.passed ? "合格" : "未達"} | ${gate.value} |`).join("\n")}\n\n## 指標\n\n- 参加成功率: ${percent(summary.taskSuccess.join)}\n- 質問送信成功率: ${percent(summary.taskSuccess.submitQuestion)}\n- 再接続成功率: ${percent(summary.taskSuccess.reconnect)}\n- 完走率: ${percent(summary.taskSuccess.finish)}\n- 確認問題正答率: ${percent(summary.checkpointAccuracy)}\n- 操作しやすさ中央値: ${summary.medianRatings.operationEase}/5\n- 理解しやすさ中央値: ${summary.medianRatings.contentClarity}/5\n- 質問後の理解中央値: ${summary.medianRatings.questionHelpfulness}/5\n- 本編復帰の自然さ中央値: ${summary.medianRatings.rejoinNaturalness}/5\n\n## 発見事項\n\n| 内容 | 重大度 | 状態 | Issue |\n|---|---|---|---|\n${incidentRows}\n`;
 }
 
+export async function recordStudyWithPrompts(draft: StudyRecord, ask: (question: string) => Promise<string>, now = new Date()): Promise<StudyRecord> {
+  const record = structuredClone(draft) as Mutable<StudyRecord>;
+  if (!await yesNo(ask, "参加者は18歳以上ですか [y/n]: ")) throw new TypeError("Adult eligibility was not confirmed; record unchanged");
+  if (!await yesNo(ask, "同意説明を読み、参加に同意しましたか [y/n]: ")) throw new TypeError("Consent was not provided; record unchanged");
+  record.consent = { adult18OrOlder: true, agreed: true, consentedAt: now.toISOString() };
+  for (let index = 0; index < record.sessions.length; index += 1) {
+    const session = record.sessions[index]!;
+    process.stdout.write(`\n教材 ${index + 1}/2: ${courseLabel(session.courseId)}\n`);
+    session.classroomCode = await nonEmpty(ask, "教室コード: ", 32);
+    for (const task of TASKS) {
+      session.tasks[task].success = await yesNo(ask, `${taskLabel(task)}に成功しましたか [y/n]: `);
+      session.tasks[task].assistanceCount = await integer(ask, "具体的な操作介助の回数 [0以上]: ", 0, 99);
+    }
+    session.checkpointCorrect = await yesNo(ask, "確認問題は正解でしたか [y/n]: ");
+    for (const rating of RATINGS) session.ratings[rating] = await integer(ask, `${ratingLabel(rating)} [1-5]: `, 1, 5);
+  }
+  while (await yesNo(ask, "発見事項を追加しますか [y/n]: ")) {
+    const severity = await choice(ask, "重大度 [critical/blocking/major/minor]: ", ["critical", "blocking", "major", "minor"] as const);
+    const summary = await nonEmpty(ask, "個人情報を除いた内容 [300文字以内]: ", 300);
+    const status = await yesNo(ask, "修正と再検証が完了していますか [y/n]: ") ? "resolved" : "open";
+    const issueText = (await ask("GitHub Issue番号 [なければ空欄]: ")).trim();
+    const issue = issueText ? parseInteger(issueText, 1, Number.MAX_SAFE_INTEGER, "Issue number") : null;
+    record.incidents.push({ severity, status, summary, issue });
+  }
+  return validateCompleteRecord(record);
+}
+
 async function main() {
   const arguments_ = process.argv.slice(2).filter((value) => value !== "--");
   const command = arguments_[0] ?? "status";
@@ -112,6 +140,17 @@ async function main() {
     const participantId = arguments_[1] ?? ""; const record = createStudyRecord(participantId);
     const rawDirectory = join(studyRoot, "raw"); await mkdir(rawDirectory, { recursive: true, mode: 0o700 });
     const path = join(rawDirectory, `${participantId}.json`); await writeFile(path, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx", mode: 0o600 }); process.stdout.write(`${path}\n`); return;
+  }
+  if (command === "record") {
+    const participantId = arguments_[1] ?? ""; assertParticipantId(participantId); const path = join(studyRoot, "raw", `${participantId}.json`);
+    const draft = JSON.parse(await readFile(path, "utf8")) as StudyRecord;
+    const prompt = createInterface({ input: process.stdin }); const answers = prompt[Symbol.asyncIterator]();
+    try {
+      const record = await recordStudyWithPrompts(draft, async (question) => { process.stdout.write(question); const answer = await answers.next(); if (answer.done) throw new TypeError("Input ended before the record was complete"); return answer.value; });
+      const temporaryPath = `${path}.tmp-${process.pid}`; await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 }); await rename(temporaryPath, path);
+      process.stdout.write(`\nRecorded ${participantId}: ${path}\n`);
+    } finally { prompt.close(); }
+    return;
   }
   if (command === "delete") {
     const participantId = arguments_[1] ?? ""; assertParticipantId(participantId); await rm(join(studyRoot, "raw", `${participantId}.json`)); process.stdout.write(`Deleted ${participantId}\n`); return;
@@ -125,7 +164,7 @@ async function main() {
     if (errors.length) throw new TypeError(`Incomplete records:\n${errors.join("\n")}`);
     const markdown = renderSummary(summarizeStudy(valid)); await mkdir(studyRoot, { recursive: true, mode: 0o700 }); await writeFile(join(studyRoot, "summary.md"), markdown, { mode: 0o600 }); process.stdout.write(`${join(studyRoot, "summary.md")}\n`); return;
   }
-  throw new TypeError("Usage: usability-study.ts new <p01> | status | summarize | delete <p01> | delete-raw");
+  throw new TypeError("Usage: usability-study.ts new <p01> | record <p01> | status | summarize | delete <p01> | delete-raw");
 }
 
 async function loadRecords(rawDirectory: string) {
@@ -139,6 +178,8 @@ function emptySession(courseId: CourseId): CourseStudySession {
   const task = () => ({ success: null, assistanceCount: null });
   return { courseId, level: courseId === UNIVERSITY_COURSE ? "university" : "high-school", classroomCode: "", tasks: { join: task(), submitQuestion: task(), reconnect: task(), finish: task() }, checkpointCorrect: null, ratings: { operationEase: null, contentClarity: null, questionHelpfulness: null, rejoinNaturalness: null } };
 }
+
+type Mutable<T> = { -readonly [P in keyof T]: T[P] extends readonly (infer U)[] ? Mutable<U>[] : T[P] extends object ? Mutable<T[P]> : T[P] };
 
 function validateSession(value: unknown, path: string): CourseStudySession {
   if (!isObject(value) || !isCourseId(value.courseId) || value.level !== (value.courseId === UNIVERSITY_COURSE ? "university" : "high-school") || typeof value.classroomCode !== "string" || !value.classroomCode.trim() || value.classroomCode.length > 32 || !isObject(value.tasks) || !isObject(value.ratings)) throw new TypeError(`${path}: course session is incomplete`);
@@ -163,5 +204,13 @@ function ratio(values: readonly CompletionValue[]) { return values.filter((value
 function median(values: readonly number[]) { const sorted = [...values].sort((left, right) => left - right); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2; }
 function percent(value: number) { return `${Math.round(value * 1000) / 10}%`; }
 function escapeCell(value: string) { return value.replaceAll("|", "\\|").replaceAll("\n", " "); }
+async function yesNo(ask: (question: string) => Promise<string>, question: string): Promise<boolean> { while (true) { const value = (await ask(question)).trim().toLowerCase(); if (value === "y" || value === "yes") return true; if (value === "n" || value === "no") return false; process.stdout.write("y または n を入力してください。\n"); } }
+async function integer(ask: (question: string) => Promise<string>, question: string, minimum: number, maximum: number): Promise<number> { while (true) { const value = (await ask(question)).trim(); try { return parseInteger(value, minimum, maximum, "value"); } catch { process.stdout.write(`${minimum}〜${maximum}の整数を入力してください。\n`); } } }
+function parseInteger(value: string, minimum: number, maximum: number, name: string): number { const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) throw new TypeError(`${name} must be an integer between ${minimum} and ${maximum}`); return parsed; }
+async function nonEmpty(ask: (question: string) => Promise<string>, question: string, maximum: number): Promise<string> { while (true) { const value = (await ask(question)).trim(); if (value && value.length <= maximum) return value; process.stdout.write(`1〜${maximum}文字で入力してください。\n`); } }
+async function choice<const T extends readonly string[]>(ask: (question: string) => Promise<string>, question: string, values: T): Promise<T[number]> { while (true) { const value = (await ask(question)).trim(); if (values.includes(value)) return value as T[number]; process.stdout.write(`${values.join(" / ")}から選んでください。\n`); } }
+function courseLabel(courseId: CourseId) { return courseId === "course.quadratic-functions" ? "高校数学・二次関数" : courseId === "course.dna-replication" ? "高校生物・DNA複製" : "大学・VAEの再パラメータ化"; }
+function taskLabel(task: TaskName) { return ({ join: "教室参加", submitQuestion: "質問送信", reconnect: "再接続", finish: "授業完走" } as const)[task]; }
+function ratingLabel(rating: RatingName) { return ({ operationEase: "必要な操作を迷わず行えた", contentClarity: "講義内容を理解しやすかった", questionHelpfulness: "質問した箇所を理解しやすくなった", rejoinNaturalness: "本編へ自然に戻れた" } as const)[rating]; }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

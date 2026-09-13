@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStudyRecord, renderSummary, summarizeStudy, validateCompleteRecord, type StudyRecord } from "./usability-study.ts";
+import { createStudyRecord, recordStudyWithPrompts, renderSummary, summarizeStudy, validateCompleteRecord, type StudyRecord } from "./usability-study.ts";
 
 describe("usability study", () => {
   it("counterbalances both high-school courses and the university course", () => {
@@ -11,6 +11,20 @@ describe("usability study", () => {
 
   it("requires recorded consent and complete task results", () => {
     expect(() => validateCompleteRecord(createStudyRecord("p01"))).toThrow("consent is incomplete");
+  });
+
+  it("records consent and both assigned sessions through fixed prompts", async () => {
+    const answers = ["y", "y", ...sessionAnswers("AB12CD"), ...sessionAnswers("EF34GH"), "n"];
+    const record = await recordStudyWithPrompts(createStudyRecord("p01"), async () => answers.shift() ?? "", new Date("2026-09-14T01:00:00Z"));
+    expect(record.consent.consentedAt).toBe("2026-09-14T01:00:00.000Z");
+    expect(record.sessions.map((session) => session.classroomCode)).toEqual(["AB12CD", "EF34GH"]);
+    expect(record.sessions.every((session) => session.tasks.reconnect.success)).toBe(true);
+  });
+
+  it("leaves the draft untouched when consent is not provided", async () => {
+    const draft = createStudyRecord("p01"); const answers = ["y", "n"];
+    await expect(recordStudyWithPrompts(draft, async () => answers.shift() ?? "")).rejects.toThrow("Consent was not provided");
+    expect(draft.consent.agreed).toBe(false);
   });
 
   it("passes a complete six-person round and blocks release for an open blocker", () => {
@@ -41,3 +55,5 @@ function completeRecord(participantId: string): StudyRecord {
   });
   return validateCompleteRecord(record);
 }
+
+function sessionAnswers(classroomCode: string) { return [classroomCode, "y", "0", "y", "0", "y", "0", "y", "0", "y", "4", "4", "4", "4"]; }

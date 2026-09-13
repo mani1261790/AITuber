@@ -30,6 +30,7 @@
 - [セルフホスト配布 受入記録 2026-09-14](./docs/acceptance/self-host-2026-09-14.md)
 - [成人ユーザビリティ評価プロトコル](./docs/research/usability-study-protocol.md)
 - [ユーザビリティ評価 同意説明](./docs/research/usability-study-consent.md)
+- [ユーザビリティ評価 参加案内](./docs/research/usability-study-invitation.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
 
