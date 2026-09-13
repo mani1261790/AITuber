@@ -48,7 +48,12 @@ const quadratic = {
   ],
   assessments: [{ id: "assessment.math.vertex", learningGoalIds: ["goal.math.calculate"], afterUnitId: "unit.math.example", prompt: "y = (x + 3)^2 - 4 の頂点を答えてください。", responseKind: "short-answer", options: [], rubric: { criteria: ["頂点を(-3, -4)と答える", "xの符号を反対に読む"], commonMistakes: ["(3, -4)と答える", "(-3, 4)と答える"] } }],
   preGeneratedSupplements: [{ id: "supplement.math.sign", triggerQuestions: ["なぜ括弧の符号を反対に読むのですか", "x + 3のときhはいくつですか"], unitIds: ["unit.math.supplement-sign"], autoPlayEligible: true }],
-  pronunciationDictionary: [{ surface: "a(x - h)^2 + k", reading: "エーかける、エックスひくエイチの二乗、たすケー" }],
+  pronunciationDictionary: [
+    { surface: "a(x - h)^2 + k", reading: "エーかける、エックスひくエイチの二乗、たすケー" },
+    { surface: "x", reading: "エックス" },
+    { surface: "h", reading: "エイチ" },
+    { surface: "k", reading: "ケー" },
+  ],
   schedule: { orderedUnitIds: ["unit.math.intro", "unit.math.parts", "unit.math.graph", "unit.math.complete", "unit.math.example", "unit.math.summary"], optionalUnitIds: ["unit.math.supplement-sign"] },
 } satisfies CoursePackage;
 

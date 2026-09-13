@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { quadraticFunctionsFixture } from "@aituber/content";
+import { quadraticFunctionsFixture, vaeReparameterizationFixture } from "@aituber/content";
 import { createSpeechCacheKey, type SpeechArtifact, type TextToSpeechProvider } from "@aituber/providers";
 import { LectureEventStore } from "@aituber/storage";
 import { applyPronunciationDictionary, FixedLectureService } from "./fixed-lecture-service.ts";
@@ -123,6 +123,12 @@ describe("pronunciation dictionary", () => {
       { surface: "DNA", reading: "ディーエヌエー" },
       { surface: "DNAポリメラーゼ", reading: "ディーエヌエーポリメラーゼ" },
     ])).toBe("ディーエヌエーポリメラーゼとディーエヌエー");
+  });
+
+  it("finalizes VAE symbols into unambiguous Japanese readings", () => {
+    const transform = vaeReparameterizationFixture.teachingUnits.find((unit) => unit.id === "unit.vae.transform")!;
+    expect(applyPronunciationDictionary(transform.speechText, vaeReparameterizationFixture.pronunciationDictionary))
+      .toBe("ゼットはミューたすシグマかけるイプシロンと計算します。ミューとシグマが分布の位置と広がりを決め、イプシロンが今回の揺らぎを決めます。");
   });
 });
 

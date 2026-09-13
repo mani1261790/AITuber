@@ -49,6 +49,7 @@ function ClassroomApp() {
     const startedAt = session?.speech.startedAt;
     if (!audio || !startedAt || !session.speech.audioUrl) return;
     const synchronize = () => {
+      audio.volume = 0.8;
       audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, Math.max(0, Date.now() - Date.parse(startedAt)) / 1_000);
       void audio.play().catch(() => { /* The visible controls let the viewer start audio when autoplay is blocked. */ });
     };

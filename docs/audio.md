@@ -31,7 +31,7 @@ AITUBER_FISH_AUDIO_MODEL=s2.1-pro-free
 AITUBER_FISH_AUDIO_VOICE_ID=b2d9d8db057042688a5e318b8f405bc2
 ```
 
-APIキーがない開発環境では、固定テスト音声の時計を使う。APIキーがある場合はFish Audioへ接続する。`pnpm verify:tts` の生成物は `.data/fish-audio-verification`、本実測の生成物は `.data/fish-audio-measurements` に保存し、どちらもgitへ含めない。
+APIキーがない開発環境では、固定テスト音声の時計を使う。APIキーがある場合は、通常の `pnpm dev` もリポジトリ直下の `.env` を読み、Fish Audioへ接続する。シェルで明示した環境変数は `.env` より優先される。`pnpm verify:tts` の生成物は `.data/fish-audio-verification`、本実測の生成物は `.data/fish-audio-measurements` に保存し、どちらもgitへ含めない。
 
 ## キャッシュ
 
@@ -55,3 +55,5 @@ APIキーを設定して `pnpm measure:tts` を実行する。数学の式、DNA
 ## ローカル基準機での計測
 
 2026-09-14にChromeと固定テスト音声を使い、停止POSTの開始から教室の音声要素が除去されるまでを20回測定した。p95は101ms、最大102msで、NFR-01の250ms以内を満たした。音声の再生位置と、字幕・意味ID強調に使う授業時計の絶対差を100ms間隔で20点測定した結果、p95は195ms、最大195msで、NFR-04の300ms以内を満たした。これはローカル開発環境の結果であり、Fish Audioの外部合成時間は含まない。
+
+Fish Audio実APIの4試料、発音照合、長文連続性、実ブラウザー再生、停止・旧epoch拒否の結果は、[Fish Audio実API受入記録](./acceptance/fish-audio-2026-09-14.md)にまとめた。この結果から「きょうこ」をMVP標準音声として固定する。

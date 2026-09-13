@@ -117,7 +117,15 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
     const response = await this.#fetch(this.#endpoint, {
       method: "POST",
       headers: { authorization: `Bearer ${this.#apiKey}`, "content-type": "application/json", model: this.model },
-      body: JSON.stringify({ text: request.text, reference_id: request.voiceId, format: "opus", sample_rate: 48_000, latency: "balanced", normalize: true, chunk_length: 300 }),
+      body: JSON.stringify({
+        text: request.text,
+        reference_id: request.voiceId,
+        format: "opus",
+        sample_rate: 48_000,
+        latency: "balanced",
+        normalize: true,
+        chunk_length: 300,
+      }),
       signal: options.signal,
     });
     if (!response.ok || !response.body) throw new Error(`Fish Audio TTS failed with HTTP ${response.status}`);

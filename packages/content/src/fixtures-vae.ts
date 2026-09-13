@@ -48,7 +48,16 @@ const vae = {
   ],
   assessments: [{ id: "assessment.vae.roles", learningGoalIds: ["goal.vae.transform", "goal.vae.gradient"], afterUnitId: "unit.vae.elbo", prompt: "再パラメータ化で、モデルのパラメーターから独立にサンプリングする変数はどれですか。", responseKind: "multiple-choice", options: ["epsilon", "mu", "sigma", "phi"], rubric: { criteria: ["epsilonを選ぶ", "epsilonがN(0, I)から引かれると説明する"], commonMistakes: ["z自体を独立ノイズとみなす", "muをサンプリング値とみなす"] } }],
   preGeneratedSupplements: [{ id: "supplement.vae.normal-transform", triggerQuestions: ["なぜこの式で同じ分布になりますか", "epsilonは何ですか", "sigmaを掛ける意味は何ですか"], unitIds: ["unit.vae.supplement-normal"], autoPlayEligible: true }],
-  pronunciationDictionary: [{ surface: "epsilon", reading: "イプシロン" }, { surface: "⊙", reading: "要素ごとの積" }, { surface: "ELBO", reading: "エルボ" }, { surface: "KL", reading: "ケーエル" }],
+  pronunciationDictionary: [
+    { surface: "epsilon", reading: "イプシロン" },
+    { surface: "sigma", reading: "シグマ" },
+    { surface: "mu", reading: "ミュー" },
+    { surface: "phi", reading: "ファイ" },
+    { surface: "z", reading: "ゼット" },
+    { surface: "⊙", reading: "要素ごとの積" },
+    { surface: "ELBO", reading: "エルボ" },
+    { surface: "KL", reading: "ケーエル" },
+  ],
   schedule: { orderedUnitIds: ["unit.vae.prerequisite", "unit.vae.sampling-problem", "unit.vae.epsilon", "unit.vae.transform", "unit.vae.gradient", "unit.vae.elbo"], optionalUnitIds: ["unit.vae.supplement-normal"] },
 } satisfies CoursePackage;
 
