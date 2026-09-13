@@ -28,6 +28,8 @@
 - [MVP総合受入記録 2026-09-14](./docs/acceptance/mvp-2026-09-14.md)
 - [セルフホスト運用](./docs/self-hosting.md)
 - [セルフホスト配布 受入記録 2026-09-14](./docs/acceptance/self-host-2026-09-14.md)
+- [成人ユーザビリティ評価プロトコル](./docs/research/usability-study-protocol.md)
+- [ユーザビリティ評価 同意説明](./docs/research/usability-study-consent.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
 

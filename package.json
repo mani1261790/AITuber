@@ -24,6 +24,11 @@
     "backup": "node --env-file-if-exists=.env --experimental-strip-types scripts/backup-self-host.ts",
     "restore": "node --env-file-if-exists=.env --experimental-strip-types scripts/restore-self-host.ts",
     "verify:self-host": "node --experimental-strip-types scripts/verify-self-host.ts",
+    "study:new": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts new",
+    "study:status": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts status",
+    "study:summarize": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts summarize",
+    "study:delete": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete",
+    "study:delete-raw": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete-raw",
     "verify:client-boundaries": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-client-boundaries.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries && pnpm verify:self-host"
   },
