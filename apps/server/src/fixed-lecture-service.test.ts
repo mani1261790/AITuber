@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { quadraticFunctionsFixture, vaeReparameterizationFixture } from "@aituber/content";
+import type { LiveSupplementView } from "@aituber/contracts";
 import { createSpeechCacheKey, type SpeechArtifact, type TextToSpeechProvider } from "@aituber/providers";
 import { LectureEventStore } from "@aituber/storage";
 import { applyPronunciationDictionary, FixedLectureService } from "./fixed-lecture-service.ts";
@@ -120,6 +121,31 @@ describe("FixedLectureService", () => {
     expect(paused.status).toBe("PAUSED");
     expect(paused.progress.completed).toBe(0);
     expect(paused.speech.audioUrl).toBeNull();
+  });
+
+  it("serves an in-flight audio request briefly when a same-epoch supplement interrupts playback", async () => {
+    service.close(); service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: fixedProvider(), voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("fish-audio"));
+    const speaking = service.getSession(started.id); const cacheKey = speaking.speech.audioUrl!.split("/").at(-1)!.split("?")[0]!;
+    const origin = service.captureSupplementOrigin(started.id, "target.math.vertex-form");
+    const view: LiveSupplementView = { id: "supplement.browser-race", questionId: "question.browser-race", status: "preparing", attempt: 0, origin, candidate: null, failure: null, adoptedAt: new Date().toISOString(), firstAudioAt: null };
+    service.announceSupplement(started.id, view, { interrupt: true, bridgeText: null, bridgeTargetIds: [] });
+    expect([...service.getSpeechAudio(started.id, speaking.epoch, cacheKey).audio]).toEqual([1, 2, 3]);
+  });
+
+  it("resumes an interrupted live supplement without completing the main unit", () => {
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    const origin = service.captureSupplementOrigin(started.id, "target.math.vertex-form");
+    const candidate = { speechText: "補足です。", captionText: "補足", sceneId: "scene.math.form", focusTargetIds: ["target.math.vertex-form"], boardPatches: [], sourceIds: ["source.quadratic"], knowledgeBasis: "course" as const, calculations: [], corrections: [] };
+    const preparing: LiveSupplementView = { id: "supplement.pause", questionId: "question.pause", status: "preparing", attempt: 1, origin, candidate: null, failure: null, adoptedAt: new Date().toISOString(), firstAudioAt: null };
+    service.announceSupplement(started.id, preparing, { interrupt: true, bridgeText: null, bridgeTargetIds: [] });
+    service.queueSupplement(started.id, { ...preparing, status: "ready", candidate }, { onPlaybackStarted: () => undefined, onCompleted: () => undefined });
+    expect(service.getSession(started.id).liveSupplement?.status).toBe("playing");
+    service.command(started.id, { command: "pause" }); expect(service.getSession(started.id).status).toBe("PAUSED");
+    service.command(started.id, { command: "resume" }); expect(service.getSession(started.id).liveSupplement?.status).toBe("playing");
+    vi.advanceTimersByTime(100);
+    expect(service.getSession(started.id)).toMatchObject({ status: "TEACHING", currentUnitId: "unit.math.intro", completedUnitIds: [] });
   });
 
   it("continues with captions after a TTS failure", async () => {

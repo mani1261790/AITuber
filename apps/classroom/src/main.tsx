@@ -130,16 +130,21 @@ function ClassroomApp() {
   }
 
   const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
+  const supplementCandidate = session?.liveSupplement?.status === "playing" ? session.liveSupplement.candidate : null;
   const activeSpeechSegment = session?.speech.segments.find((segment) => speechElapsedMs >= segment.startMs && speechElapsedMs < segment.endMs) ?? null;
   const scene = useMemo(() => {
     if (!session || !displayUnit) return null;
-    let board = applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches);
+    const sceneId = supplementCandidate?.sceneId ?? displayUnit.sceneId;
+    const corrections = session.boardCorrections.filter((patch) => patch.sceneId === sceneId).map((patch) => ({ operation: "replace" as const, targetId: patch.targetId, content: patch.content }));
+    let board = applyBoardPatches(session.course, createBoardState(session.course, sceneId), sceneId === displayUnit.sceneId ? displayUnit.boardPatches : []);
+    board = applyBoardPatches(session.course, board, corrections);
+    board = applyBoardPatches(session.course, board, supplementCandidate?.boardPatches ?? []);
     const targetIds = activeSpeechSegment?.semanticTargetIds.length
       ? activeSpeechSegment.semanticTargetIds
-      : selectedTargetId ? [selectedTargetId] : displayUnit.focusTargetIds;
+      : selectedTargetId ? [selectedTargetId] : supplementCandidate?.focusTargetIds ?? displayUnit.focusTargetIds;
     board = focusSemanticTargets(session.course, board, targetIds);
-    return resolveStageScene(session.course, displayUnit.sceneId, board);
-  }, [session, displayUnit, selectedTargetId, activeSpeechSegment]);
+    return resolveStageScene(session.course, sceneId, board);
+  }, [session, displayUnit, supplementCandidate, selectedTargetId, activeSpeechSegment]);
   const currentGoal = displayUnit
     ? session?.course.learningGoals.find((goal) => displayUnit.learningGoalIds.includes(goal.id))?.description
     : null;
@@ -196,19 +201,22 @@ function ClassroomApp() {
       <div className="broadcast-layout">
         <div className="broadcast-main">
           {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
+          {session.liveSupplement?.status === "preparing" && <p className="notice notice--supplement" role="status">質問に答える補足を教材から準備しています。本編は安全な区切りまで続きます。</p>}
+          {session.liveSupplement?.status === "bridging" && <p className="notice notice--supplement" role="status">次の説明に必要な質問です。補足の準備中につなぎ説明をしています。</p>}
+          {session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
           {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-labelledby="scene-title">
             <MascotView presentation={mascotPresentation} />
-            <div className="scene-heading"><div><span>NOW EXPLAINING</span><h2 id="scene-title">{scene.title}</h2></div><p>選ぶと、この箇所について質問できます</p></div>
+            <div className="scene-heading"><div><span>{supplementCandidate ? "LIVE SUPPLEMENT" : "NOW EXPLAINING"}</span><h2 id="scene-title">{scene.title}</h2></div><p>{supplementCandidate ? "質問に関連する箇所を補足しています" : "選ぶと、この箇所について質問できます"}</p></div>
             <div className={`scene-grid scene-grid--${scene.templateId}`}>
               {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={setSelectedTargetId} />)}
             </div>
           </section>}
 
-          {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />字幕</h2><p>{session.speech.text ?? displayUnit.speechText}</p></section>}
+          {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.speechText}</p></section>}
 
           {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
             <p className="section-kicker">CHECKPOINT</p><h2 id="checkpoint-title">確認問題</h2><p>{session.assessment.prompt}</p>
@@ -227,7 +235,7 @@ function ClassroomApp() {
         </div>
         <aside className="lecture-rail">
           <section className="concept-card" aria-labelledby="current-goal-title"><p>LEARNING FOCUS</p><h2 id="current-goal-title">現在の学習目標</h2><strong>{currentGoal ?? "講義のまとめ"}</strong></section>
-          {scene && session.status !== "FINISHED" && <section className="target-list" aria-label="質問"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={selectedTargetId === target.id} onClick={() => setSelectedTargetId(target.id)}><span>{target.label}</span>{selectedTargetId === target.id && <b>選択中</b>}</button>)}</div><form className="question-form" onSubmit={(event) => void submitQuestion(event)}><label>質問<textarea value={questionText} maxLength={1000} onChange={(event) => setQuestionText(event.target.value)} placeholder={selectedTargetId ? `${scene.targets.find((target) => target.id === selectedTargetId)?.label ?? "選択箇所"}について質問` : "先に質問する箇所を選んでください"} /></label><button type="submit" disabled={questioning || !selectedTargetId || !questionText.trim()}>{questioning ? "受付中…" : "質問を送る"}</button></form>{questions.length > 0 && <div className="question-queue" aria-live="polite"><h3>質問の受付状況</h3>{questions.map((question) => <article key={question.id} className={`question-card question-card--${question.disposition}`}><div><strong>受付済み · {question.disposition === "answer-now" ? "授業中に回答" : "授業後に回答"}</strong><span>{question.supporterCount}人</span></div><p>{question.text}</p><small>{question.reason}</small></article>)}</div>}</section>}
+          {scene && session.status !== "FINISHED" && <section className="target-list" aria-label="質問"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={selectedTargetId === target.id} onClick={() => setSelectedTargetId(target.id)}><span>{target.label}</span>{selectedTargetId === target.id && <b>選択中</b>}</button>)}</div><form className="question-form" onSubmit={(event) => void submitQuestion(event)}><label>質問<textarea value={questionText} maxLength={1000} onChange={(event) => setQuestionText(event.target.value)} placeholder={selectedTargetId ? `${scene.targets.find((target) => target.id === selectedTargetId)?.label ?? "選択箇所"}について質問` : "先に質問する箇所を選んでください"} /></label><button type="submit" disabled={questioning || !selectedTargetId || !questionText.trim()}>{questioning ? "受付中…" : "質問を送る"}</button></form>{questions.length > 0 && <div className="question-queue" aria-live="polite"><h3>質問の受付状況</h3>{questions.map((question) => <article key={question.id} className={`question-card question-card--${question.disposition}`}><div><strong>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "保留 · 授業後に回答" : question.status === "answering" ? "補足を準備中" : `受付済み · ${question.disposition === "answer-now" ? "授業中に回答" : "授業後に回答"}`}</strong><span>{question.supporterCount}人</span></div><p>{question.text}</p><small>{question.reason}</small></article>)}</div>}</section>}
         </aside>
       </div>
     </main>

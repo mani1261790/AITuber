@@ -54,6 +54,7 @@ button { cursor: pointer; }
 .broadcast-layout { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 290px; gap: 20px; align-items: stretch; overflow: hidden; }
 .broadcast-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
 .notice, .error { margin: 0 0 14px; padding: 13px 16px; border: 1px solid #765f2f; color: #ffe9b1; background: #2a241e; }
+.notice--supplement { border-color: #625df5; color: #eeedff; background: #242449; }
 .error { border-color: #8d4137; color: #ffd1c8; background: #2d1c22; }
 .playback { display: flex; width: fit-content; align-items: center; gap: 9px; margin: 0 0 12px; color: #d5d5df; font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; letter-spacing: 0.06em; }
 .playback-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); animation: pulse 900ms ease-in-out infinite alternate; }

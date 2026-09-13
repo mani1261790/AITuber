@@ -21,6 +21,41 @@ export interface FixedSessionView {
   readonly progress: { readonly completed: number; readonly total: number };
   readonly assessment: ReadonlyCoursePackage["assessments"][number] | null;
   readonly speech: SessionSpeechView;
+  readonly liveSupplement: LiveSupplementView | null;
+  readonly boardCorrections: readonly { readonly sceneId: string; readonly targetId: string; readonly content: string }[];
+}
+
+export interface SupplementOriginView {
+  readonly lastCompletedUnitId: string | null;
+  readonly unfinishedUnitIds: readonly string[];
+  readonly nextUnitId: string | null;
+  readonly displayUnitId: string | null;
+  readonly questionTargetId: string;
+  readonly remainingMs: number;
+}
+
+export interface LiveSupplementCandidateView {
+  readonly speechText: string;
+  readonly captionText: string;
+  readonly sceneId: string;
+  readonly focusTargetIds: readonly string[];
+  readonly boardPatches: readonly { readonly operation: "show" | "replace"; readonly targetId: string; readonly content?: string }[];
+  readonly sourceIds: readonly string[];
+  readonly knowledgeBasis: "course" | "general";
+  readonly calculations: readonly { readonly operator: "add" | "subtract" | "multiply" | "divide"; readonly left: number; readonly right: number; readonly result: number }[];
+  readonly corrections: readonly { readonly targetId: string; readonly content: string; readonly rationale: string }[];
+}
+
+export interface LiveSupplementView {
+  readonly id: string;
+  readonly questionId: string;
+  readonly status: "preparing" | "bridging" | "ready" | "playing" | "rejoining" | "completed" | "deferred";
+  readonly attempt: number;
+  readonly origin: SupplementOriginView;
+  readonly candidate: LiveSupplementCandidateView | null;
+  readonly failure: string | null;
+  readonly adoptedAt: string;
+  readonly firstAudioAt: string | null;
 }
 
 export interface SessionSpeechView {
@@ -118,6 +153,7 @@ export interface ClassroomQuestionView {
   readonly updatedAt: string;
   readonly supporterCount: number;
   readonly status: "accepted" | "answering" | "answered";
+  readonly resolution: "pending" | "answered" | "deferred";
   readonly disposition: QuestionDisposition;
   readonly reason: string;
   readonly priority: QuestionPrioritySignals;

@@ -16,6 +16,7 @@ export interface StoredQuestionThread {
   readonly supporterCount: number;
   readonly participantIds: readonly string[];
   readonly status: "accepted" | "answering" | "answered";
+  readonly resolution: "pending" | "answered" | "deferred";
   readonly disposition: "answer-now" | "after-class";
   readonly reason: string;
   readonly priority: { readonly score: number; readonly currentGoalRelated: boolean; readonly prerequisiteForNext: boolean; readonly supporterCount: number; readonly waitedMs: number; readonly remainingMs: number };
@@ -24,7 +25,7 @@ export interface StoredQuestionThread {
 interface QuestionRow {
   id: string; session_id: string; course_package_id: string; course_package_version: number; scene_id: string; semantic_target_id: string;
   last_completed_unit_id: string | null; text: string; normalized_intent: string; submitted_at: string; updated_at: string;
-  status: StoredQuestionThread["status"]; disposition: StoredQuestionThread["disposition"]; reason: string; priority_score: number;
+  status: StoredQuestionThread["status"]; resolution: StoredQuestionThread["resolution"]; disposition: StoredQuestionThread["disposition"]; reason: string; priority_score: number;
   current_goal_related: number; prerequisite_for_next: number; waited_ms: number; remaining_ms: number; supporter_count: number; participant_ids: string;
 }
 
@@ -34,7 +35,7 @@ export class QuestionStore {
   constructor(readonly databasePath: string) { this.#database = new Database(databasePath); this.#database.pragma("foreign_keys = ON"); this.#database.pragma("journal_mode = WAL"); this.#database.pragma("synchronous = FULL"); this.#migrate(); }
   close() { this.#database.close(); }
 
-  create(input: Omit<StoredQuestionThread, "id" | "updatedAt" | "supporterCount" | "participantIds" | "status" | "disposition" | "reason" | "priority"> & { readonly participantId: string }): StoredQuestionThread {
+  create(input: Omit<StoredQuestionThread, "id" | "updatedAt" | "supporterCount" | "participantIds" | "status" | "resolution" | "disposition" | "reason" | "priority"> & { readonly participantId: string }): StoredQuestionThread {
     const id = `question.${randomUUID()}`;
     this.#database.transaction(() => {
       this.#database.prepare(`INSERT INTO question_threads (id, session_id, course_package_id, course_package_version, scene_id, semantic_target_id, last_completed_unit_id, text, normalized_intent, submitted_at, updated_at, status, disposition, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'accepted', 'answer-now', '受付順に回答します。')`).run(id, input.sessionId, input.coursePackageId, input.coursePackageVersion, input.sceneId, input.semanticTargetId, input.lastCompletedUnitId, input.text, input.normalizedIntent, input.submittedAt, input.submittedAt);
@@ -55,7 +56,18 @@ export class QuestionStore {
   }
 
   list(sessionId: string): readonly StoredQuestionThread[] { return (this.#query("WHERE q.session_id = ?", "ORDER BY q.submitted_at ASC").all(sessionId) as QuestionRow[]).map(mapQuestion); }
-  listOpen(sessionId: string): readonly StoredQuestionThread[] { return (this.#query("WHERE q.session_id = ? AND q.status != 'answered'", "ORDER BY q.submitted_at ASC").all(sessionId) as QuestionRow[]).map(mapQuestion); }
+  listOpen(sessionId: string): readonly StoredQuestionThread[] { return (this.#query("WHERE q.session_id = ? AND q.resolution = 'pending'", "ORDER BY q.submitted_at ASC").all(sessionId) as QuestionRow[]).map(mapQuestion); }
+
+  updateProcessing(id: string, status: StoredQuestionThread["status"], updatedAt = new Date().toISOString()): StoredQuestionThread {
+    this.#database.prepare("UPDATE question_threads SET status = ?, updated_at = ? WHERE id = ?").run(status, updatedAt, id);
+    return this.get(id);
+  }
+
+  resolve(id: string, resolution: Exclude<StoredQuestionThread["resolution"], "pending">, reason: string, updatedAt = new Date().toISOString()): StoredQuestionThread {
+    const status: StoredQuestionThread["status"] = resolution === "answered" ? "answered" : "accepted";
+    this.#database.prepare("UPDATE question_threads SET status = ?, resolution = ?, disposition = 'after-class', reason = ?, updated_at = ? WHERE id = ?").run(status, resolution, reason, updatedAt, id);
+    return this.get(id);
+  }
 
   updateClassifications(updates: readonly { readonly id: string; readonly disposition: StoredQuestionThread["disposition"]; readonly reason: string; readonly priority: StoredQuestionThread["priority"]; readonly updatedAt: string }[]) {
     const statement = this.#database.prepare("UPDATE question_threads SET disposition = ?, reason = ?, priority_score = ?, current_goal_related = ?, prerequisite_for_next = ?, waited_ms = ?, remaining_ms = ?, updated_at = ? WHERE id = ?");
@@ -79,10 +91,10 @@ export class QuestionStore {
       participant_id TEXT NOT NULL, text TEXT NOT NULL, submitted_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS question_submissions_question ON question_submissions(question_id, participant_id);
-  `); }
+  `); if (!this.#database.prepare("PRAGMA table_info(question_threads)").all().some((column) => (column as { name: string }).name === "resolution")) this.#database.exec("ALTER TABLE question_threads ADD COLUMN resolution TEXT NOT NULL DEFAULT 'pending' CHECK(resolution IN ('pending','answered','deferred'))"); }
 }
 
 function mapQuestion(row: QuestionRow): StoredQuestionThread {
   const participantIds = row.participant_ids ? row.participant_ids.split(",") : [];
-  return { id: row.id, sessionId: row.session_id, coursePackageId: row.course_package_id, coursePackageVersion: row.course_package_version, sceneId: row.scene_id, semanticTargetId: row.semantic_target_id, lastCompletedUnitId: row.last_completed_unit_id, text: row.text, normalizedIntent: row.normalized_intent, submittedAt: row.submitted_at, updatedAt: row.updated_at, supporterCount: row.supporter_count, participantIds, status: row.status, disposition: row.disposition, reason: row.reason, priority: { score: row.priority_score, currentGoalRelated: Boolean(row.current_goal_related), prerequisiteForNext: Boolean(row.prerequisite_for_next), supporterCount: row.supporter_count, waitedMs: row.waited_ms, remainingMs: row.remaining_ms } };
+  return { id: row.id, sessionId: row.session_id, coursePackageId: row.course_package_id, coursePackageVersion: row.course_package_version, sceneId: row.scene_id, semanticTargetId: row.semantic_target_id, lastCompletedUnitId: row.last_completed_unit_id, text: row.text, normalizedIntent: row.normalized_intent, submittedAt: row.submitted_at, updatedAt: row.updated_at, supporterCount: row.supporter_count, participantIds, status: row.status, resolution: row.resolution, disposition: row.disposition, reason: row.reason, priority: { score: row.priority_score, currentGoalRelated: Boolean(row.current_goal_related), prerequisiteForNext: Boolean(row.prerequisite_for_next), supporterCount: row.supporter_count, waitedMs: row.waited_ms, remainingMs: row.remaining_ms } };
 }

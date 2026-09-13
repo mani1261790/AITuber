@@ -1,12 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { LectureEventStore, QuestionStore } from "@aituber/storage";
+import { LectureEventStore, LiveSupplementStore, QuestionStore } from "@aituber/storage";
 import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
 import { QuestionQueueService } from "./question-queue-service.ts";
+import { LiveSupplementService } from "./live-supplement-service.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
@@ -24,6 +25,7 @@ if (!Number.isSafeInteger(playbackUnitMs) || playbackUnitMs < 100) throw new Err
 mkdirSync(dirname(databasePath), { recursive: true });
 const store = new LectureEventStore(databasePath);
 const questionStore = new QuestionStore(databasePath);
+const supplementStore = new LiveSupplementStore(databasePath);
 let speechProvider: TextToSpeechProvider | undefined;
 let voiceId = fishVoiceId;
 if (ttsTestMode === "tone") {
@@ -40,6 +42,7 @@ const llmSettings = new LlmSettingsStore(llmSettingsPath);
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider(), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }) });
+const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider(); } catch { return null; } } });
 const server = createApp(lecture, llmSettings, authoring, questions);
 
 server.listen(port, host, () => {
@@ -48,11 +51,13 @@ server.listen(port, host, () => {
 });
 
 function shutdown() {
+  supplements.close();
   lecture.close();
   server.emit("aituber:shutdown");
   server.close((error) => {
     store.close();
     questionStore.close();
+    supplementStore.close();
     if (error) {
       process.stderr.write(`${error.message}\n`);
       process.exitCode = 1;

@@ -29,16 +29,22 @@ export class QuestionQueueService {
 
   list(sessionId: string): readonly ClassroomQuestionView[] { return sortQuestions(this.#store.list(sessionId).map(toView)); }
   subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void) { this.#listeners.add(listener); return () => this.#listeners.delete(listener); }
+  markAnswering(id: string): void { const question = this.#store.updateProcessing(id, "answering"); this.#notify(question.sessionId); }
+  markAnswered(id: string): void { const question = this.#store.resolve(id, "answered", "授業中に回答しました。"); this.#reclassifyAndNotify(question.sessionId); }
+  defer(id: string, reason: string): void { const question = this.#store.resolve(id, "deferred", reason); this.#reclassifyAndNotify(question.sessionId); }
 
   #classify(sessionId: string, context: QuestionSessionContext, now: string): readonly ClassroomQuestionView[] {
     const open = this.#store.listOpen(sessionId); const course = context.session.course; const activeUnit = course.teachingUnits.find((unit) => unit.id === context.session.currentUnitId) ?? null;
+    const activeScheduleIndex = context.session.currentUnitId ? course.schedule.orderedUnitIds.indexOf(context.session.currentUnitId) : -1;
+    const nextUnitId = activeScheduleIndex >= 0 ? course.schedule.orderedUnitIds[activeScheduleIndex + 1] : undefined;
+    const nextUnit = course.teachingUnits.find((unit) => unit.id === nextUnitId) ?? null;
     const participantOpenCounts = new Map<string, number>();
     open.forEach((question) => question.participantIds.forEach((id) => participantOpenCounts.set(id, (participantOpenCounts.get(id) ?? 0) + 1)));
     const ranked = open.map((question) => {
       const focusedUnits = course.teachingUnits.filter((unit) => unit.focusTargetIds.includes(question.semanticTargetId));
       const relatedUnits = focusedUnits.length ? focusedUnits : course.teachingUnits.filter((unit) => unit.sceneId === question.sceneId);
       const currentGoalRelated = Boolean(activeUnit && relatedUnits.some((unit) => unit.learningGoalIds.some((goal) => activeUnit.learningGoalIds.includes(goal))));
-      const prerequisiteForNext = Boolean(activeUnit && relatedUnits.some((unit) => activeUnit.prerequisiteUnitIds.includes(unit.id)));
+      const prerequisiteForNext = Boolean(nextUnit && relatedUnits.some((unit) => nextUnit.prerequisiteUnitIds.includes(unit.id)));
       const waitedMs = Math.max(0, Date.parse(now) - Date.parse(question.submittedAt));
       const repeatPenalty = Math.max(0, Math.min(...question.participantIds.map((id) => participantOpenCounts.get(id) ?? 1)) - 2) * 24;
       const score = (prerequisiteForNext ? 50 : 0) + (currentGoalRelated ? 30 : 0) + question.supporterCount * 12 + Math.min(30, waitedMs / 60_000) - repeatPenalty;
@@ -52,6 +58,9 @@ export class QuestionQueueService {
     }));
     return this.list(sessionId);
   }
+
+  #notify(sessionId: string) { const questions = this.list(sessionId); this.#listeners.forEach((listener) => listener(sessionId, questions)); }
+  #reclassifyAndNotify(sessionId: string) { const context = this.#context(sessionId); const questions = this.#classify(sessionId, context, new Date().toISOString()); this.#listeners.forEach((listener) => listener(sessionId, questions)); }
 }
 
 function boundedQuestion(value: string): string { const text = typeof value === "string" ? value.trim().replaceAll(/\s+/g, " ") : ""; if (!text || text.length > 1_000) throw new TypeError("質問は1〜1000文字で入力してください。"); return text; }
@@ -60,5 +69,5 @@ export function sameIntent(left: string, right: string): boolean { if (left === 
 function pairs(value: string): string[] { return Array.from({ length: Math.max(0, value.length - 1) }, (_, index) => value.slice(index, index + 2)); }
 function answerNowReason(priority: StoredQuestionThread["priority"]): string { if (priority.prerequisiteForNext) return "次の説明に必要な前提なので、授業中に回答します。"; if (priority.currentGoalRelated) return "現在の学習目標に近いため、授業中に回答します。"; if (priority.supporterCount > 1) return `${priority.supporterCount}人から同じ質問があるため、授業中に回答します。`; return "次の区切りで授業中に回答します。"; }
 function afterClassReason(canAnswerNow: boolean, finished: boolean, index: number, priority: StoredQuestionThread["priority"]): string { if (finished) return "講義が終了しているため、授業後に回答します。"; if (!canAnswerNow) return "授業の残り時間が少ないため、授業後に回答します。"; if (index > 0) return `他の質問との優先度と残り時間を比較し、授業後に回答します。${priority.supporterCount > 1 ? ` 同じ質問は${priority.supporterCount}人です。` : ""}`; return "授業後に回答します。"; }
-function toView(question: StoredQuestionThread): ClassroomQuestionView { return { id: question.id, text: question.text, coursePackageId: question.coursePackageId, coursePackageVersion: question.coursePackageVersion, sceneId: question.sceneId, semanticTargetId: question.semanticTargetId, lastCompletedUnitId: question.lastCompletedUnitId, submittedAt: question.submittedAt, updatedAt: question.updatedAt, supporterCount: question.supporterCount, status: question.status, disposition: question.disposition, reason: question.reason, priority: question.priority }; }
+function toView(question: StoredQuestionThread): ClassroomQuestionView { return { id: question.id, text: question.text, coursePackageId: question.coursePackageId, coursePackageVersion: question.coursePackageVersion, sceneId: question.sceneId, semanticTargetId: question.semanticTargetId, lastCompletedUnitId: question.lastCompletedUnitId, submittedAt: question.submittedAt, updatedAt: question.updatedAt, supporterCount: question.supporterCount, status: question.status, resolution: question.resolution, disposition: question.disposition, reason: question.reason, priority: question.priority }; }
 function sortQuestions(questions: readonly ClassroomQuestionView[]) { return [...questions].sort((left, right) => Number(right.disposition === "answer-now") - Number(left.disposition === "answer-now") || right.priority.score - left.priority.score || left.submittedAt.localeCompare(right.submittedAt)); }
