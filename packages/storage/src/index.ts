@@ -1,1 +1,1 @@
-export const STORAGE_PACKAGE = "@aituber/storage" as const;
+export * from "./lecture-event-store.ts";
