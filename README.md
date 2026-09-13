@@ -11,6 +11,7 @@
 - [実装計画とIssue一覧](./docs/IMPLEMENTATION_PLAN.md)
 - [初期設計仕様 v0.2](./aituber_lecture_spec_v0.2.html)
 - [ADR 0001: ワークスペースと境界](./docs/adr/0001-workspace-and-boundaries.md)
+- [Course Package Contract v1](./docs/contracts/course-package-v1.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
 

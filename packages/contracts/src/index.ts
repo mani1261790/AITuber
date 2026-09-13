@@ -1,1 +1,1 @@
-export const CONTRACTS_PACKAGE = "@aituber/contracts" as const;
+export * from "./course-package.ts";
