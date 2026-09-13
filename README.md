@@ -21,6 +21,7 @@
 - [教材の取り込み・生成・審査](./docs/course-authoring.md)
 - [質問受付と優先キュー](./docs/questions.md)
 - [ライブ補足と本編への再接続](./docs/live-supplements.md)
+- [確認問題、学習証拠、能動的な補足](./docs/learning-evidence.md)
 - [LAN教室の参加と同期](./docs/lan-classroom.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。

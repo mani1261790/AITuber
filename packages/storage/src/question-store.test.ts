@@ -14,7 +14,7 @@ describe("QuestionStore", () => {
     store.support(created.id, "learner.one", "もう一度", "2026-09-14T00:00:01.000Z");
     store.support(created.id, "learner.two", "私も知りたい", "2026-09-14T00:00:02.000Z");
     const stored = store.get(created.id);
-    expect(stored).toMatchObject({ coursePackageId: "course.math", coursePackageVersion: 3, sceneId: "scene.form", semanticTargetId: "target.h", lastCompletedUnitId: "unit.intro", supporterCount: 2, resolution: "pending" });
+    expect(stored).toMatchObject({ coursePackageId: "course.math", coursePackageVersion: 3, sceneId: "scene.form", semanticTargetId: "target.h", lastCompletedUnitId: "unit.intro", supporterCount: 2, resolution: "pending", origin: "learner-question" });
     expect(stored.participantIds).toEqual(expect.arrayContaining(["learner.one", "learner.two"]));
   });
 
@@ -30,5 +30,10 @@ describe("QuestionStore", () => {
     expect(store.updateProcessing(answering.id, "answering")).toMatchObject({ status: "answering", resolution: "pending" });
     expect(store.resolve(answering.id, "deferred", "20秒超過")).toMatchObject({ status: "accepted", resolution: "deferred", disposition: "after-class", reason: "20秒超過" });
     expect(store.listOpen("session.one")).toEqual([]);
+  });
+
+  it("separates automatic pedagogy triggers from learner questions", () => {
+    const created = store.create({ sessionId: "session.one", participantId: "system.pedagogy", coursePackageId: "course.math", coursePackageVersion: 1, sceneId: "scene.form", semanticTargetId: "target.h", lastCompletedUnitId: null, text: "確認結果から補足", normalizedIntent: "確認結果から補足", submittedAt: "2026-09-14T00:00:00.000Z", origin: "pedagogy-trigger" });
+    expect(created).toMatchObject({ origin: "pedagogy-trigger", supporterCount: 1 });
   });
 });

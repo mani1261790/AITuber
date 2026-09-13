@@ -134,6 +134,15 @@ describe("FixedLectureService", () => {
     expect([...service.getSpeechAudio(started.id, speaking.epoch, cacheKey).audio]).toEqual([1, 2, 3]);
   });
 
+  it("serves a completed unit artifact briefly for an in-flight browser request", async () => {
+    service.close(); service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: fixedProvider(), voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("fish-audio"));
+    const speaking = service.getSession(started.id); const cacheKey = speaking.speech.audioUrl!.split("/").at(-1)!.split("?")[0]!;
+    vi.advanceTimersByTime(300);
+    expect([...service.getSpeechAudio(started.id, speaking.epoch, cacheKey).audio]).toEqual([1, 2, 3]);
+  });
+
   it("resumes an interrupted live supplement without completing the main unit", () => {
     const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     const origin = service.captureSupplementOrigin(started.id, "target.math.vertex-form");

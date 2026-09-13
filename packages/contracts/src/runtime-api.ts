@@ -23,6 +23,30 @@ export interface FixedSessionView {
   readonly speech: SessionSpeechView;
   readonly liveSupplement: LiveSupplementView | null;
   readonly boardCorrections: readonly { readonly sceneId: string; readonly targetId: string; readonly content: string }[];
+  readonly learningEvidence: readonly LearningEvidenceSummaryView[];
+  readonly lastAssessmentEvaluation: AssessmentEvaluationView | null;
+}
+
+export type LearningEvidenceState = "unconfirmed" | "support-requested" | "struggle-evidence" | "confirmed-for-item" | "conflicting";
+export type LearningEvidenceKind = "learner-question" | "checkpoint-answer" | "self-report" | "explicit-action";
+export interface LearningEvidenceSummaryView {
+  readonly scopeId: string;
+  readonly label: string;
+  readonly state: LearningEvidenceState;
+  readonly evidenceCount: number;
+  readonly lastEvidenceAt: string | null;
+}
+export interface AssessmentEvaluationView {
+  readonly evidenceId: string;
+  readonly assessmentId: string;
+  readonly answer: string;
+  readonly outcome: "correct" | "incorrect" | "unknown";
+  readonly rationale: string;
+  readonly automaticJudgment: "confirmed" | "struggle" | "unknown";
+  readonly finalJudgment: "confirmed" | "struggle" | "unknown";
+  readonly correction: string | null;
+  readonly linkedSupplementId: string | null;
+  readonly recordedAt: string;
 }
 
 export interface SupplementOriginView {
@@ -89,6 +113,7 @@ export interface CreateSessionRequest {
 export interface SessionCommandRequest {
   readonly command: "pause" | "resume" | "finish" | "answer";
   readonly answer?: string;
+  readonly assessmentEvaluation?: AssessmentEvaluationView;
 }
 
 export interface ClassroomRoomView {
@@ -157,6 +182,7 @@ export interface ClassroomQuestionView {
   readonly disposition: QuestionDisposition;
   readonly reason: string;
   readonly priority: QuestionPrioritySignals;
+  readonly origin: "learner-question" | "pedagogy-trigger";
 }
 export interface SubmitQuestionRequest {
   readonly accessToken: string;
@@ -168,6 +194,14 @@ export interface SubmitQuestionResponse {
   readonly question: ClassroomQuestionView;
   readonly questions: readonly ClassroomQuestionView[];
   readonly snapshot: ClassroomSnapshot;
+}
+
+export interface SubmitLearningEvidenceRequest {
+  readonly accessToken: string;
+  readonly kind: "self-report" | "explicit-action";
+  readonly value: "understood" | "need-help" | "recheck" | "target-selected";
+  readonly sceneId: string;
+  readonly semanticTargetId: string;
 }
 
 export interface LlmSettingsView {

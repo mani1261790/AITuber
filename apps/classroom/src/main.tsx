@@ -30,6 +30,7 @@ function ClassroomApp() {
   const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
   const [questionText, setQuestionText] = useState("");
   const [questioning, setQuestioning] = useState(false);
+  const [evidenceSubmitting, setEvidenceSubmitting] = useState(false);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
@@ -148,6 +149,9 @@ function ClassroomApp() {
   const currentGoal = displayUnit
     ? session?.course.learningGoals.find((goal) => displayUnit.learningGoalIds.includes(goal.id))?.description
     : null;
+  const currentGoalId = displayUnit?.learningGoalIds[0] ?? null;
+  const currentEvidence = session?.learningEvidence.find((item) => item.scopeId === currentGoalId) ?? null;
+  const evidenceTargetId = selectedTargetId ?? displayUnit?.focusTargetIds[0] ?? null;
   const focusedTarget = scene?.targets.find((target) => target.focused) ?? null;
   const mascotPresentation = resolveMascotPresentation({
     audiblePlayback: audioPlaybackActive && session?.speech.mode !== "caption-fallback",
@@ -182,6 +186,18 @@ function ClassroomApp() {
     } catch (reason) { setError(errorMessage(reason)); } finally { setQuestioning(false); }
   }
 
+  async function submitEvidence(kind: "self-report" | "explicit-action", value: "understood" | "need-help" | "recheck" | "target-selected", targetId = evidenceTargetId) {
+    if (!session || !participant || !room || !targetId) return;
+    const target = session.course.semanticTargets.find((item) => item.id === targetId); if (!target) return;
+    setEvidenceSubmitting(true); setError(null);
+    try {
+      const result = await fetchJson<{ snapshot: ClassroomStreamMessage["snapshot"] }>(`/api/classrooms/${encodeURIComponent(room.code)}/evidence`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, kind, value, sceneId: target.sceneId, semanticTargetId: target.id }) });
+      setSession(result.snapshot.session);
+    } catch (reason) { setError(errorMessage(reason)); } finally { setEvidenceSubmitting(false); }
+  }
+
+  function selectTarget(targetId: string) { setSelectedTargetId(targetId); void submitEvidence("explicit-action", "target-selected", targetId); }
+
   if (!session) return <JoinClassroom code={code} setCode={setCode} joining={joining} error={error} onSubmit={joinClassroom} />;
 
   return (
@@ -204,6 +220,7 @@ function ClassroomApp() {
           {session.liveSupplement?.status === "preparing" && <p className="notice notice--supplement" role="status">質問に答える補足を教材から準備しています。本編は安全な区切りまで続きます。</p>}
           {session.liveSupplement?.status === "bridging" && <p className="notice notice--supplement" role="status">次の説明に必要な質問です。補足の準備中につなぎ説明をしています。</p>}
           {session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
+          {session.lastAssessmentEvaluation?.outcome === "incorrect" && session.liveSupplement && !new Set(["completed", "deferred"]).has(session.liveSupplement.status) && <p className="notice notice--learning" role="status">確認問題の回答から、もう一度確かめる箇所が見つかりました。短い補足のあと同じ問いで確認します。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
           {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
@@ -212,7 +229,7 @@ function ClassroomApp() {
             <MascotView presentation={mascotPresentation} />
             <div className="scene-heading"><div><span>{supplementCandidate ? "LIVE SUPPLEMENT" : "NOW EXPLAINING"}</span><h2 id="scene-title">{scene.title}</h2></div><p>{supplementCandidate ? "質問に関連する箇所を補足しています" : "選ぶと、この箇所について質問できます"}</p></div>
             <div className={`scene-grid scene-grid--${scene.templateId}`}>
-              {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={setSelectedTargetId} />)}
+              {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={selectTarget} />)}
             </div>
           </section>}
 
@@ -220,6 +237,7 @@ function ClassroomApp() {
 
           {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
             <p className="section-kicker">CHECKPOINT</p><h2 id="checkpoint-title">確認問題</h2><p>{session.assessment.prompt}</p>
+            {session.lastAssessmentEvaluation?.assessmentId === session.assessment.id && <p className={`assessment-result assessment-result--${session.lastAssessmentEvaluation.outcome}`}>{session.lastAssessmentEvaluation.outcome === "correct" ? "この問いで確認できました。" : session.lastAssessmentEvaluation.outcome === "incorrect" ? "補足を踏まえて、もう一度答えてみましょう。" : "この回答だけでは確認できませんでした。"}</p>}
             <form onSubmit={(event) => void submitAnswer(event)}>
               {session.assessment.responseKind === "multiple-choice" ? <fieldset><legend>回答を一つ選んでください</legend>{session.assessment.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => setAnswer(option)} /> {option}</label>)}</fieldset>
                 : <label className="answer-field">回答<input value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>}
@@ -231,16 +249,19 @@ function ClassroomApp() {
             <p className="section-kicker">SESSION COMPLETE</p><h2 id="result-title">講義結果</h2>
             <p>{session.unfinishedUnitIds.length === 0 ? "予定していた説明をすべて完了しました。" : "途中で終了しました。未完了の説明は次回へ残ります。"}</p>
             <dl><div><dt>説明完了</dt><dd>{session.completedUnitIds.length} 件</dd></div><div><dt>未完了</dt><dd>{session.unfinishedUnitIds.length} 件</dd></div></dl>
+            <h3>学習の確認状況</h3><ul className="evidence-summary">{session.learningEvidence.map((item) => <li key={item.scopeId}><span>{item.label}</span><strong>{evidenceLabels[item.state]}</strong></li>)}</ul>
           </section>}
         </div>
         <aside className="lecture-rail">
-          <section className="concept-card" aria-labelledby="current-goal-title"><p>LEARNING FOCUS</p><h2 id="current-goal-title">現在の学習目標</h2><strong>{currentGoal ?? "講義のまとめ"}</strong></section>
-          {scene && session.status !== "FINISHED" && <section className="target-list" aria-label="質問"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={selectedTargetId === target.id} onClick={() => setSelectedTargetId(target.id)}><span>{target.label}</span>{selectedTargetId === target.id && <b>選択中</b>}</button>)}</div><form className="question-form" onSubmit={(event) => void submitQuestion(event)}><label>質問<textarea value={questionText} maxLength={1000} onChange={(event) => setQuestionText(event.target.value)} placeholder={selectedTargetId ? `${scene.targets.find((target) => target.id === selectedTargetId)?.label ?? "選択箇所"}について質問` : "先に質問する箇所を選んでください"} /></label><button type="submit" disabled={questioning || !selectedTargetId || !questionText.trim()}>{questioning ? "受付中…" : "質問を送る"}</button></form>{questions.length > 0 && <div className="question-queue" aria-live="polite"><h3>質問の受付状況</h3>{questions.map((question) => <article key={question.id} className={`question-card question-card--${question.disposition}`}><div><strong>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "保留 · 授業後に回答" : question.status === "answering" ? "補足を準備中" : `受付済み · ${question.disposition === "answer-now" ? "授業中に回答" : "授業後に回答"}`}</strong><span>{question.supporterCount}人</span></div><p>{question.text}</p><small>{question.reason}</small></article>)}</div>}</section>}
+          <section className="concept-card" aria-labelledby="current-goal-title"><p>LEARNING FOCUS</p><h2 id="current-goal-title">{session.status === "FINISHED" ? "授業結果" : "現在の学習目標"}</h2><strong>{session.status === "FINISHED" ? "学習目標ごとの確認状況を記録しました" : currentGoal ?? "講義のまとめ"}</strong>{session.status !== "FINISHED" && currentEvidence && <span className={`evidence-state evidence-state--${currentEvidence.state}`}>{evidenceLabels[currentEvidence.state]}</span>}{session.status !== "FINISHED" && <div className="self-report" aria-label="理解の自己申告"><button type="button" disabled={evidenceSubmitting || !evidenceTargetId} onClick={() => void submitEvidence("self-report", "understood")}>わかった</button><button type="button" disabled={evidenceSubmitting || !evidenceTargetId} onClick={() => void submitEvidence("self-report", "recheck")}>もう一度</button><button type="button" disabled={evidenceSubmitting || !evidenceTargetId} onClick={() => void submitEvidence("self-report", "need-help")}>助けて</button></div>}</section>
+          {scene && session.status !== "FINISHED" && <section className="target-list" aria-label="質問"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={selectedTargetId === target.id} onClick={() => selectTarget(target.id)}><span>{target.label}</span>{selectedTargetId === target.id && <b>選択中</b>}</button>)}</div><form className="question-form" onSubmit={(event) => void submitQuestion(event)}><label>質問<textarea value={questionText} maxLength={1000} onChange={(event) => setQuestionText(event.target.value)} placeholder={selectedTargetId ? `${scene.targets.find((target) => target.id === selectedTargetId)?.label ?? "選択箇所"}について質問` : "先に質問する箇所を選んでください"} /></label><button type="submit" disabled={questioning || !selectedTargetId || !questionText.trim()}>{questioning ? "受付中…" : "質問を送る"}</button></form>{questions.length > 0 && <div className="question-queue" aria-live="polite"><h3>質問の受付状況</h3>{questions.map((question) => <article key={question.id} className={`question-card question-card--${question.disposition}`}><div><strong>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "保留 · 授業後に回答" : question.status === "answering" ? "補足を準備中" : question.origin === "pedagogy-trigger" ? "確認結果から補足" : `受付済み · ${question.disposition === "answer-now" ? "授業中に回答" : "授業後に回答"}`}</strong><span>{question.origin === "learner-question" ? `${question.supporterCount}人` : "自動"}</span></div><p>{question.text}</p><small>{question.reason}</small></article>)}</div>}</section>}
         </aside>
       </div>
     </main>
   );
 }
+
+const evidenceLabels: Record<FixedSessionView["learningEvidence"][number]["state"], string> = { unconfirmed: "未確認", "support-requested": "支援希望", "struggle-evidence": "つまずきあり", "confirmed-for-item": "この問いで確認", conflicting: "追加確認が必要" };
 
 function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
   return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;

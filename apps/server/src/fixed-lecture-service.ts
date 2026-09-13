@@ -7,6 +7,8 @@ import type {
   LiveSupplementCandidateView,
   LiveSupplementView,
   ReadonlyCoursePackage,
+  AssessmentEvaluationView,
+  LearningEvidenceSummaryView,
   SessionCommandRequest,
   SupplementOriginView,
 } from "@aituber/contracts";
@@ -35,6 +37,8 @@ interface RuntimeSession {
   liveSupplement: LiveSupplementView | null;
   pendingSupplement: PendingSupplement | null;
   boardCorrections: Map<string, { readonly sceneId: string; readonly content: string }>;
+  learningEvidence: readonly LearningEvidenceSummaryView[];
+  lastAssessmentEvaluation: AssessmentEvaluationView | null;
 }
 
 interface PendingSupplement {
@@ -115,6 +119,8 @@ export class FixedLectureService {
       liveSupplement: null,
       pendingSupplement: null,
       boardCorrections: new Map(),
+      learningEvidence: course.learningGoals.map((goal) => ({ scopeId: goal.id, label: goal.description, state: "unconfirmed", evidenceCount: 0, lastEvidenceAt: null })),
+      lastAssessmentEvaluation: null,
     };
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
@@ -151,6 +157,8 @@ export class FixedLectureService {
       speech: runtime.speech,
       liveSupplement: runtime.liveSupplement,
       boardCorrections: [...runtime.boardCorrections].map(([targetId, value]) => ({ sceneId: value.sceneId, targetId, content: value.content })),
+      learningEvidence: runtime.learningEvidence,
+      lastAssessmentEvaluation: runtime.lastAssessmentEvaluation,
     };
   }
 
@@ -160,13 +168,19 @@ export class FixedLectureService {
     return { lastCompletedUnitId: runtime.state.completedUnitIds.at(-1) ?? null, unfinishedUnitIds, nextUnitId: unfinishedUnitIds[0] ?? null, displayUnitId: runtime.displayUnitId, questionTargetId, remainingMs: this.getRemainingTimeMs(sessionId) };
   }
 
+  updateLearningEvidence(sessionId: string, summaries: readonly LearningEvidenceSummaryView[], evaluation: AssessmentEvaluationView | null = null): void {
+    const runtime = this.#requireSession(sessionId); runtime.learningEvidence = summaries;
+    if (evaluation) runtime.lastAssessmentEvaluation = evaluation;
+    this.#publish(runtime);
+  }
+
   announceSupplement(sessionId: string, view: LiveSupplementView, options: { readonly interrupt: boolean; readonly bridgeText: string | null; readonly bridgeTargetIds: readonly string[]; readonly onBridgeStarted?: (occurredAt: string, audible: boolean) => void }): void {
     const runtime = this.#requireSession(sessionId);
-    if (runtime.state.status !== "TEACHING" || runtime.liveSupplement && !new Set(["completed", "deferred"]).has(runtime.liveSupplement.status)) throw new TypeError("The lecture is not ready for another live supplement");
+    if (!new Set(["TEACHING", "BRANCHING"]).has(runtime.state.status) || runtime.liveSupplement && !new Set(["completed", "deferred"]).has(runtime.liveSupplement.status)) throw new TypeError("The lecture is not ready for another live supplement");
     runtime.liveSupplement = { ...view, status: options.interrupt && options.bridgeText ? "bridging" : "preparing" };
     if (options.interrupt) {
       this.#cancelSpeech(runtime);
-      this.#apply(runtime, { type: "QUESTION_ACCEPTED", epoch: runtime.state.epoch });
+      if (runtime.state.status === "TEACHING") this.#apply(runtime, { type: "QUESTION_ACCEPTED", epoch: runtime.state.epoch });
       if (options.bridgeText) this.#playTransient(runtime, options.bridgeText, options.bridgeTargetIds, Math.min(8_000, Math.max(this.#playbackUnitMs, 1_000)), (occurredAt, audible) => {
         if (runtime.liveSupplement && runtime.liveSupplement.id === view.id && audible) runtime.liveSupplement = { ...runtime.liveSupplement, firstAudioAt: runtime.liveSupplement.firstAudioAt ?? occurredAt };
         options.onBridgeStarted?.(occurredAt, audible);
@@ -246,10 +260,12 @@ export class FixedLectureService {
       if (!request.answer?.trim()) throw new TypeError("answer is required");
       this.#apply(runtime, { type: "ANSWER_RECEIVED", epoch: runtime.state.epoch });
       this.#recordAnswer(runtime, request.answer.trim());
-      this.#apply(runtime, { type: "BRANCH_SELECTED", epoch: runtime.state.epoch, supplementRequired: false });
-      runtime.assessmentId = null;
+      const supplementRequired = request.assessmentEvaluation?.outcome === "incorrect";
+      this.#apply(runtime, { type: "BRANCH_SELECTED", epoch: runtime.state.epoch, supplementRequired });
+      if (request.assessmentEvaluation) runtime.lastAssessmentEvaluation = request.assessmentEvaluation;
+      if (!supplementRequired) runtime.assessmentId = null;
       this.#publish(runtime);
-      this.#schedule(runtime);
+      if (!supplementRequired) this.#schedule(runtime);
     }
     return this.getSession(sessionId);
   }
@@ -322,8 +338,7 @@ export class FixedLectureService {
     runtime.timer = null;
     if (runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     this.#apply(runtime, { type: "UNIT_AUDIO_COMPLETED", epoch, unitId });
-    const completedArtifact = runtime.speech.audioUrl?.match(/\/speech\/([a-f0-9]{64})/)?.[1];
-    if (completedArtifact) this.#speechArtifacts.delete(completedArtifact);
+    this.#discardSpeechArtifact(runtime);
     runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null };
     this.#publish(runtime);
     const assessment = runtime.course.assessments.find((item) => item.afterUnitId === unitId);

@@ -6,8 +6,9 @@ export interface QuestionSessionContext { readonly session: FixedSessionView; re
 export class QuestionQueueService {
   readonly #store: QuestionStore;
   readonly #context: (sessionId: string) => QuestionSessionContext;
+  readonly #onQuestion: ((input: { readonly sessionId: string; readonly participantId: string; readonly semanticTargetId: string; readonly text: string; readonly submittedAt: string }) => void) | null;
   readonly #listeners = new Set<(sessionId: string, questions: readonly ClassroomQuestionView[]) => void>();
-  constructor(options: { store: QuestionStore; context(sessionId: string): QuestionSessionContext }) { this.#store = options.store; this.#context = options.context; }
+  constructor(options: { store: QuestionStore; context(sessionId: string): QuestionSessionContext; onQuestion?: (input: { readonly sessionId: string; readonly participantId: string; readonly semanticTargetId: string; readonly text: string; readonly submittedAt: string }) => void }) { this.#store = options.store; this.#context = options.context; this.#onQuestion = options.onQuestion ?? null; }
 
   submit(input: { readonly sessionId: string; readonly participantId: string; readonly request: SubmitQuestionRequest; readonly submittedAt?: string }): { readonly question: ClassroomQuestionView; readonly questions: readonly ClassroomQuestionView[] } {
     const text = boundedQuestion(input.request.text); const now = input.submittedAt ?? new Date().toISOString();
@@ -21,10 +22,20 @@ export class QuestionQueueService {
     const recorded = duplicate
       ? this.#store.support(duplicate.id, input.participantId, text, now)
       : this.#store.create({ sessionId: input.sessionId, participantId: input.participantId, coursePackageId: course.id, coursePackageVersion: course.version, sceneId: scene.id, semanticTargetId: target.id, lastCompletedUnitId, text, normalizedIntent, submittedAt: now });
+    this.#onQuestion?.({ sessionId: input.sessionId, participantId: input.participantId, semanticTargetId: target.id, text, submittedAt: now });
     const questions = this.#classify(input.sessionId, context, now);
     const question = questions.find((item) => item.id === recorded.id)!;
     this.#listeners.forEach((listener) => listener(input.sessionId, questions));
     return { question, questions };
+  }
+
+  submitPedagogyTrigger(input: { readonly sessionId: string; readonly text: string; readonly sceneId: string; readonly semanticTargetId: string; readonly submittedAt?: string }): ClassroomQuestionView {
+    const context = this.#context(input.sessionId); const course = context.session.course; const now = input.submittedAt ?? new Date().toISOString();
+    const scene = course.scenes.find((item) => item.id === input.sceneId); const target = course.semanticTargets.find((item) => item.id === input.semanticTargetId);
+    if (!scene || !target || target.sceneId !== scene.id) throw new TypeError("教授判断の対象が教材に存在しません。");
+    const recorded = this.#store.create({ sessionId: input.sessionId, participantId: "system.pedagogy", coursePackageId: course.id, coursePackageVersion: course.version, sceneId: scene.id, semanticTargetId: target.id, lastCompletedUnitId: context.session.completedUnitIds.at(-1) ?? null, text: boundedQuestion(input.text), normalizedIntent: normalizeIntent(input.text), submittedAt: now, origin: "pedagogy-trigger" });
+    const questions = this.#classify(input.sessionId, context, now); this.#listeners.forEach((listener) => listener(input.sessionId, questions));
+    return questions.find((question) => question.id === recorded.id)!;
   }
 
   list(sessionId: string): readonly ClassroomQuestionView[] { return sortQuestions(this.#store.list(sessionId).map(toView)); }
@@ -69,5 +80,5 @@ export function sameIntent(left: string, right: string): boolean { if (left === 
 function pairs(value: string): string[] { return Array.from({ length: Math.max(0, value.length - 1) }, (_, index) => value.slice(index, index + 2)); }
 function answerNowReason(priority: StoredQuestionThread["priority"]): string { if (priority.prerequisiteForNext) return "次の説明に必要な前提なので、授業中に回答します。"; if (priority.currentGoalRelated) return "現在の学習目標に近いため、授業中に回答します。"; if (priority.supporterCount > 1) return `${priority.supporterCount}人から同じ質問があるため、授業中に回答します。`; return "次の区切りで授業中に回答します。"; }
 function afterClassReason(canAnswerNow: boolean, finished: boolean, index: number, priority: StoredQuestionThread["priority"]): string { if (finished) return "講義が終了しているため、授業後に回答します。"; if (!canAnswerNow) return "授業の残り時間が少ないため、授業後に回答します。"; if (index > 0) return `他の質問との優先度と残り時間を比較し、授業後に回答します。${priority.supporterCount > 1 ? ` 同じ質問は${priority.supporterCount}人です。` : ""}`; return "授業後に回答します。"; }
-function toView(question: StoredQuestionThread): ClassroomQuestionView { return { id: question.id, text: question.text, coursePackageId: question.coursePackageId, coursePackageVersion: question.coursePackageVersion, sceneId: question.sceneId, semanticTargetId: question.semanticTargetId, lastCompletedUnitId: question.lastCompletedUnitId, submittedAt: question.submittedAt, updatedAt: question.updatedAt, supporterCount: question.supporterCount, status: question.status, resolution: question.resolution, disposition: question.disposition, reason: question.reason, priority: question.priority }; }
+function toView(question: StoredQuestionThread): ClassroomQuestionView { return { id: question.id, text: question.text, coursePackageId: question.coursePackageId, coursePackageVersion: question.coursePackageVersion, sceneId: question.sceneId, semanticTargetId: question.semanticTargetId, lastCompletedUnitId: question.lastCompletedUnitId, submittedAt: question.submittedAt, updatedAt: question.updatedAt, supporterCount: question.supporterCount, status: question.status, resolution: question.resolution, disposition: question.disposition, reason: question.reason, priority: question.priority, origin: question.origin }; }
 function sortQuestions(questions: readonly ClassroomQuestionView[]) { return [...questions].sort((left, right) => Number(right.disposition === "answer-now") - Number(left.disposition === "answer-now") || right.priority.score - left.priority.score || left.submittedAt.localeCompare(right.submittedAt)); }

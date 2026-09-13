@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { LectureEventStore, LiveSupplementStore, QuestionStore } from "@aituber/storage";
+import { LearningEvidenceStore, LectureEventStore, LiveSupplementStore, QuestionStore } from "@aituber/storage";
 import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
@@ -8,6 +8,7 @@ import { LlmSettingsStore } from "./llm-settings-store.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
 import { QuestionQueueService } from "./question-queue-service.ts";
 import { LiveSupplementService } from "./live-supplement-service.ts";
+import { PedagogyService } from "./pedagogy-service.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
@@ -26,6 +27,7 @@ mkdirSync(dirname(databasePath), { recursive: true });
 const store = new LectureEventStore(databasePath);
 const questionStore = new QuestionStore(databasePath);
 const supplementStore = new LiveSupplementStore(databasePath);
+const evidenceStore = new LearningEvidenceStore(databasePath);
 let speechProvider: TextToSpeechProvider | undefined;
 let voiceId = fishVoiceId;
 if (ttsTestMode === "tone") {
@@ -41,9 +43,11 @@ const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvi
 const llmSettings = new LlmSettingsStore(llmSettingsPath);
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider(), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
-const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }) });
+let pedagogy: PedagogyService | null = null;
+const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
+pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider(); } catch { return null; } } });
-const server = createApp(lecture, llmSettings, authoring, questions);
+const server = createApp(lecture, llmSettings, authoring, questions, pedagogy);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;
@@ -58,6 +62,7 @@ function shutdown() {
     store.close();
     questionStore.close();
     supplementStore.close();
+    evidenceStore.close();
     if (error) {
       process.stderr.write(`${error.message}\n`);
       process.exitCode = 1;
