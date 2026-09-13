@@ -4,7 +4,7 @@ import { FISH_STANDARD_VOICE_ID, FishAudioTtsProvider } from "../packages/provid
 
 const apiKey = process.env.AITUBER_FISH_AUDIO_API_KEY ?? "";
 const voiceId = process.env.AITUBER_FISH_AUDIO_VOICE_ID ?? FISH_STANDARD_VOICE_ID;
-const model = process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2-pro";
+const model = process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2.1-pro-free";
 if (!apiKey) throw new Error("AITUBER_FISH_AUDIO_API_KEY is required");
 
 const samples = [

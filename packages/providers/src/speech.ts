@@ -105,7 +105,7 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
   constructor(options: { apiKey: string; model?: string; endpoint?: string; fetch?: typeof fetch }) {
     if (!options.apiKey) throw new TypeError("Fish Audio API key is required");
     this.#apiKey = options.apiKey;
-    this.model = options.model ?? "s2-pro";
+    this.model = options.model ?? "s2.1-pro-free";
     this.#endpoint = options.endpoint ?? "https://api.fish.audio/v1/tts/stream/with-timestamp";
     this.#fetch = options.fetch ?? fetch;
   }

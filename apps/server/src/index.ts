@@ -27,7 +27,7 @@ if (ttsTestMode === "tone") {
   speechProvider = { provider: "failure-fixture", model: "failure-v1", synthesize: async () => { throw new Error("Injected TTS failure"); } };
   voiceId = "voice.failure-fixture";
 } else if (fishApiKey && fishVoiceId) {
-  speechProvider = new CachedSpeechProvider(new FishAudioTtsProvider({ apiKey: fishApiKey, model: process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2-pro" }), resolve(".data/tts-cache"));
+  speechProvider = new CachedSpeechProvider(new FishAudioTtsProvider({ apiKey: fishApiKey, model: process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2.1-pro-free" }), resolve(".data/tts-cache"));
 }
 const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}) });
 const server = createApp(lecture);

@@ -11,7 +11,7 @@ const request: SpeechRequest = { text: "頂点は x イコール2です。", lan
 
 describe("speech cache", () => {
   it("includes every synthesis input in the key", () => {
-    const base = { provider: "fish-audio", model: "s2-pro", ...request };
+    const base = { provider: "fish-audio", model: "s2.1-pro-free", ...request };
     const original = createSpeechCacheKey(base);
     for (const changed of [
       { ...base, provider: "other" }, { ...base, model: "s1" }, { ...base, voiceId: "voice.other" },
@@ -61,7 +61,7 @@ describe("FishAudioTtsProvider", () => {
     expect(result.durationMs).toBe(900);
     expect(result.synthesisMs).toBeGreaterThanOrEqual(result.firstAudioMs);
     expect(captured?.signal).toBe(controller.signal);
-    expect(captured?.headers).toMatchObject({ authorization: "Bearer secret", model: "s2-pro" });
+    expect(captured?.headers).toMatchObject({ authorization: "Bearer secret", model: "s2.1-pro-free" });
   });
 });
 

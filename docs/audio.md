@@ -8,16 +8,18 @@ Teaching Unitの `speechText` に長い語を優先して読み辞書を適用�
 
 ## Fish Audio接続
 
-2026-09-14時点の公式APIでは、タイムスタンプ付きSSEエンドポイントは `POST /v1/tts/stream/with-timestamp`、推奨モデルは `s2-pro`、推奨形式は48kHz Opusである。長文では音声チャンクを到着順に連結し、同じ `chunk_seq` のalignmentは最新スナップショットで置き換える。
+2026-09-14時点で、Fish AudioのDeveloperページと公式ブログは無料モデル文字列を `s2.1-pro-free` とし、既存のFish API呼び出しの `model` ヘッダーへ指定できるとしている。MVPはこれを既定値にする。タイムスタンプ付きSSEエンドポイントは `POST /v1/tts/stream/with-timestamp`、推奨形式は48kHz Opusである。長文では音声チャンクを到着順に連結し、同じ `chunk_seq` のalignmentは最新スナップショットで置き換える。タイムスタンプAPIのリファレンスはまだ旧表記の `s2-pro` だけを列挙しているため、`s2.1-pro-free` がこのエンドポイントで受理されることは実API測定時に確認する。
 
 - [Text to Speech Stream with Timestamps](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech-stream-with-timestamps)
 - [Text to Speech](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
+- [Fish Audio for Developers](https://fish.audio/developers/)
+- [S2.1 Pro Free API](https://fish.audio/blog/s2-1-pro-free-api/)
 
 `.env` に次を設定する。画面ではProviderやモデルを選ばせない。
 
 ```dotenv
 AITUBER_FISH_AUDIO_API_KEY=
-AITUBER_FISH_AUDIO_MODEL=s2-pro
+AITUBER_FISH_AUDIO_MODEL=s2.1-pro-free
 AITUBER_FISH_AUDIO_VOICE_ID=b2d9d8db057042688a5e318b8f405bc2
 ```
 
