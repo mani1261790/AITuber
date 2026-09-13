@@ -19,6 +19,7 @@
     "verify:llm": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-llm.ts",
     "verify:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-fish-audio.ts",
     "measure:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/measure-fish-audio.ts",
+    "acceptance:mvp": "vitest run apps/server/src/mvp-acceptance.test.ts --reporter=verbose",
     "verify:client-boundaries": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-client-boundaries.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries"
   },
