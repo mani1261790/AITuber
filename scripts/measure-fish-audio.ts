@@ -23,7 +23,7 @@ const measurements = [];
 for (const sample of samples) {
   const artifact = await provider.synthesize({ text: sample.text, language: "ja-JP", voiceId, dictionaryVersion: "measurement.v1" }, { signal: new AbortController().signal });
   await writeFile(resolve(outputDirectory, `${sample.id}.opus`), artifact.audio);
-  measurements.push({ id: sample.id, text: sample.text, provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: Math.round(artifact.firstAudioMs), durationMs: artifact.durationMs, bytes: artifact.audio.byteLength, segmentCount: artifact.segments.length });
+  measurements.push({ id: sample.id, text: sample.text, provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioChunkMs: Math.round(artifact.firstAudioMs), artifactReadyMs: Math.round(artifact.synthesisMs), durationMs: artifact.durationMs, bytes: artifact.audio.byteLength, segmentCount: artifact.segments.length });
 }
 
 await writeFile(resolve(outputDirectory, "measurements.json"), JSON.stringify({ measuredAt: new Date().toISOString(), measurements }, null, 2));

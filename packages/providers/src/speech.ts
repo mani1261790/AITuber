@@ -27,6 +27,7 @@ export interface SpeechArtifact {
   readonly segments: readonly SpeechAlignmentSegment[];
   readonly durationMs: number;
   readonly firstAudioMs: number;
+  readonly synthesisMs: number;
 }
 
 export interface TextToSpeechProvider {
@@ -77,8 +78,8 @@ export class CachedSpeechProvider implements TextToSpeechProvider {
         readFile(join(this.#directory, `${key}.json`), "utf8"),
         readFile(join(this.#directory, `${key}.audio`)),
       ]);
-      const parsed = JSON.parse(metadata) as Omit<SpeechArtifact, "audio">;
-      return { ...parsed, audio };
+      const parsed = JSON.parse(metadata) as Omit<SpeechArtifact, "audio"> & { synthesisMs?: number };
+      return { ...parsed, synthesisMs: parsed.synthesisMs ?? parsed.firstAudioMs, audio };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -141,7 +142,8 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
     );
     const alignmentDuration = [...alignments.values()].reduce((total, event) => Math.max(total, event.chunk_audio_offset_sec + (event.alignment?.audio_duration ?? 0)), 0);
     const durationMs = segments.at(-1)?.endMs ?? Math.max(250, Math.round(alignmentDuration * 1_000));
-    return { cacheKey, provider: this.provider, model: this.model, voiceId: request.voiceId, mimeType: "audio/ogg; codecs=opus", audio: concatBytes(audioChunks), segments, durationMs, firstAudioMs };
+    const synthesisMs = Math.max(firstAudioMs, performance.now() - requestedAt);
+    return { cacheKey, provider: this.provider, model: this.model, voiceId: request.voiceId, mimeType: "audio/ogg; codecs=opus", audio: concatBytes(audioChunks), segments, durationMs, firstAudioMs, synthesisMs };
   }
 }
 
@@ -157,7 +159,7 @@ export class TestToneSpeechProvider implements TextToSpeechProvider {
     return {
       cacheKey, provider: this.provider, model: this.model, voiceId: request.voiceId, mimeType: "audio/wav",
       audio: createToneWav(this.durationMs), segments: [{ text: request.text, startMs: 0, endMs: this.durationMs }],
-      durationMs: this.durationMs, firstAudioMs: 0,
+      durationMs: this.durationMs, firstAudioMs: 0, synthesisMs: 0,
     };
   }
 }

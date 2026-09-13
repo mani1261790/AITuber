@@ -1,6 +1,6 @@
 import { parseCoursePackage, type CoursePackage } from "@aituber/contracts";
 import { describe, expect, it } from "vitest";
-import { applyBoardPatches, createBoardState, focusSemanticTarget, localAssetUrl, resolveStageScene } from "./stage-model.ts";
+import { applyBoardPatches, createBoardState, focusSemanticTarget, focusSemanticTargets, localAssetUrl, resolveStageScene } from "./stage-model.ts";
 
 const HASH = `sha256:${"b".repeat(64)}`;
 const fixture = (): CoursePackage => ({
@@ -40,5 +40,13 @@ describe("stage model", () => {
   it("constructs same-origin asset URLs from validated ids", () => {
     expect(localAssetUrl("asset.diagram-1")).toBe("/assets/asset.diagram-1");
     expect(() => localAssetUrl("https://example.com/image.png")).toThrow(TypeError);
+  });
+
+  it("focuses every semantic target attached to the current speech segment", () => {
+    const course = parseCoursePackage(fixture());
+    const board = focusSemanticTargets(course, createBoardState(course, "scene.vertex"), ["target.text", "target.formula"]);
+    const scene = resolveStageScene(course, "scene.vertex", board);
+    expect(scene.targets.filter((target) => target.focused).map((target) => target.id)).toEqual(["target.text", "target.formula"]);
+    expect(scene.focusedTargetIds).toEqual(new Set(["target.text", "target.formula"]));
   });
 });

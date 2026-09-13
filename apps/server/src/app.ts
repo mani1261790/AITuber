@@ -6,7 +6,7 @@ export interface LectureApi {
   createSession(request: CreateSessionRequest): FixedSessionView;
   getCurrentSession(): FixedSessionView | null;
   getSession(sessionId: string): FixedSessionView;
-  getSpeechAudio(cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
+  getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
 }
 
@@ -26,10 +26,12 @@ export function createApp(api: LectureApi = unavailableApi): Server {
       if (request.method === "GET" && url.pathname === "/healthz") return json(response, 200, { status: "ok" });
       if (request.method === "GET" && url.pathname === "/api/courses") return json(response, 200, { courses: api.listCourses() });
       if (request.method === "GET" && url.pathname === "/api/sessions/current") return json(response, 200, { session: api.getCurrentSession() });
-      const audioMatch = url.pathname.match(/^\/api\/audio\/([a-f0-9]{64})$/);
+      const audioMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/speech\/([a-f0-9]{64})$/);
       if (request.method === "GET" && audioMatch) {
-        const artifact = api.getSpeechAudio(audioMatch[1]!);
-        response.writeHead(200, { "content-type": artifact.mimeType, "cache-control": "private, max-age=31536000, immutable" });
+        const epoch = Number.parseInt(url.searchParams.get("epoch") ?? "", 10);
+        if (!Number.isSafeInteger(epoch) || epoch < 1) throw new TypeError("A valid speech epoch is required");
+        const artifact = api.getSpeechAudio(decodeURIComponent(audioMatch[1]!), epoch, audioMatch[2]!);
+        response.writeHead(200, { "content-type": artifact.mimeType, "cache-control": "no-store" });
         response.end(Buffer.from(artifact.audio));
         return;
       }

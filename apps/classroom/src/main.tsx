@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { FixedSessionView } from "@aituber/contracts";
-import { applyBoardPatches, createBoardState, focusSemanticTarget, resolveStageScene } from "@aituber/presentation";
+import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveStageScene } from "@aituber/presentation";
 import { TargetView } from "./target-view.tsx";
 import "./styles.css";
 
@@ -58,7 +58,10 @@ function ClassroomApp() {
   const scene = useMemo(() => {
     if (!session || !displayUnit) return null;
     let board = applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches);
-    board = focusSemanticTarget(session.course, board, selectedTargetId ?? activeSpeechSegment?.semanticTargetIds[0] ?? displayUnit.focusTargetIds[0] ?? null);
+    const targetIds = activeSpeechSegment?.semanticTargetIds.length
+      ? activeSpeechSegment.semanticTargetIds
+      : selectedTargetId ? [selectedTargetId] : displayUnit.focusTargetIds;
+    board = focusSemanticTargets(session.course, board, targetIds);
     return resolveStageScene(session.course, displayUnit.sceneId, board);
   }, [session, displayUnit, selectedTargetId, activeSpeechSegment]);
   const currentGoal = displayUnit
@@ -103,7 +106,7 @@ function ClassroomApp() {
         </div>
       </section>}
 
-      {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title">字幕</h2><p>{displayUnit.speechText}</p></section>}
+      {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title">字幕</h2><p>{session.speech.text ?? displayUnit.speechText}</p></section>}
 
       {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
         <h2 id="checkpoint-title">確認問題</h2><p>{session.assessment.prompt}</p>

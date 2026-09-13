@@ -22,7 +22,7 @@ describe("speech cache", () => {
   it("persists an artifact and avoids a second provider call", async () => {
     const directory = await mkdtemp(join(tmpdir(), "aituber-speech-")); directories.push(directory);
     const key = createSpeechCacheKey({ provider: "fake", model: "fixed", ...request });
-    const artifact: SpeechArtifact = { cacheKey: key, provider: "fake", model: "fixed", voiceId: request.voiceId, mimeType: "audio/ogg", audio: Uint8Array.from([1, 2, 3]), segments: [{ text: request.text, startMs: 0, endMs: 500 }], durationMs: 500, firstAudioMs: 25 };
+    const artifact: SpeechArtifact = { cacheKey: key, provider: "fake", model: "fixed", voiceId: request.voiceId, mimeType: "audio/ogg", audio: Uint8Array.from([1, 2, 3]), segments: [{ text: request.text, startMs: 0, endMs: 500 }], durationMs: 500, firstAudioMs: 25, synthesisMs: 40 };
     const backing: TextToSpeechProvider = { provider: "fake", model: "fixed", synthesize: vi.fn(async () => artifact) };
     const cached = new CachedSpeechProvider(backing, directory);
 
@@ -59,6 +59,7 @@ describe("FishAudioTtsProvider", () => {
       { text: "二", startMs: 500, endMs: 700 }, { text: "です", startMs: 700, endMs: 900 },
     ]);
     expect(result.durationMs).toBe(900);
+    expect(result.synthesisMs).toBeGreaterThanOrEqual(result.firstAudioMs);
     expect(captured?.signal).toBe(controller.signal);
     expect(captured?.headers).toMatchObject({ authorization: "Bearer secret", model: "s2-pro" });
   });
@@ -70,6 +71,7 @@ describe("TestToneSpeechProvider", () => {
     expect(new TextDecoder().decode(result.audio.slice(0, 4))).toBe("RIFF");
     expect(result.mimeType).toBe("audio/wav");
     expect(result.durationMs).toBe(250);
+    expect(result.synthesisMs).toBe(0);
     expect(result.segments).toEqual([{ text: request.text, startMs: 0, endMs: 250 }]);
   });
 });

@@ -14,12 +14,13 @@ export interface StageScene {
   readonly templateId: ReadonlyCoursePackage["scenes"][number]["templateId"];
   readonly targets: readonly StageTarget[];
   readonly focusedTargetId: string | null;
+  readonly focusedTargetIds: ReadonlySet<string>;
 }
 
 export interface BoardState {
   readonly visibleTargetIds: ReadonlySet<string>;
   readonly replacementContent: ReadonlyMap<string, string>;
-  readonly focusedTargetId: string | null;
+  readonly focusedTargetIds: ReadonlySet<string>;
 }
 
 export function createBoardState(coursePackage: ReadonlyCoursePackage, sceneId: string): BoardState {
@@ -28,7 +29,7 @@ export function createBoardState(coursePackage: ReadonlyCoursePackage, sceneId: 
   return {
     visibleTargetIds: new Set(scene.targetIds),
     replacementContent: new Map(),
-    focusedTargetId: null,
+    focusedTargetIds: new Set(),
   };
 }
 
@@ -51,7 +52,7 @@ export function applyBoardPatches(
       visibleTargetIds.add(patch.targetId);
     }
   }
-  return { visibleTargetIds, replacementContent, focusedTargetId: state.focusedTargetId };
+  return { visibleTargetIds, replacementContent, focusedTargetIds: state.focusedTargetIds };
 }
 
 export function focusSemanticTarget(
@@ -59,10 +60,19 @@ export function focusSemanticTarget(
   state: BoardState,
   targetId: string | null,
 ): BoardState {
-  if (targetId !== null && !coursePackage.semanticTargets.some((target) => target.id === targetId)) {
-    throw new RangeError(`Unknown semantic target ${targetId}`);
+  return focusSemanticTargets(coursePackage, state, targetId === null ? [] : [targetId]);
+}
+
+export function focusSemanticTargets(
+  coursePackage: ReadonlyCoursePackage,
+  state: BoardState,
+  targetIds: readonly string[],
+): BoardState {
+  const knownIds = new Set(coursePackage.semanticTargets.map((target) => target.id));
+  for (const targetId of targetIds) {
+    if (!knownIds.has(targetId)) throw new RangeError(`Unknown semantic target ${targetId}`);
   }
-  return { ...state, focusedTargetId: targetId };
+  return { ...state, focusedTargetIds: new Set(targetIds) };
 }
 
 export function resolveStageScene(
@@ -80,10 +90,11 @@ export function resolveStageScene(
       ...target,
       content: boardState.replacementContent.get(target.id) ?? target.content,
       visible: boardState.visibleTargetIds.has(target.id),
-      focused: boardState.focusedTargetId === target.id,
+      focused: boardState.focusedTargetIds.has(target.id),
     };
   });
-  return { id: scene.id, title: scene.title, templateId: scene.templateId, targets, focusedTargetId: boardState.focusedTargetId };
+  const focusedTargetIds = new Set([...boardState.focusedTargetIds].filter((targetId) => scene.targetIds.includes(targetId)));
+  return { id: scene.id, title: scene.title, templateId: scene.templateId, targets, focusedTargetId: [...focusedTargetIds][0] ?? null, focusedTargetIds };
 }
 
 export function localAssetUrl(assetId: string): string {

@@ -121,7 +121,11 @@ export class FixedLectureService {
     };
   }
 
-  getSpeechAudio(cacheKey: string): Pick<SpeechArtifact, "audio" | "mimeType"> {
+  getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): Pick<SpeechArtifact, "audio" | "mimeType"> {
+    const runtime = this.#requireSession(sessionId);
+    if (!runtime.speech.playing || runtime.speech.epoch !== epoch || !runtime.speech.audioUrl?.includes(cacheKey)) {
+      throw new RangeError("Speech artifact is no longer active");
+    }
     const artifact = this.#speechArtifacts.get(cacheKey);
     if (!artifact) throw new RangeError(`Unknown speech artifact ${cacheKey}`);
     return { audio: artifact.audio, mimeType: artifact.mimeType };
@@ -169,11 +173,12 @@ export class FixedLectureService {
     runtime.displayUnitId = unitId;
     this.#apply(runtime, { type: "UNIT_PRESENTED", epoch: runtime.state.epoch, unitId });
     const unit = runtime.course.teachingUnits.find((candidate) => candidate.id === unitId)!;
+    const finalizedText = applyPronunciationDictionary(unit.speechText, runtime.course.pronunciationDictionary);
     const epoch = runtime.state.epoch;
     if (!this.#speechProvider || !this.#voiceId) {
       this.#startPlayback(runtime, unitId, epoch, {
-        ...emptySpeech(epoch), mode: "test", playing: true, unitId, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs,
-        segments: [{ text: unit.speechText, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: unit.focusTargetIds }],
+        ...emptySpeech(epoch), mode: "test", playing: true, unitId, text: finalizedText, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs,
+        segments: [{ text: finalizedText, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: unit.focusTargetIds }],
       });
       return;
     }
@@ -181,7 +186,7 @@ export class FixedLectureService {
     const controller = new AbortController();
     runtime.speechAbort = controller;
     void this.#speechProvider.synthesize({
-      text: unit.speechText,
+      text: finalizedText,
       language: "ja-JP",
       voiceId: this.#voiceId,
       dictionaryVersion: dictionaryVersion(runtime.course.pronunciationDictionary),
@@ -190,19 +195,19 @@ export class FixedLectureService {
       runtime.speechAbort = null;
       this.#speechArtifacts.set(artifact.cacheKey, artifact);
       this.#startPlayback(runtime, unitId, epoch, {
-        mode: "fish-audio", playing: true, epoch, unitId, startedAt: new Date().toISOString(), durationMs: artifact.durationMs,
-        audioUrl: `/api/audio/${artifact.cacheKey}?epoch=${epoch}`, failure: null,
+        mode: "fish-audio", playing: true, epoch, unitId, text: finalizedText, startedAt: new Date().toISOString(), durationMs: artifact.durationMs,
+        audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null,
         segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: unit.focusTargetIds })),
-        provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs,
+        provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs,
       });
     }).catch((error: unknown) => {
       if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING" || runtime.state.presentedUnitId !== unitId) return;
       runtime.speechAbort = null;
       this.#startPlayback(runtime, unitId, epoch, {
-        mode: "caption-fallback", playing: true, epoch, unitId, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs, audioUrl: null,
-        segments: [{ text: unit.speechText, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: unit.focusTargetIds }],
+        mode: "caption-fallback", playing: true, epoch, unitId, text: finalizedText, startedAt: new Date().toISOString(), durationMs: unit.estimatedDurationMs, audioUrl: null,
+        segments: [{ text: finalizedText, startMs: 0, endMs: unit.estimatedDurationMs, semanticTargetIds: unit.focusTargetIds }],
         failure: error instanceof Error ? error.message : "TTS failed",
-        provider: this.#speechProvider?.provider ?? null, model: this.#speechProvider?.model ?? null, voiceId: this.#voiceId || null, firstAudioMs: null,
+        provider: this.#speechProvider?.provider ?? null, model: this.#speechProvider?.model ?? null, voiceId: this.#voiceId || null, firstAudioMs: null, synthesisMs: null,
       });
     });
   }
@@ -275,11 +280,17 @@ export class FixedLectureService {
 }
 
 function emptySpeech(epoch: number): FixedSessionView["speech"] {
-  return { mode: "preparing", playing: false, epoch, unitId: null, startedAt: null, durationMs: 0, audioUrl: null, segments: [], failure: null, provider: null, model: null, voiceId: null, firstAudioMs: null };
+  return { mode: "preparing", playing: false, epoch, unitId: null, text: null, startedAt: null, durationMs: 0, audioUrl: null, segments: [], failure: null, provider: null, model: null, voiceId: null, firstAudioMs: null, synthesisMs: null };
 }
 
 function dictionaryVersion(dictionary: ReadonlyCoursePackage["pronunciationDictionary"]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(dictionary)).digest("hex")}`;
+}
+
+export function applyPronunciationDictionary(text: string, dictionary: ReadonlyCoursePackage["pronunciationDictionary"]): string {
+  return [...dictionary].sort((left, right) => right.surface.length - left.surface.length).reduce(
+    (result, entry) => result.replaceAll(entry.surface, entry.reading), text,
+  );
 }
 
 function visibleStatus(status: LessonState["status"]): FixedSessionView["status"] {

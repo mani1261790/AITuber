@@ -28,6 +28,7 @@ export interface SessionSpeechView {
   readonly playing: boolean;
   readonly epoch: number;
   readonly unitId: string | null;
+  readonly text: string | null;
   readonly startedAt: string | null;
   readonly durationMs: number;
   readonly audioUrl: string | null;
@@ -42,6 +43,7 @@ export interface SessionSpeechView {
   readonly model: string | null;
   readonly voiceId: string | null;
   readonly firstAudioMs: number | null;
+  readonly synthesisMs: number | null;
 }
 
 export interface CreateSessionRequest {

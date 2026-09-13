@@ -78,14 +78,16 @@ describe("server boundary", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const live = await fetch(`${origin}/api/sessions/${startedResult.session.id}`);
     const liveResult = await live.json() as { session: { speech: { audioUrl: string | null } } };
-    expect(liveResult.session.speech.audioUrl).toMatch(/^\/api\/audio\/[a-f0-9]{64}/);
+    expect(liveResult.session.speech.audioUrl).toMatch(/^\/api\/sessions\/session\.[^/]+\/speech\/[a-f0-9]{64}\?epoch=1$/);
     const audio = await fetch(`${origin}${liveResult.session.speech.audioUrl}`);
     expect(audio.headers.get("content-type")).toBe("audio/wav");
+    expect(audio.headers.get("cache-control")).toBe("no-store");
     expect((await audio.arrayBuffer()).byteLength).toBeGreaterThan(44);
 
     const paused = await fetch(`${origin}/api/sessions/${startedResult.session.id}/commands`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "pause" }),
     });
     expect((await paused.json() as { session: { status: string } }).session.status).toBe("PAUSED");
+    expect((await fetch(`${origin}${liveResult.session.speech.audioUrl}`)).status).toBe(404);
   });
 });

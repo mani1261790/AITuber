@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { quadraticFunctionsFixture } from "@aituber/content";
 import { createSpeechCacheKey, type SpeechArtifact, type TextToSpeechProvider } from "@aituber/providers";
 import { LectureEventStore } from "@aituber/storage";
-import { FixedLectureService } from "./fixed-lecture-service.ts";
+import { applyPronunciationDictionary, FixedLectureService } from "./fixed-lecture-service.ts";
 
 describe("FixedLectureService", () => {
   let store: LectureEventStore;
@@ -78,7 +78,12 @@ describe("FixedLectureService", () => {
 
     const speaking = service.getSession(started.id);
     expect(speaking.speech.segments[0]?.semanticTargetIds).toEqual(["target.math.vertex-form"]);
-    expect([...service.getSpeechAudio(speaking.speech.audioUrl!.split("/").at(-1)!.split("?")[0]!).audio]).toEqual([1, 2, 3]);
+    const cacheKey = speaking.speech.audioUrl!.split("/").at(-1)!.split("?")[0]!;
+    expect([...service.getSpeechAudio(started.id, speaking.epoch, cacheKey).audio]).toEqual([1, 2, 3]);
+    service.command(started.id, { command: "pause" });
+    expect(() => service.getSpeechAudio(started.id, speaking.epoch, cacheKey)).toThrow("no longer active");
+    service.command(started.id, { command: "resume" });
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("fish-audio"));
     vi.advanceTimersByTime(300);
     expect(service.getSession(started.id).progress.completed).toBe(1);
   });
@@ -107,8 +112,17 @@ describe("FixedLectureService", () => {
     const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("caption-fallback"));
     expect(service.getSession(started.id).speech.failure).toBe("injected failure");
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(quadraticFunctionsFixture.teachingUnits[0]!.estimatedDurationMs);
     expect(service.getSession(started.id).progress.completed).toBe(1);
+  });
+});
+
+describe("pronunciation dictionary", () => {
+  it("applies longer entries first to the finalized speech and subtitle text", () => {
+    expect(applyPronunciationDictionary("DNAポリメラーゼとDNA", [
+      { surface: "DNA", reading: "ディーエヌエー" },
+      { surface: "DNAポリメラーゼ", reading: "ディーエヌエーポリメラーゼ" },
+    ])).toBe("ディーエヌエーポリメラーゼとディーエヌエー");
   });
 });
 
@@ -120,6 +134,6 @@ function makeArtifact(text: string): SpeechArtifact {
   return {
     cacheKey: createSpeechCacheKey({ provider: "fake", model: "fixed", voiceId: "voice.standard", dictionaryVersion: `sha256:${"0".repeat(64)}`, language: "ja-JP", text }),
     provider: "fake", model: "fixed", voiceId: "voice.standard", mimeType: "audio/ogg", audio: Uint8Array.from([1, 2, 3]),
-    segments: [{ text, startMs: 0, endMs: 300 }], durationMs: 300, firstAudioMs: 20,
+    segments: [{ text, startMs: 0, endMs: 300 }], durationMs: 300, firstAudioMs: 20, synthesisMs: 35,
   };
 }
