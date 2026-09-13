@@ -26,6 +26,8 @@
 - [データ保持、費用予約、入力防御](./docs/data-security-and-costs.md)
 - [LAN教室の参加と同期](./docs/lan-classroom.md)
 - [MVP総合受入記録 2026-09-14](./docs/acceptance/mvp-2026-09-14.md)
+- [セルフホスト運用](./docs/self-hosting.md)
+- [セルフホスト配布 受入記録 2026-09-14](./docs/acceptance/self-host-2026-09-14.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。
 
@@ -74,4 +76,4 @@ pnpm verify:llm
 
 運営画面で教材と授業時間を選び、講義を開始します。教室画面は運営画面のリンクから開けます。状態はWebSocketで同期され、端末が切断しても授業は進み続け、再接続時は現在の説明位置から復帰します。
 
-3講義の固定Provider総合受入は `pnpm acceptance:mvp`、品質ゲートは `pnpm check` で実行します。品質ゲートはlint、型検査、単体試験、全ワークスペースのビルド、ブラウザー成果物の秘密値・外部分析依存検査を順に確認します。
+3講義の固定Provider総合受入は `pnpm acceptance:mvp`、品質ゲートは `pnpm check` で実行します。品質ゲートはlint、型検査、単体試験、全ワークスペースのビルド、ブラウザー成果物の秘密値・外部分析依存検査、プロダクション構成でのセルフホスト受入を順に確認します。継続運用では[セルフホスト運用](./docs/self-hosting.md)に従い、設定とデータをGit checkout外へ置きます。

@@ -7,7 +7,7 @@ import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "./styles.css";
 
-declare const __AITUBER_CLASSROOM_HOST__: string;
+declare const __AITUBER_CLASSROOM_ORIGIN__: string;
 
 const statusLabels: Record<FixedSessionView["status"], string> = {
   PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了",
@@ -22,6 +22,7 @@ function OperatorApp() {
   const [duration, setDuration] = useState(6);
   const [session, setSession] = useState<FixedSessionView | null>(null);
   const [classroom, setClassroom] = useState<ClassroomRoomView | null>(null);
+  const [classroomOrigin, setClassroomOrigin] = useState(__AITUBER_CLASSROOM_ORIGIN__);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LlmSettingsView | null>(null);
@@ -35,6 +36,10 @@ function OperatorApp() {
   const [learningGoals, setLearningGoals] = useState("");
   const [authoringJob, setAuthoringJob] = useState<AuthoringJobView | null>(null);
   const selectedCourse = courses.find((course) => course.id === courseId) ?? null;
+
+  useEffect(() => {
+    void fetchJson<{ classroomOrigin: string }>("/aituber-runtime-config.json").then((config) => setClassroomOrigin(config.classroomOrigin)).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void Promise.all([fetchJson<{ courses: CourseSummary[] }>("/api/courses"), fetchJson<{ session: FixedSessionView | null; classroom: ClassroomRoomView | null }>("/api/sessions/current")])
@@ -195,7 +200,7 @@ function OperatorApp() {
             <progress value={session.progress.completed} max={session.progress.total}>{session.progress.completed} / {session.progress.total}</progress>
             {session.speech.mode === "caption-fallback" && <p className="speech-warning">音声合成に失敗したため、字幕で講義を続けています。</p>}
             {classroom && <div className="classroom-access"><div><span>教室コード</span><strong>{classroom.code}</strong></div><p>{classroom.participantCount} / {classroom.capacity} 人参加</p></div>}
-            {classroom && <a className="classroom-link" href={`${window.location.protocol}//${__AITUBER_CLASSROOM_HOST__}:4311/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer"><span>教室画面を開く</span><b aria-hidden="true">↗</b></a>}
+            {classroom && <a className="classroom-link" href={`${classroomOrigin}/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer"><span>教室画面を開く</span><b aria-hidden="true">↗</b></a>}
             {session.status !== "FINISHED" && <div className="actions">
               {session.status === "PAUSED"
                 ? <button type="button" disabled={busy} onClick={() => void command({ command: "resume" })}>再開</button>

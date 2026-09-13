@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter './packages/**' build && pnpm --parallel --filter @aituber/server --filter @aituber/classroom --filter @aituber/operator dev",
+    "start": "node --env-file-if-exists=.env --experimental-strip-types scripts/start-self-host.ts",
     "build": "pnpm -r --if-present build",
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -20,8 +21,11 @@
     "verify:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-fish-audio.ts",
     "measure:tts": "node --env-file-if-exists=.env --experimental-strip-types scripts/measure-fish-audio.ts",
     "acceptance:mvp": "vitest run apps/server/src/mvp-acceptance.test.ts --reporter=verbose",
+    "backup": "node --env-file-if-exists=.env --experimental-strip-types scripts/backup-self-host.ts",
+    "restore": "node --env-file-if-exists=.env --experimental-strip-types scripts/restore-self-host.ts",
+    "verify:self-host": "node --experimental-strip-types scripts/verify-self-host.ts",
     "verify:client-boundaries": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-client-boundaries.ts",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries && pnpm verify:self-host"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

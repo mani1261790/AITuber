@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { BudgetedLlmProvider, BudgetedSpeechProvider, isLocalLlmBaseUrl, type LlmProvider, type OpenAiCompatibleLlmOptions, type TextToSpeechProvider, type UsageScope } from "../packages/providers/src/index.ts";
 import { ResourceBudgetStore } from "../packages/storage/src/index.ts";
 
 export function createScriptBudget(env: Readonly<Record<string, string | undefined>> = process.env): ResourceBudgetStore {
-  const path = resolve(env.AITUBER_DB_PATH ?? ".data/aituber.db"); mkdirSync(dirname(path), { recursive: true });
+  const dataDirectory = resolve(env.AITUBER_DATA_DIR ?? ".data");
+  const path = resolve(env.AITUBER_DB_PATH ?? join(dataDirectory, "aituber.db")); mkdirSync(dirname(path), { recursive: true });
   const authoring = optionalNumber(env.AITUBER_AUTHORING_DAILY_BUDGET_USD, "AITUBER_AUTHORING_DAILY_BUDGET_USD");
   const runtime = optionalNumber(env.AITUBER_RUNTIME_DAILY_BUDGET_USD, "AITUBER_RUNTIME_DAILY_BUDGET_USD");
   const authoringTokens = optionalInteger(env.AITUBER_AUTHORING_DAILY_LLM_TOKEN_LIMIT, "AITUBER_AUTHORING_DAILY_LLM_TOKEN_LIMIT"); const runtimeTokens = optionalInteger(env.AITUBER_RUNTIME_DAILY_LLM_TOKEN_LIMIT, "AITUBER_RUNTIME_DAILY_LLM_TOKEN_LIMIT"); const runtimeCharacters = optionalInteger(env.AITUBER_RUNTIME_DAILY_TTS_CHARACTER_LIMIT, "AITUBER_RUNTIME_DAILY_TTS_CHARACTER_LIMIT");

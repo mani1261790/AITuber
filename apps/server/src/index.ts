@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { AfterClassStore, DataRetentionStore, LearningEvidenceStore, LectureEventStore, LiveSupplementStore, QuestionStore, ResourceBudgetStore } from "@aituber/storage";
 import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
@@ -14,10 +14,11 @@ import { DataRetentionService } from "./data-retention-service.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
-const databasePath = resolve(process.env.AITUBER_DB_PATH ?? ".data/aituber.db");
-const llmSettingsPath = resolve(process.env.AITUBER_LLM_SETTINGS_PATH ?? ".data/llm-settings.json");
-const authoringPath = resolve(process.env.AITUBER_AUTHORING_PATH ?? ".data/authoring");
-const ttsCachePath = resolve(process.env.AITUBER_TTS_CACHE_PATH ?? ".data/tts-cache");
+const dataDirectory = resolve(process.env.AITUBER_DATA_DIR ?? ".data");
+const databasePath = resolve(process.env.AITUBER_DB_PATH ?? join(dataDirectory, "aituber.db"));
+const llmSettingsPath = resolve(process.env.AITUBER_LLM_SETTINGS_PATH ?? join(dataDirectory, "llm-settings.json"));
+const authoringPath = resolve(process.env.AITUBER_AUTHORING_PATH ?? join(dataDirectory, "authoring"));
+const ttsCachePath = resolve(process.env.AITUBER_TTS_CACHE_PATH ?? join(dataDirectory, "tts-cache"));
 const playbackUnitMs = Number.parseInt(process.env.AITUBER_FIXED_PLAYBACK_MS ?? "2000", 10);
 const fishApiKey = process.env.AITUBER_FISH_AUDIO_API_KEY ?? "";
 const fishVoiceId = process.env.AITUBER_FISH_AUDIO_VOICE_ID ?? FISH_STANDARD_VOICE_ID;
