@@ -40,6 +40,14 @@ cp .env.example .env
 pnpm dev
 ```
 
+Fish Audioを接続するときは、[APIキーの設定手順](./docs/audio.md#apiキーの設定)に従い、キーを画面に表示しない設定コマンドを使います。
+
+```sh
+pnpm configure:tts
+pnpm verify:tts
+pnpm measure:tts
+```
+
 - server: `http://127.0.0.1:4310`
 - classroom: `http://127.0.0.1:4311`
 - operator: `http://127.0.0.1:4312`

@@ -8,14 +8,22 @@ Teaching Unitの `speechText` に長い語を優先して読み辞書を適用�
 
 ## Fish Audio接続
 
-2026-09-14時点で、Fish AudioのDeveloperページと公式ブログは無料モデル文字列を `s2.1-pro-free` とし、既存のFish API呼び出しの `model` ヘッダーへ指定できるとしている。MVPはこれを既定値にする。タイムスタンプ付きSSEエンドポイントは `POST /v1/tts/stream/with-timestamp`、推奨形式は48kHz Opusである。長文では音声チャンクを到着順に連結し、同じ `chunk_seq` のalignmentは最新スナップショットで置き換える。タイムスタンプAPIのリファレンスはまだ旧表記の `s2-pro` だけを列挙しているため、`s2.1-pro-free` がこのエンドポイントで受理されることは実API測定時に確認する。
+2026-09-14時点で、Fish AudioのDeveloperページとタイムスタンプAPIリファレンスは無料モデル文字列を `s2.1-pro-free` とし、`model` ヘッダーへ指定できるとしている。MVPはこれを既定値にする。タイムスタンプ付きSSEエンドポイントは `POST /v1/tts/stream/with-timestamp`、推奨形式は48kHz Opusである。長文では音声チャンクを到着順に連結し、同じ `chunk_seq` のalignmentは最新スナップショットで置き換える。
 
 - [Text to Speech Stream with Timestamps](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech-stream-with-timestamps)
 - [Text to Speech](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
 - [Fish Audio for Developers](https://fish.audio/developers/)
 - [S2.1 Pro Free API](https://fish.audio/blog/s2-1-pro-free-api/)
 
-`.env` に次を設定する。画面ではProviderやモデルを選ばせない。
+### APIキーの設定
+
+1. [Fish Audio API Keys](https://fish.audio/app/api-keys/)へログインする。アカウントがなければ[無料登録](https://fish.audio/auth/signup)を先に行う。
+2. `Create New Key`を選び、名前を `AITuber local` としてキーを作成する。有効期限は開発期間に合わせて設定する。
+3. 表示されたキーはチャットやソースコードへ貼らず、このリポジトリで `pnpm configure:tts` を実行し、表示されない入力欄へ貼り付ける。
+4. `pnpm verify:tts` を実行する。認証と `s2.1-pro-free`、標準音声、タイムスタンプ付きOpus生成が一度に確認される。
+5. 成功後に `pnpm measure:tts` を実行し、4種類の教材文を実測する。
+
+設定コマンドはgit管理外の `.env` を作成し、所有者だけが読める権限にする。保存される内容は次の3項目で、画面ではProviderやモデルを選ばせない。
 
 ```dotenv
 AITUBER_FISH_AUDIO_API_KEY=
@@ -23,7 +31,7 @@ AITUBER_FISH_AUDIO_MODEL=s2.1-pro-free
 AITUBER_FISH_AUDIO_VOICE_ID=b2d9d8db057042688a5e318b8f405bc2
 ```
 
-APIキーがない開発環境では、固定テスト音声の時計を使う。APIキーがある場合はFish Audioへ接続する。
+APIキーがない開発環境では、固定テスト音声の時計を使う。APIキーがある場合はFish Audioへ接続する。`pnpm verify:tts` の生成物は `.data/fish-audio-verification`、本実測の生成物は `.data/fish-audio-measurements` に保存し、どちらもgitへ含めない。
 
 ## キャッシュ
 
@@ -31,14 +39,14 @@ APIキーがない開発環境では、固定テスト音声の時計を使う�
 
 ## 標準音声の実測
 
-実測候補はFish Officialの「きょうこ（カスタマーサポート）」である。Fish Audioの公開カタログでライセンス契約済み・商用利用可能とされ、教育、落ち着き、明瞭さのタグがあるため選んだ。音声IDは `b2d9d8db057042688a5e318b8f405bc2`。
+実測候補はFish Officialの「きょうこ（カスタマーサポート）」である。Fish Audioの公開ページでEducational、Calm、Clearなどの属性が付けられているため選んだ。音声IDは `b2d9d8db057042688a5e318b8f405bc2`。公開ページは商用利用権を別途案内しているため、製品公開時の利用条件はIssue #24のライセンス監査で再確認する。
 
 - [きょうこ（カスタマーサポート）](https://fish.audio/m/b2d9d8db057042688a5e318b8f405bc2/)
 - [Fish Audio音声カタログ](https://fish.audio/ja/discovery/)
 
 APIキーを設定して `pnpm measure:tts` を実行する。数学の式、DNA関連の固有名詞、VAEの英字・ギリシャ文字、複数分野をつないだ長文を合成し、Fishから最初の音声チャンクを受け取るまでの時間、成果物全体が再生可能になるまでの時間、音声時間、バイト数、タイムスタンプ区間数とOpus音声を `.data/fish-audio-measurements` に保存する。前二つはそれぞれ `firstAudioChunkMs` と `artifactReadyMs` であり、ブラウザ側のネットワーク・デコード時間を含まない。
 
-標準音声の固定には、生成した4音声を実際に聴き、日本語の自然さ、数式・英字・固有名詞の読み、長文の声質と切れ目を確認する。現在の作業環境にはFish AudioのAPIキーがないため、外部APIの実測値と候補音声の採否は未確定である。
+標準音声の固定には、生成した4音声を実際に聴き、日本語の自然さ、数式・英字・固有名詞の読み、長文の声質と切れ目を確認する。APIキー設定前は、外部APIの実測値と候補音声の採否を未確定として扱う。
 
 ## 故障注入
 
