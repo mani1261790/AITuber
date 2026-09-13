@@ -1,4 +1,4 @@
-import type { ClassroomQuestionView, LiveSupplementCandidateView, LiveSupplementView, ReadonlyCoursePackage } from "@aituber/contracts";
+import { isSafeFormulaInput, type ClassroomQuestionView, type LiveSupplementCandidateView, type LiveSupplementView, type ReadonlyCoursePackage } from "@aituber/contracts";
 import type { LlmProvider } from "@aituber/providers";
 import type { LiveSupplementStore, StoredSupplementReview, SupplementGateId } from "@aituber/storage";
 import type { FixedLectureService } from "./fixed-lecture-service.ts";
@@ -120,7 +120,9 @@ function hardGateResults(course: ReadonlyCoursePackage, question: ClassroomQuest
   const sourcesPassed = candidate.sourceIds.every((id) => sourceIds.has(id)) && (candidate.knowledgeBasis === "general" || candidate.sourceIds.length > 0);
   const semanticPassed = Boolean(scene) && candidate.focusTargetIds.length > 0 && candidate.focusTargetIds.every((id) => targetIds.has(id)) && targetIds.has(question.semanticTargetId);
   const contentPassed = candidate.speechText.trim().length > 0 && candidate.speechText.length <= 2_000 && candidate.captionText.trim().length > 0 && candidate.captionText.length <= 1_000;
-  const boardPassed = candidate.boardPatches.every((patch) => targetIds.has(patch.targetId) && (patch.operation === "show" || Boolean(patch.content?.trim()))) && candidate.corrections.every((patch) => targetIds.has(patch.targetId) && patch.content.trim().length > 0 && patch.rationale.trim().length > 0);
+  const targetById = new Map(course.semanticTargets.map((target) => [target.id, target]));
+  const safePatch = (targetId: string, content: string | undefined) => targetById.get(targetId)?.kind !== "formula" || isSafeFormulaInput(content ?? "");
+  const boardPassed = candidate.boardPatches.every((patch) => targetIds.has(patch.targetId) && (patch.operation === "show" || Boolean(patch.content?.trim()) && safePatch(patch.targetId, patch.content))) && candidate.corrections.every((patch) => targetIds.has(patch.targetId) && patch.content.trim().length > 0 && patch.rationale.trim().length > 0 && safePatch(patch.targetId, patch.content));
   const calculationsPassed = candidate.calculations.every((item) => Number.isFinite(item.left) && Number.isFinite(item.right) && Number.isFinite(item.result) && !(item.operator === "divide" && item.right === 0) && nearlyEqual(calculate(item.operator, item.left, item.right), item.result));
   return [gate("sources", sourcesPassed, "教材内の出典IDまたは一般知識区分が不正です。"), gate("semantic-targets", semanticPassed, "sceneと意味IDの参照が質問位置に一致しません。"), gate("content", contentPassed, "発話または字幕が空か長すぎます。"), gate("board", boardPassed, "板書差分または訂正が既存対象へ安全に適用できません。"), gate("calculations", calculationsPassed, "決定的な計算結果が一致しません。")];
 }

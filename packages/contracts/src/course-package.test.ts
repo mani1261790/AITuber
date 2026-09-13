@@ -118,6 +118,13 @@ describe("parseCoursePackage", () => {
     input.semanticTargets[0]!.id = "Rendered target 1";
     expectValidationIssue(input, "/semanticTargets/0/id");
   });
+
+  it("rejects unsafe TeX commands before a package can be rendered", () => {
+    const input = validCoursePackage(); input.semanticTargets[0]!.content = String.raw`\href{https://example.com}{x}`;
+    expectValidationIssue(input, "/semanticTargets/0/content");
+    const patched = validCoursePackage(); patched.teachingUnits[0]!.boardPatches = [{ operation: "replace", targetId: "target.formula", content: String.raw`\def\loop{\loop}\loop` }];
+    expectValidationIssue(patched, "/teachingUnits/0/boardPatches/0/content");
+  });
 });
 
 describe("assertCoursePackageRevision", () => {

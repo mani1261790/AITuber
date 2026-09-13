@@ -48,6 +48,7 @@ export function applyBoardPatches(
     if (patch.operation === "hide") visibleTargetIds.delete(patch.targetId);
     if (patch.operation === "replace") {
       if (!patch.content) throw new TypeError("A replace patch requires content");
+      if (coursePackage.semanticTargets.find((target) => target.id === patch.targetId)?.kind === "formula") assertSafeFormulaInput(patch.content);
       replacementContent.set(patch.targetId, patch.content);
       visibleTargetIds.add(patch.targetId);
     }
@@ -100,4 +101,10 @@ export function resolveStageScene(
 export function localAssetUrl(assetId: string): string {
   if (!/^[a-z][a-z0-9._:-]{2,127}$/.test(assetId)) throw new TypeError("Invalid asset id");
   return `/assets/${encodeURIComponent(assetId)}`;
+}
+
+function assertSafeFormulaInput(value: string): void {
+  const forbiddenCommand = /\\(?:href|url|includegraphics|html(?:Class|Id|Style|Data)|def|gdef|edef|xdef|newcommand|renewcommand|providecommand|catcode|require)\b/i;
+  const markupTag = /<\s*\/?\s*(?:script|style|svg|math|iframe|object|embed|img|link|meta)\b/i;
+  if (value.length > 4_096 || forbiddenCommand.test(value) || markupTag.test(value)) throw new TypeError("formula contains unsafe or unsupported rendering input");
 }

@@ -24,7 +24,9 @@ pnpm configure:llm
 | `AITUBER_LLM_MODEL` | LLM利用時は必須 | `qwen3:8b` |
 | `AITUBER_LLM_BASE_URL` | OpenAI以外で指定 | `http://localhost:11434/v1` |
 
-費用見積りが必要な運用では、利用モデルの公表単価を `AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS` と `AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS` に設定できる。モデルの単価をコードへ固定せず、未設定ならtoken利用量だけを返して費用は `null` とする。Ollamaは通常どちらも0として扱える。
+外部LLMでは、利用モデルの現在の公表単価を `AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS` と `AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS` に設定し、教材作成と授業時の1日費用上限も設定する。`configure:llm`が非表示のAPIキー入力に続けてこれらを尋ねる。単価または該当する費用上限が空なら、有料呼出を開始しない。モデルの単価をコードへ固定しない。Ollamaのloopback URLは自動的に入出力0 USDとして扱い、費用上限なしでも利用できる。
+
+最大token量も呼出前に予約する。既定は教材作成1日100,000,000 token、授業時1日10,000,000 tokenで、`.env`から変更できる。詳細は[データ保持、費用予約、入力防御](./data-security-and-costs.md)を参照する。
 
 ## 呼び出し契約
 

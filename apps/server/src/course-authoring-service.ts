@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { join } from "node:path";
 import { CoursePackageSchema, CoursePackageValidationError, parseCoursePackage, type AuthoringGateId, type AuthoringJobView, type AuthoringReview as ReviewResult, type CoursePackage, type CreateAuthoringRequest, type ResumeAuthoringRequest, type ValidationIssue } from "@aituber/contracts";
 import { LlmProviderError, type LlmProvider, type LlmUsage } from "@aituber/providers";
+import { ResourceBudgetConfigurationError, ResourceBudgetExceededError } from "@aituber/storage";
 import { ingestSources, type IngestedSources } from "./source-ingestion.ts";
 
 const GATE_IDS = ["source-alignment", "factual-consistency", "goal-alignment", "prerequisites", "references", "renderability", "speech-caption", "safe-content", "rights"] as const;
@@ -77,7 +78,7 @@ export class CourseAuthoringService {
         if (allGatesPassed(checkpoint.review)) { checkpoint.candidate = makeAvailable(checkpoint.candidate); checkpoint.status = "available"; checkpoint.error = null; this.#onAvailable(checkpoint.candidate); break; }
         forceRegenerate = false;
       }
-    } catch (error) { checkpoint.status = "failed"; checkpoint.error = error instanceof Error ? error.message : "教材作成に失敗しました。"; }
+    } catch (error) { checkpoint.status = error instanceof ResourceBudgetConfigurationError || error instanceof ResourceBudgetExceededError ? "budget-exhausted" : "failed"; checkpoint.error = error instanceof Error ? error.message : "教材作成に失敗しました。"; }
     markElapsed(); this.#save(checkpoint); return view(checkpoint);
   }
 

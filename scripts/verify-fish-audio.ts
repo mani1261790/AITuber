@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { FISH_STANDARD_VOICE_ID, FishAudioTtsProvider } from "../packages/providers/src/index.ts";
+import { budgetSpeech, createScriptBudget } from "./usage-budget.ts";
 
 const apiKey = process.env.AITUBER_FISH_AUDIO_API_KEY?.trim() ?? "";
 const model = process.env.AITUBER_FISH_AUDIO_MODEL?.trim() || "s2.1-pro-free";
@@ -19,12 +20,13 @@ if (!creditResponse.ok) {
 }
 
 process.stdout.write(`2/2 ${model} と標準音声でタイムスタンプ付き音声を生成しています...\n`);
-const artifact = await new FishAudioTtsProvider({ apiKey, model }).synthesize({
+const budget = createScriptBudget();
+const artifact = await budgetSpeech(new FishAudioTtsProvider({ apiKey, model }), budget, model).synthesize({
   text: "AITuberの音声接続を確認します。頂点は、二、コンマ、マイナス一です。",
   language: "ja-JP",
   voiceId,
   dictionaryVersion: "verification.v1",
-}, { signal: new AbortController().signal });
+}, { signal: new AbortController().signal }).finally(() => budget.close());
 
 const outputDirectory = resolve(".data/fish-audio-verification");
 await mkdir(outputDirectory, { recursive: true });

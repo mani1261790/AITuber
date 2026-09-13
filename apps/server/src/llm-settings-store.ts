@@ -1,19 +1,22 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { LlmSettingsView, UpdateLlmSettingsRequest } from "@aituber/contracts";
-import { OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions } from "@aituber/providers";
+import { BudgetedLlmProvider, isLocalLlmBaseUrl, OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions, type UsageBudget, type UsageScope } from "@aituber/providers";
 
 interface StoredLlmSettings { apiKey: string; model: string; baseUrl: string }
 
 export class LlmSettingsStore {
   readonly #path: string;
   readonly #pricing: Pick<OpenAiCompatibleLlmOptions, "inputUsdPerMillionTokens" | "outputUsdPerMillionTokens">;
+  readonly #usageBudget: UsageBudget | null;
   #value: StoredLlmSettings;
 
-  constructor(path: string, env: Readonly<Record<string, string | undefined>> = process.env) {
+  constructor(path: string, env: Readonly<Record<string, string | undefined>> = process.env, usageBudget: UsageBudget | null = null) {
     this.#path = path;
     const configured = openAiCompatibleOptionsFromEnv(env);
-    this.#pricing = { ...(configured?.inputUsdPerMillionTokens !== undefined ? { inputUsdPerMillionTokens: configured.inputUsdPerMillionTokens } : {}), ...(configured?.outputUsdPerMillionTokens !== undefined ? { outputUsdPerMillionTokens: configured.outputUsdPerMillionTokens } : {}) };
+    const inputPrice = optionalNonNegativeNumber(env.AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS, "AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS"); const outputPrice = optionalNonNegativeNumber(env.AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS, "AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS");
+    this.#pricing = { ...(inputPrice !== undefined ? { inputUsdPerMillionTokens: inputPrice } : {}), ...(outputPrice !== undefined ? { outputUsdPerMillionTokens: outputPrice } : {}) };
+    this.#usageBudget = usageBudget;
     this.#value = existsSync(path) ? parseStored(readFileSync(path, "utf8")) : { apiKey: configured?.apiKey ?? "", model: configured?.model ?? "", baseUrl: configured?.baseUrl ?? "" };
   }
 
@@ -36,10 +39,16 @@ export class LlmSettingsStore {
     return options ? { ...options, ...this.#pricing } : null;
   }
 
-  createProvider(): LlmProvider {
+  createProvider(scope: UsageScope = "runtime"): LlmProvider {
     const options = this.connectionOptions();
     if (!options) throw new TypeError("LLM接続を先に設定してください。");
-    return new OpenAiCompatibleLlmProvider(options);
+    const backing = new OpenAiCompatibleLlmProvider(options);
+    if (!this.#usageBudget) return backing;
+    const freeLocal = Boolean(options.baseUrl && isLocalLlmBaseUrl(options.baseUrl));
+    const inputPrice = options.inputUsdPerMillionTokens ?? (freeLocal ? 0 : undefined); const outputPrice = options.outputUsdPerMillionTokens ?? (freeLocal ? 0 : undefined);
+    return new BudgetedLlmProvider({ backing, budget: this.#usageBudget, scope,
+      ...(inputPrice !== undefined ? { inputUsdPerMillionTokens: inputPrice } : {}),
+      ...(outputPrice !== undefined ? { outputUsdPerMillionTokens: outputPrice } : {}) });
   }
 }
 
@@ -48,3 +57,5 @@ function parseStored(text: string): StoredLlmSettings {
   if (typeof value.apiKey !== "string" || typeof value.model !== "string" || typeof value.baseUrl !== "string") throw new TypeError("Stored LLM settings are invalid");
   return { apiKey: value.apiKey, model: value.model, baseUrl: value.baseUrl };
 }
+
+function optionalNonNegativeNumber(value: string | undefined, name: string): number | undefined { if (!value?.trim()) return undefined; const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new TypeError(`${name} must be a non-negative number`); return parsed; }

@@ -16,7 +16,7 @@ describe("ingestSources", () => {
   });
 
   it("keeps an image for the LLM vision request", async () => {
-    const base64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+    const base64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
     const result = await ingestSources([{ fileName: "diagram.png", mimeType: "image/png", dataBase64: base64, rights: { basis: "permission" } }]);
     expect(result.sources[0]?.kind).toBe("image");
     expect(result.images).toEqual([{ mimeType: "image/png", dataBase64: base64 }]);
@@ -33,6 +33,9 @@ describe("ingestSources", () => {
     await expect(ingestSources([{ ...base, mimeType: "text/html" } as never])).rejects.toThrow("MIME");
     await expect(ingestSources([{ ...base, rights: { basis: "unknown" } } as never])).rejects.toThrow("rights");
     await expect(ingestSources([{ ...base, fileName: "bad\nname.md" }])).rejects.toThrow("file name");
+    await expect(ingestSources([{ ...base, fileName: "../note.md" }])).rejects.toThrow("file name");
+    await expect(ingestSources([{ ...base, fileName: ".." }])).rejects.toThrow("file name");
+    await expect(ingestSources([{ ...base, fileName: "image.png", mimeType: "image/png" }])).rejects.toThrow("declared MIME");
   });
 });
 

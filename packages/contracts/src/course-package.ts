@@ -1,5 +1,6 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { isSafeFormulaInput } from "./render-safety.ts";
 
 const MAX_SOURCES = 64;
 const MAX_GOALS = 32;
@@ -199,8 +200,8 @@ export function parseCoursePackage(input: unknown): ReadonlyCoursePackage {
   if (schemaIssues.length > 0) throw new CoursePackageValidationError(schemaIssues);
 
   const coursePackage = input as CoursePackage;
-  const referenceIssues = validateReferences(coursePackage);
-  if (referenceIssues.length > 0) throw new CoursePackageValidationError(referenceIssues);
+  const domainIssues = [...validateReferences(coursePackage), ...validateSafeRendering(coursePackage)];
+  if (domainIssues.length > 0) throw new CoursePackageValidationError(domainIssues);
 
   return deepFreeze(Value.Clone(coursePackage));
 }
@@ -304,6 +305,18 @@ function validateReferences(coursePackage: CoursePackage): ValidationIssue[] {
       issues.push({ path: `/teachingUnits/${index}/id`, message: `Main teaching unit ${unit.id} is missing from the schedule` });
     }
   });
+  return issues;
+}
+
+function validateSafeRendering(coursePackage: CoursePackage): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const targets = new Map(coursePackage.semanticTargets.map((target) => [target.id, target]));
+  coursePackage.semanticTargets.forEach((target, index) => {
+    if (target.kind === "formula" && !isSafeFormulaInput(target.content)) issues.push({ path: `/semanticTargets/${index}/content`, message: "Formula contains unsafe or unsupported rendering input" });
+  });
+  coursePackage.teachingUnits.forEach((unit, unitIndex) => unit.boardPatches.forEach((patch, patchIndex) => {
+    if (patch.operation === "replace" && targets.get(patch.targetId)?.kind === "formula" && !isSafeFormulaInput(patch.content ?? "")) issues.push({ path: `/teachingUnits/${unitIndex}/boardPatches/${patchIndex}/content`, message: "Formula patch contains unsafe or unsupported rendering input" });
+  }));
   return issues;
 }
 

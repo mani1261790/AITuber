@@ -41,6 +41,7 @@ describe("OpenAiCompatibleLlmProvider", () => {
   it("accepts a keyless loopback Ollama endpoint", () => {
     expect(() => new OpenAiCompatibleLlmProvider({ model: "qwen3:8b", baseUrl: "http://localhost:11434/v1" })).not.toThrow();
     expect(() => new OpenAiCompatibleLlmProvider({ model: "remote", baseUrl: "https://example.com/v1" })).toThrow(/API key/);
+    expect(() => new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "remote", baseUrl: "https://secret@example.com/v1" })).toThrow(/credentials/);
   });
 
   it("retries one transient provider failure inside the same timeout boundary", async () => {
@@ -65,6 +66,12 @@ describe("OpenAiCompatibleLlmProvider", () => {
       const promise = provider.createContext({ purpose: "review", systemInstruction: "Review." }).generate({ prompt: "value", schemaName: "review", schema, ...(item.maxOutputBytes ? { maxOutputBytes: item.maxOutputBytes } : {}) });
       await expect(promise).rejects.toMatchObject({ code: item.expected });
     }
+  });
+
+  it("rejects unsafe generation bounds before calling the endpoint", async () => {
+    const fetch = vi.fn(); const provider = new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "model", fetch });
+    await expect(provider.createContext({ purpose: "review", systemInstruction: "Review." }).generate({ prompt: "value", schemaName: "review", schema, maxOutputTokens: -1 })).rejects.toThrow(/maxOutputTokens/);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("distinguishes caller cancellation from timeout without including the API key", async () => {
