@@ -23,6 +23,7 @@ button, input { font: inherit; }
 .error { border-left-color: #a43e31; color: #70271f; background: #fff0ed; }
 .playback { display: flex; width: fit-content; align-items: center; gap: 9px; margin: 0 0 18px; padding: 7px 12px; border: 1px solid #6f8b82; border-radius: 999px; color: #005456; background: #fff; font-size: 0.875rem; font-weight: 700; }
 .playback-dot { width: 9px; height: 9px; border-radius: 50%; background: #007477; animation: pulse 900ms ease-in-out infinite alternate; }
+.speech-audio { display: block; width: min(100%, 420px); margin: 0 0 18px; }
 
 .stage { padding: 24px; border: 1px solid #6f8b82; border-radius: 18px; background: #fff; }
 .scene-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin-bottom: 24px; }

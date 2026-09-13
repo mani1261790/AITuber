@@ -92,6 +92,9 @@ importers:
       '@aituber/lesson':
         specifier: workspace:*
         version: link:../../packages/lesson
+      '@aituber/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@aituber/storage':
         specifier: workspace:*
         version: link:../../packages/storage

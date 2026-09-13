@@ -1,1 +1,1 @@
-export const PROVIDERS_PACKAGE = "@aituber/providers" as const;
+export * from "./speech.ts";

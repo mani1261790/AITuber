@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   CourseSummary,
   CreateSessionRequest,
@@ -13,6 +13,7 @@ import {
   type LessonEvent,
   type LessonState,
 } from "@aituber/lesson";
+import type { SpeechArtifact, TextToSpeechProvider } from "@aituber/providers";
 import { LectureEventStore } from "@aituber/storage";
 
 interface RuntimeSession {
@@ -23,6 +24,8 @@ interface RuntimeSession {
   displayUnitId: string | null;
   assessmentId: string | null;
   timer: ReturnType<typeof setTimeout> | null;
+  speechAbort: AbortController | null;
+  speech: FixedSessionView["speech"];
 }
 
 export class FixedLectureService {
@@ -30,16 +33,23 @@ export class FixedLectureService {
   readonly #sessions = new Map<string, RuntimeSession>();
   readonly #store: LectureEventStore;
   readonly #playbackUnitMs: number;
+  readonly #speechProvider: TextToSpeechProvider | null;
+  readonly #voiceId: string;
+  readonly #speechArtifacts = new Map<string, SpeechArtifact>();
   #currentSessionId: string | null = null;
 
   constructor(options: {
     store: LectureEventStore;
     courses?: readonly ReadonlyCoursePackage[];
     playbackUnitMs?: number;
+    speechProvider?: TextToSpeechProvider;
+    voiceId?: string;
   }) {
     this.#store = options.store;
     this.#courses = new Map((options.courses ?? coursePackageFixtures).map((course) => [course.id, course]));
     this.#playbackUnitMs = options.playbackUnitMs ?? 2_000;
+    this.#speechProvider = options.speechProvider ?? null;
+    this.#voiceId = options.voiceId ?? "";
   }
 
   listCourses(): readonly CourseSummary[] {
@@ -74,6 +84,8 @@ export class FixedLectureService {
       displayUnitId: null,
       assessmentId: null,
       timer: null,
+      speechAbort: null,
+      speech: emptySpeech(1),
     };
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
@@ -105,14 +117,20 @@ export class FixedLectureService {
       displayUnitId: runtime.displayUnitId,
       progress: { completed: runtime.state.completedUnitIds.length, total: runtime.state.orderedUnitIds.length },
       assessment,
-      testAudio: { playing: runtime.state.presentedUnitId !== null, durationMs: this.#playbackUnitMs },
+      speech: runtime.speech,
     };
+  }
+
+  getSpeechAudio(cacheKey: string): Pick<SpeechArtifact, "audio" | "mimeType"> {
+    const artifact = this.#speechArtifacts.get(cacheKey);
+    if (!artifact) throw new RangeError(`Unknown speech artifact ${cacheKey}`);
+    return { audio: artifact.audio, mimeType: artifact.mimeType };
   }
 
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView {
     const runtime = this.#requireSession(sessionId);
     if (request.command === "pause") {
-      this.#clearTimer(runtime);
+      this.#cancelSpeech(runtime);
       const previousEpoch = runtime.state.epoch;
       this.#apply(runtime, { type: "PAUSE_REQUESTED", epoch: previousEpoch });
       this.#store.advanceEpoch(runtime.id);
@@ -121,7 +139,7 @@ export class FixedLectureService {
       this.#apply(runtime, { type: "RECOVERY_COMPLETED", epoch: runtime.state.epoch });
       this.#schedule(runtime);
     } else if (request.command === "finish") {
-      this.#clearTimer(runtime);
+      this.#cancelSpeech(runtime);
       this.#apply(runtime, { type: "FINISH_REQUESTED", epoch: runtime.state.epoch });
     } else if (request.command === "answer") {
       if (runtime.state.status !== "CHECKPOINT" || !runtime.assessmentId) {
@@ -138,7 +156,7 @@ export class FixedLectureService {
   }
 
   close() {
-    this.#sessions.forEach((runtime) => this.#clearTimer(runtime));
+    this.#sessions.forEach((runtime) => this.#cancelSpeech(runtime));
   }
 
   #schedule(runtime: RuntimeSession) {
@@ -150,7 +168,48 @@ export class FixedLectureService {
     }
     runtime.displayUnitId = unitId;
     this.#apply(runtime, { type: "UNIT_PRESENTED", epoch: runtime.state.epoch, unitId });
-    runtime.timer = setTimeout(() => this.#completeUnit(runtime.id, unitId, runtime.state.epoch), this.#playbackUnitMs);
+    const unit = runtime.course.teachingUnits.find((candidate) => candidate.id === unitId)!;
+    const epoch = runtime.state.epoch;
+    if (!this.#speechProvider || !this.#voiceId) {
+      this.#startPlayback(runtime, unitId, epoch, {
+        ...emptySpeech(epoch), mode: "test", playing: true, unitId, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs,
+        segments: [{ text: unit.speechText, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: unit.focusTargetIds }],
+      });
+      return;
+    }
+    runtime.speech = { ...emptySpeech(epoch), mode: "preparing", unitId };
+    const controller = new AbortController();
+    runtime.speechAbort = controller;
+    void this.#speechProvider.synthesize({
+      text: unit.speechText,
+      language: "ja-JP",
+      voiceId: this.#voiceId,
+      dictionaryVersion: dictionaryVersion(runtime.course.pronunciationDictionary),
+    }, { signal: controller.signal }).then((artifact) => {
+      if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING" || runtime.state.presentedUnitId !== unitId) return;
+      runtime.speechAbort = null;
+      this.#speechArtifacts.set(artifact.cacheKey, artifact);
+      this.#startPlayback(runtime, unitId, epoch, {
+        mode: "fish-audio", playing: true, epoch, unitId, startedAt: new Date().toISOString(), durationMs: artifact.durationMs,
+        audioUrl: `/api/audio/${artifact.cacheKey}?epoch=${epoch}`, failure: null,
+        segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: unit.focusTargetIds })),
+        provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs,
+      });
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING" || runtime.state.presentedUnitId !== unitId) return;
+      runtime.speechAbort = null;
+      this.#startPlayback(runtime, unitId, epoch, {
+        mode: "caption-fallback", playing: true, epoch, unitId, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs, audioUrl: null,
+        segments: [{ text: unit.speechText, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: unit.focusTargetIds }],
+        failure: error instanceof Error ? error.message : "TTS failed",
+        provider: this.#speechProvider?.provider ?? null, model: this.#speechProvider?.model ?? null, voiceId: this.#voiceId || null, firstAudioMs: null,
+      });
+    });
+  }
+
+  #startPlayback(runtime: RuntimeSession, unitId: string, epoch: number, speech: FixedSessionView["speech"]) {
+    runtime.speech = speech;
+    runtime.timer = setTimeout(() => this.#completeUnit(runtime.id, unitId, epoch), Math.max(1, speech.durationMs));
   }
 
   #completeUnit(sessionId: string, unitId: string, epoch: number) {
@@ -158,6 +217,7 @@ export class FixedLectureService {
     runtime.timer = null;
     if (runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     this.#apply(runtime, { type: "UNIT_AUDIO_COMPLETED", epoch, unitId });
+    runtime.speech = { ...runtime.speech, playing: false };
     const assessment = runtime.course.assessments.find((item) => item.afterUnitId === unitId);
     if (assessment) {
       runtime.assessmentId = assessment.id;
@@ -199,9 +259,12 @@ export class FixedLectureService {
     });
   }
 
-  #clearTimer(runtime: RuntimeSession) {
+  #cancelSpeech(runtime: RuntimeSession) {
+    runtime.speechAbort?.abort(new DOMException("Lecture epoch changed", "AbortError"));
+    runtime.speechAbort = null;
     if (runtime.timer) clearTimeout(runtime.timer);
     runtime.timer = null;
+    runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null };
   }
 
   #requireSession(sessionId: string): RuntimeSession {
@@ -209,6 +272,14 @@ export class FixedLectureService {
     if (!runtime) throw new RangeError(`Unknown session ${sessionId}`);
     return runtime;
   }
+}
+
+function emptySpeech(epoch: number): FixedSessionView["speech"] {
+  return { mode: "preparing", playing: false, epoch, unitId: null, startedAt: null, durationMs: 0, audioUrl: null, segments: [], failure: null, provider: null, model: null, voiceId: null, firstAudioMs: null };
+}
+
+function dictionaryVersion(dictionary: ReadonlyCoursePackage["pronunciationDictionary"]): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(dictionary)).digest("hex")}`;
 }
 
 function visibleStatus(status: LessonState["status"]): FixedSessionView["status"] {

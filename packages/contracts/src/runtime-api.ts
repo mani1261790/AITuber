@@ -20,7 +20,28 @@ export interface FixedSessionView {
   readonly displayUnitId: string | null;
   readonly progress: { readonly completed: number; readonly total: number };
   readonly assessment: ReadonlyCoursePackage["assessments"][number] | null;
-  readonly testAudio: { readonly playing: boolean; readonly durationMs: number };
+  readonly speech: SessionSpeechView;
+}
+
+export interface SessionSpeechView {
+  readonly mode: "preparing" | "fish-audio" | "caption-fallback" | "test";
+  readonly playing: boolean;
+  readonly epoch: number;
+  readonly unitId: string | null;
+  readonly startedAt: string | null;
+  readonly durationMs: number;
+  readonly audioUrl: string | null;
+  readonly segments: readonly {
+    readonly text: string;
+    readonly startMs: number;
+    readonly endMs: number;
+    readonly semanticTargetIds: readonly string[];
+  }[];
+  readonly failure: string | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+  readonly voiceId: string | null;
+  readonly firstAudioMs: number | null;
 }
 
 export interface CreateSessionRequest {

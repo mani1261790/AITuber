@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { quadraticFunctionsFixture } from "@aituber/content";
+import { createSpeechCacheKey, type SpeechArtifact, type TextToSpeechProvider } from "@aituber/providers";
 import { LectureEventStore } from "@aituber/storage";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 
@@ -25,7 +26,7 @@ describe("FixedLectureService", () => {
       durationMinutes: quadraticFunctionsFixture.durationMinutes,
     });
     expect(started.status).toBe("TEACHING");
-    expect(started.testAudio.playing).toBe(true);
+    expect(started.speech.playing).toBe(true);
     vi.advanceTimersByTime(500);
 
     const checkpoint = service.getSession(started.id);
@@ -66,4 +67,59 @@ describe("FixedLectureService", () => {
     expect(finished.completedUnitIds).toEqual(quadraticFunctionsFixture.schedule.orderedUnitIds.slice(0, 2));
     expect(finished.unfinishedUnitIds).toEqual(quadraticFunctionsFixture.schedule.orderedUnitIds.slice(2));
   });
+
+  it("uses timestamped provider audio and exposes the current artifact", async () => {
+    service.close();
+    const provider = fixedProvider();
+    service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: provider, voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    expect(started.speech.mode).toBe("preparing");
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("fish-audio"));
+
+    const speaking = service.getSession(started.id);
+    expect(speaking.speech.segments[0]?.semanticTargetIds).toEqual(["target.math.vertex-form"]);
+    expect([...service.getSpeechAudio(speaking.speech.audioUrl!.split("/").at(-1)!.split("?")[0]!).audio]).toEqual([1, 2, 3]);
+    vi.advanceTimersByTime(300);
+    expect(service.getSession(started.id).progress.completed).toBe(1);
+  });
+
+  it("discards a provider result after pause changes the epoch", async () => {
+    service.close();
+    let resolveSpeech!: (artifact: SpeechArtifact) => void;
+    const provider: TextToSpeechProvider = { provider: "fake", model: "fixed", synthesize: () => new Promise((resolve) => { resolveSpeech = resolve; }) };
+    service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: provider, voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    service.command(started.id, { command: "pause" });
+    resolveSpeech(makeArtifact(quadraticFunctionsFixture.teachingUnits[0]!.speechText));
+    await Promise.resolve();
+    vi.advanceTimersByTime(1_000);
+
+    const paused = service.getSession(started.id);
+    expect(paused.status).toBe("PAUSED");
+    expect(paused.progress.completed).toBe(0);
+    expect(paused.speech.audioUrl).toBeNull();
+  });
+
+  it("continues with captions after a TTS failure", async () => {
+    service.close();
+    const provider: TextToSpeechProvider = { provider: "fake", model: "fixed", synthesize: async () => { throw new Error("injected failure"); } };
+    service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: provider, voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("caption-fallback"));
+    expect(service.getSession(started.id).speech.failure).toBe("injected failure");
+    vi.advanceTimersByTime(100);
+    expect(service.getSession(started.id).progress.completed).toBe(1);
+  });
 });
+
+function fixedProvider(): TextToSpeechProvider {
+  return { provider: "fake", model: "fixed", synthesize: async (request) => makeArtifact(request.text) };
+}
+
+function makeArtifact(text: string): SpeechArtifact {
+  return {
+    cacheKey: createSpeechCacheKey({ provider: "fake", model: "fixed", voiceId: "voice.standard", dictionaryVersion: `sha256:${"0".repeat(64)}`, language: "ja-JP", text }),
+    provider: "fake", model: "fixed", voiceId: "voice.standard", mimeType: "audio/ogg", audio: Uint8Array.from([1, 2, 3]),
+    segments: [{ text, startMs: 0, endMs: 300 }], durationMs: 300, firstAudioMs: 20,
+  };
+}

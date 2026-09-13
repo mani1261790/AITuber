@@ -29,12 +29,13 @@ function OperatorApp() {
 
   useEffect(() => {
     if (!session || session.status === "FINISHED") return;
+    let active = true;
     const timer = window.setInterval(() => {
       void fetchJson<{ session: FixedSessionView }>(`/api/sessions/${encodeURIComponent(session.id)}`)
-        .then((result) => setSession(result.session))
-        .catch((reason: unknown) => setError(errorMessage(reason)));
-    }, 400);
-    return () => window.clearInterval(timer);
+        .then((result) => { if (active) setSession(result.session); })
+        .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
+    }, 100);
+    return () => { active = false; window.clearInterval(timer); };
   }, [session?.id, session?.status]);
 
   async function startLecture() {
@@ -89,6 +90,7 @@ function OperatorApp() {
       {session && <section className="panel session-panel" aria-labelledby="session-heading">
         <div className="session-heading"><div><p className={`status status--${session.status.toLowerCase()}`}>{statusLabels[session.status]}</p><h2 id="session-heading">{session.course.title}</h2></div><strong>{session.progress.completed} / {session.progress.total}</strong></div>
         <progress value={session.progress.completed} max={session.progress.total}>{session.progress.completed} / {session.progress.total}</progress>
+        {session.speech.mode === "caption-fallback" && <p className="speech-warning">音声合成に失敗したため、字幕で講義を続けています。</p>}
         <p><a href={`http://127.0.0.1:4311/?session=${encodeURIComponent(session.id)}`} target="_blank" rel="noreferrer">教室画面を開く</a></p>
         {session.status !== "FINISHED" && <div className="actions">
           {session.status === "PAUSED"

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { FixedSessionView } from "@aituber/contracts";
@@ -15,7 +15,9 @@ function ClassroomApp() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
+  const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const sessionId = new URLSearchParams(window.location.search).get("session");
 
   useEffect(() => {
@@ -25,17 +27,40 @@ function ClassroomApp() {
       .then((result) => { if (active) { setSession(result.session); setError(null); } })
       .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
     load();
-    const timer = window.setInterval(load, 400);
+    const timer = window.setInterval(load, 100);
     return () => { active = false; window.clearInterval(timer); };
   }, [sessionId]);
 
+  useEffect(() => {
+    const startedAt = session?.speech.startedAt;
+    if (!startedAt || !session.speech.playing) { setSpeechElapsedMs(0); return; }
+    const update = () => setSpeechElapsedMs(Math.max(0, Date.now() - Date.parse(startedAt)));
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [session?.speech.startedAt, session?.speech.playing]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const startedAt = session?.speech.startedAt;
+    if (!audio || !startedAt || !session.speech.audioUrl) return;
+    const synchronize = () => {
+      audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, Math.max(0, Date.now() - Date.parse(startedAt)) / 1_000);
+      void audio.play().catch(() => { /* The visible controls let the viewer start audio when autoplay is blocked. */ });
+    };
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) synchronize();
+    else audio.addEventListener("loadedmetadata", synchronize, { once: true });
+    return () => audio.removeEventListener("loadedmetadata", synchronize);
+  }, [session?.speech.audioUrl, session?.speech.startedAt]);
+
   const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
+  const activeSpeechSegment = session?.speech.segments.find((segment) => speechElapsedMs >= segment.startMs && speechElapsedMs < segment.endMs) ?? null;
   const scene = useMemo(() => {
     if (!session || !displayUnit) return null;
     let board = applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches);
-    board = focusSemanticTarget(session.course, board, selectedTargetId ?? displayUnit.focusTargetIds[0] ?? null);
+    board = focusSemanticTarget(session.course, board, selectedTargetId ?? activeSpeechSegment?.semanticTargetIds[0] ?? displayUnit.focusTargetIds[0] ?? null);
     return resolveStageScene(session.course, displayUnit.sceneId, board);
-  }, [session, displayUnit, selectedTargetId]);
+  }, [session, displayUnit, selectedTargetId, activeSpeechSegment]);
   const currentGoal = displayUnit
     ? session?.course.learningGoals.find((goal) => displayUnit.learningGoalIds.includes(goal.id))?.description
     : null;
@@ -67,7 +92,8 @@ function ClassroomApp() {
       </header>
 
       {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
-      {session.testAudio.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />固定テスト音声を再生中</div>}
+      {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
+      {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" />}
       {error && <p className="error" role="alert">{error}</p>}
 
       {scene && <section className="stage" aria-labelledby="scene-title">
@@ -77,7 +103,7 @@ function ClassroomApp() {
         </div>
       </section>}
 
-      {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title">字幕</h2><p>{displayUnit.captionText}</p></section>}
+      {displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title">字幕</h2><p>{displayUnit.speechText}</p></section>}
 
       {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
         <h2 id="checkpoint-title">確認問題</h2><p>{session.assessment.prompt}</p>

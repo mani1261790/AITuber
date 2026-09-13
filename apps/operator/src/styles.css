@@ -32,6 +32,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 .status--finished { color: #536b65; }
 progress { width: 100%; height: 12px; accent-color: #007477; }
 .session-panel a { color: #005456; font-weight: 700; text-underline-offset: 3px; }
+.speech-warning { padding: 12px 14px; border-left: 4px solid #b97700; background: #fff8e8; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .actions .quiet-button { color: #005456; background: #fff; }
 .result { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }

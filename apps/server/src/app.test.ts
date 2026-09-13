@@ -2,6 +2,7 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { LectureEventStore } from "@aituber/storage";
+import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 
@@ -53,7 +54,7 @@ describe("server boundary", () => {
 
   it("starts and controls a fixed lecture through JSON endpoints", async () => {
     const store = new LectureEventStore(":memory:");
-    const service = new FixedLectureService({ store, playbackUnitMs: 10_000 });
+    const service = new FixedLectureService({ store, playbackUnitMs: 10_000, speechProvider: new TestToneSpeechProvider(1_000), voiceId: "voice.test-tone" });
     resources.add({ service, store });
     const server = createApp(service);
     servers.add(server);
@@ -73,6 +74,14 @@ describe("server boundary", () => {
     });
     expect(started.status).toBe(201);
     const startedResult = await started.json() as { session: { id: string; status: string } };
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const live = await fetch(`${origin}/api/sessions/${startedResult.session.id}`);
+    const liveResult = await live.json() as { session: { speech: { audioUrl: string | null } } };
+    expect(liveResult.session.speech.audioUrl).toMatch(/^\/api\/audio\/[a-f0-9]{64}/);
+    const audio = await fetch(`${origin}${liveResult.session.speech.audioUrl}`);
+    expect(audio.headers.get("content-type")).toBe("audio/wav");
+    expect((await audio.arrayBuffer()).byteLength).toBeGreaterThan(44);
 
     const paused = await fetch(`${origin}/api/sessions/${startedResult.session.id}/commands`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: "pause" }),
