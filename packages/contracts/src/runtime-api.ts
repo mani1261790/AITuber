@@ -83,6 +83,7 @@ export interface ClassroomJoinResponse {
   readonly participant: ClassroomParticipantAccess;
   readonly room: ClassroomRoomView;
   readonly snapshot: ClassroomSnapshot;
+  readonly questions: readonly ClassroomQuestionView[];
 }
 
 export interface ClassroomReconnectRequest {
@@ -93,6 +94,44 @@ export interface ClassroomStreamMessage {
   readonly type: "snapshot";
   readonly snapshot: ClassroomSnapshot;
   readonly room: ClassroomRoomView;
+  readonly questions: readonly ClassroomQuestionView[];
+}
+
+export type QuestionDisposition = "answer-now" | "after-class";
+export interface QuestionPrioritySignals {
+  readonly score: number;
+  readonly currentGoalRelated: boolean;
+  readonly prerequisiteForNext: boolean;
+  readonly supporterCount: number;
+  readonly waitedMs: number;
+  readonly remainingMs: number;
+}
+export interface ClassroomQuestionView {
+  readonly id: string;
+  readonly text: string;
+  readonly coursePackageId: string;
+  readonly coursePackageVersion: number;
+  readonly sceneId: string;
+  readonly semanticTargetId: string;
+  readonly lastCompletedUnitId: string | null;
+  readonly submittedAt: string;
+  readonly updatedAt: string;
+  readonly supporterCount: number;
+  readonly status: "accepted" | "answering" | "answered";
+  readonly disposition: QuestionDisposition;
+  readonly reason: string;
+  readonly priority: QuestionPrioritySignals;
+}
+export interface SubmitQuestionRequest {
+  readonly accessToken: string;
+  readonly text: string;
+  readonly sceneId: string;
+  readonly semanticTargetId: string;
+}
+export interface SubmitQuestionResponse {
+  readonly question: ClassroomQuestionView;
+  readonly questions: readonly ClassroomQuestionView[];
+  readonly snapshot: ClassroomSnapshot;
 }
 
 export interface LlmSettingsView {

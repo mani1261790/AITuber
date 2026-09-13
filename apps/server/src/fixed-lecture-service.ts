@@ -28,6 +28,7 @@ interface RuntimeSession {
   speechAbort: AbortController | null;
   speech: FixedSessionView["speech"];
   revision: number;
+  startedAtMs: number;
 }
 
 type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
@@ -97,6 +98,7 @@ export class FixedLectureService {
       speechAbort: null,
       speech: emptySpeech(1),
       revision: 0,
+      startedAtMs: Date.now(),
     };
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
@@ -109,6 +111,8 @@ export class FixedLectureService {
   getCurrentSession(): FixedSessionView | null {
     return this.#currentSessionId ? this.getSession(this.#currentSessionId) : null;
   }
+
+  getRemainingTimeMs(sessionId: string): number { const runtime = this.#requireSession(sessionId); return Math.max(0, runtime.configuredDurationMinutes * 60_000 - (Date.now() - runtime.startedAtMs)); }
 
   getSession(sessionId: string): FixedSessionView {
     const runtime = this.#requireSession(sessionId);
@@ -253,7 +257,9 @@ export class FixedLectureService {
     runtime.timer = null;
     if (runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     this.#apply(runtime, { type: "UNIT_AUDIO_COMPLETED", epoch, unitId });
-    runtime.speech = { ...runtime.speech, playing: false };
+    const completedArtifact = runtime.speech.audioUrl?.match(/\/speech\/([a-f0-9]{64})/)?.[1];
+    if (completedArtifact) this.#speechArtifacts.delete(completedArtifact);
+    runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null };
     this.#publish(runtime);
     const assessment = runtime.course.assessments.find((item) => item.afterUnitId === unitId);
     if (assessment) {

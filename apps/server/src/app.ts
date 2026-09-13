@@ -1,10 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AuthoringJobView, ClassroomJoinRequest, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
+import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
 export interface AuthoringApi { list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
+export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 
 export interface LectureApi {
   listCourses(): unknown;
@@ -23,16 +24,18 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi): Server {
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
-  const unsubscribe = api.subscribe((sessionId, snapshot) => {
+  const sendSnapshot = (sessionId: string, snapshot: ClassroomSnapshot, questionList = questions?.list(sessionId) ?? []) => {
     const sockets = streams.get(sessionId);
     if (!sockets) return;
-    const message: ClassroomStreamMessage = { type: "snapshot", snapshot, room: classrooms.getBySession(sessionId) };
+    const message: ClassroomStreamMessage = { type: "snapshot", snapshot, room: classrooms.getBySession(sessionId), questions: questionList };
     sockets.forEach((socket) => { if (socket.readyState === 1) socket.send(JSON.stringify(message)); });
-  });
+  };
+  const unsubscribe = api.subscribe((sessionId, snapshot) => sendSnapshot(sessionId, snapshot));
+  const unsubscribeQuestions = questions?.subscribe((sessionId, questionList) => sendSnapshot(sessionId, api.getSnapshot(sessionId), questionList)) ?? (() => undefined);
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -55,13 +58,20 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
       if (request.method === "POST" && url.pathname === "/api/classrooms/join") {
         requireSurface(request, "classroom");
         const access = classrooms.join((await readJson<ClassroomJoinRequest>(request)).code);
-        return json(response, 201, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId) });
+        return json(response, 201, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
       }
       const reconnectMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/reconnect$/);
       if (request.method === "POST" && reconnectMatch) {
         requireSurface(request, "classroom");
         const access = classrooms.authenticate(reconnectMatch[1]!, (await readJson<ClassroomReconnectRequest>(request)).accessToken);
-        return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId) });
+        return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
+      }
+      const questionMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/questions$/);
+      if (request.method === "POST" && questionMatch) {
+        requireSurface(request, "classroom"); if (!questions) throw new RangeError("Questions are unavailable");
+        const body = await readJson<SubmitQuestionRequest>(request); const access = classrooms.authenticate(questionMatch[1]!, body.accessToken);
+        const result = questions.submit({ sessionId: access.sessionId, participantId: access.participant.id, request: body });
+        return json(response, 201, { ...result, snapshot: api.getSnapshot(access.sessionId) });
       }
       const answerMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/answer$/);
       if (request.method === "POST" && answerMatch) {
@@ -108,7 +118,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
       const access = classrooms.authenticate(match[1]!, url.searchParams.get("token") ?? "");
       webSockets.handleUpgrade(request, socket, head, (webSocket) => {
         const group = streams.get(access.sessionId) ?? new Set(); streams.set(access.sessionId, group); group.add(webSocket);
-        webSocket.send(JSON.stringify({ type: "snapshot", snapshot: api.getSnapshot(access.sessionId), room: access.room } satisfies ClassroomStreamMessage));
+        webSocket.send(JSON.stringify({ type: "snapshot", snapshot: api.getSnapshot(access.sessionId), room: access.room, questions: questions?.list(access.sessionId) ?? [] } satisfies ClassroomStreamMessage));
         webSocket.on("close", () => { group.delete(webSocket); if (group.size === 0) streams.delete(access.sessionId); });
       });
     } catch { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); }
@@ -116,7 +126,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
   let cleanedUp = false;
   const cleanup = () => {
     if (cleanedUp) return;
-    cleanedUp = true; unsubscribe();
+    cleanedUp = true; unsubscribe(); unsubscribeQuestions();
     webSockets.clients.forEach((client) => client.terminate());
     webSockets.close();
   };

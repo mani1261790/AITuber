@@ -102,6 +102,7 @@ describe("FixedLectureService", () => {
     await vi.waitFor(() => expect(service.getSession(started.id).speech.mode).toBe("fish-audio"));
     vi.advanceTimersByTime(300);
     expect(service.getSession(started.id).progress.completed).toBe(1);
+    expect(service.getSession(started.id).speech.audioUrl).toBeNull();
   });
 
   it("discards a provider result after pause changes the epoch", async () => {

@@ -19,6 +19,7 @@
 - [音声、字幕、取消し](./docs/audio.md)
 - [OpenAI互換LLM接続](./docs/llm.md)
 - [教材の取り込み・生成・審査](./docs/course-authoring.md)
+- [質問受付と優先キュー](./docs/questions.md)
 - [LAN教室の参加と同期](./docs/lan-classroom.md)
 
 要件が競合する場合は `REQUIREMENTS.md` を正本とします。

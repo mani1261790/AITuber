@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { LectureEventStore } from "@aituber/storage";
+import { LectureEventStore, QuestionStore } from "@aituber/storage";
 import { CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
+import { QuestionQueueService } from "./question-queue-service.ts";
 
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.AITUBER_PORT ?? "4310", 10);
@@ -22,6 +23,7 @@ if (!Number.isSafeInteger(playbackUnitMs) || playbackUnitMs < 100) throw new Err
 
 mkdirSync(dirname(databasePath), { recursive: true });
 const store = new LectureEventStore(databasePath);
+const questionStore = new QuestionStore(databasePath);
 let speechProvider: TextToSpeechProvider | undefined;
 let voiceId = fishVoiceId;
 if (ttsTestMode === "tone") {
@@ -37,7 +39,8 @@ const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvi
 const llmSettings = new LlmSettingsStore(llmSettingsPath);
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider(), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
-const server = createApp(lecture, llmSettings, authoring);
+const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }) });
+const server = createApp(lecture, llmSettings, authoring, questions);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;
@@ -49,6 +52,7 @@ function shutdown() {
   server.emit("aituber:shutdown");
   server.close((error) => {
     store.close();
+    questionStore.close();
     if (error) {
       process.stderr.write(`${error.message}\n`);
       process.exitCode = 1;

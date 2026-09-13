@@ -1,15 +1,17 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { LectureEventStore } from "@aituber/storage";
+import { LectureEventStore, QuestionStore } from "@aituber/storage";
 import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import WebSocket from "ws";
 import type { AuthoringJobView, CreateAuthoringRequest, LlmSettingsView, ResumeAuthoringRequest } from "@aituber/contracts";
+import { QuestionQueueService } from "./question-queue-service.ts";
 
 const servers = new Set<ReturnType<typeof createApp>>();
 const resources = new Set<{ service: FixedLectureService; store: LectureEventStore }>();
+const questionStores = new Set<QuestionStore>();
 
 afterEach(async () => {
   await Promise.all(
@@ -26,6 +28,8 @@ afterEach(async () => {
     resource.store.close();
   }
   resources.clear();
+  for (const questionStore of questionStores) questionStore.close();
+  questionStores.clear();
 });
 
 async function startServer() {
@@ -139,6 +143,36 @@ describe("server boundary", () => {
     const [message] = await once(webSocket, "message") as [Buffer];
     expect(JSON.parse(message.toString()).snapshot.seq).toBeGreaterThanOrEqual(joinResult.snapshot.seq);
     webSocket.close();
+  });
+
+  it("accepts a context-bound question, merges support, and returns the classified queue within one second", async () => {
+    const store = new LectureEventStore(":memory:");
+    const service = new FixedLectureService({ store, playbackUnitMs: 10_000, speechProvider: new TestToneSpeechProvider(1_000), voiceId: "voice.test-tone" });
+    resources.add({ service, store });
+    const questionStore = new QuestionStore(":memory:"); questionStores.add(questionStore);
+    const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: service.getSession(sessionId), remainingMs: service.getRemainingTimeMs(sessionId) }) });
+    const server = createApp(service, undefined, undefined, questions); servers.add(server); server.listen(0, "127.0.0.1"); await once(server, "listening");
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`; const operator = { "x-aituber-surface": "operator" }; const classroom = { "x-aituber-surface": "classroom" };
+    const course = service.listCourses()[0]!;
+    const started = await fetch(`${origin}/api/sessions`, { method: "POST", headers: { ...operator, "content-type": "application/json" }, body: JSON.stringify({ coursePackageId: course.id, durationMinutes: 6 }) });
+    const startedBody = await started.json() as { classroom: { code: string }; session: { course: { scenes: { id: string; targetIds: string[] }[] } } };
+    const join = async () => (await (await fetch(`${origin}/api/classrooms/join`, { method: "POST", headers: { ...classroom, "content-type": "application/json" }, body: JSON.stringify({ code: startedBody.classroom.code }) })).json()) as { participant: { accessToken: string }; questions: unknown[] };
+    const firstLearner = await join(); const secondLearner = await join(); expect(firstLearner.questions).toEqual([]);
+    const scene = startedBody.session.course.scenes[0]!; const target = scene.targetIds[0]!;
+    const submit = (accessToken: string, text: string) => fetch(`${origin}/api/classrooms/${startedBody.classroom.code}/questions`, { method: "POST", headers: { ...classroom, "content-type": "application/json" }, body: JSON.stringify({ accessToken, text, sceneId: scene.id, semanticTargetId: target }) });
+    const webSocket = new WebSocket(`${origin.replace("http", "ws")}/api/classrooms/${startedBody.classroom.code}/stream?token=${secondLearner.participant.accessToken}&afterSeq=0`, { headers: classroom });
+    await once(webSocket, "message");
+    const startedAt = performance.now(); const first = await submit(firstLearner.participant.accessToken, "この式の意味を説明してください");
+    expect(performance.now() - startedAt).toBeLessThan(1_000); expect(first.status).toBe(201);
+    const [questionMessage] = await once(webSocket, "message") as [Buffer];
+    expect((JSON.parse(questionMessage.toString()) as { questions: unknown[] }).questions).toHaveLength(1);
+    const supported = await submit(secondLearner.participant.accessToken, "この式の意味を説明して");
+    const body = await supported.json() as { question: { supporterCount: number; coursePackageVersion: number; sceneId: string; semanticTargetId: string; lastCompletedUnitId: string | null; disposition: string }; questions: unknown[] };
+    expect(body.question).toMatchObject({ supporterCount: 2, coursePackageVersion: 1, sceneId: scene.id, semanticTargetId: target, lastCompletedUnitId: null, disposition: "answer-now" });
+    expect(body.questions).toHaveLength(1);
+    webSocket.close();
+    expect((await submit("invalid", "質問")).status).toBe(401);
+    expect((await fetch(`${origin}/api/classrooms/${startedBody.classroom.code}/questions`, { method: "POST", headers: { ...operator, "content-type": "application/json" }, body: "{}" })).status).toBe(403);
   });
 });
 

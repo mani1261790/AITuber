@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import type { ClassroomJoinResponse, ClassroomParticipantAccess, ClassroomRoomView, ClassroomStreamMessage, FixedSessionView } from "@aituber/contracts";
+import type { ClassroomJoinResponse, ClassroomParticipantAccess, ClassroomQuestionView, ClassroomRoomView, ClassroomStreamMessage, FixedSessionView, SubmitQuestionResponse } from "@aituber/contracts";
 import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveMascotPresentation, resolveStageScene } from "@aituber/presentation";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
@@ -27,6 +27,9 @@ function ClassroomApp() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
+  const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
+  const [questionText, setQuestionText] = useState("");
+  const [questioning, setQuestioning] = useState(false);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
@@ -45,7 +48,7 @@ function ClassroomApp() {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: saved.participant.accessToken }),
     }).then((result) => {
       if (!active) return;
-      latestSeqRef.current = result.snapshot.seq; setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setAudioFloorMs(result.snapshot.audioOffsetMs); setError(null);
+      latestSeqRef.current = result.snapshot.seq; setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setQuestions(result.questions); setAudioFloorMs(result.snapshot.audioOffsetMs); setError(null);
     }).catch(() => { if (active) window.sessionStorage.removeItem("aituber.classroom.participant"); })
       .finally(() => { if (active) setJoining(false); });
     return () => { active = false; };
@@ -66,7 +69,7 @@ function ClassroomApp() {
         const message = JSON.parse(String(event.data)) as ClassroomStreamMessage;
         if (message.snapshot.seq < latestSeqRef.current) return;
         latestSeqRef.current = message.snapshot.seq;
-        setSession(message.snapshot.session); setRoom(message.room); setAudioFloorMs(message.snapshot.audioOffsetMs); setError(null);
+        setSession(message.snapshot.session); setRoom(message.room); setQuestions(message.questions); setAudioFloorMs(message.snapshot.audioOffsetMs); setError(null);
       };
       socket.onclose = () => { if (!disposed) reconnectTimer = window.setTimeout(connect, 600); };
       socket.onerror = () => socket?.close();
@@ -120,7 +123,7 @@ function ClassroomApp() {
     try {
       const normalized = code.replaceAll(/[-\s]/g, "").toUpperCase();
       const result = await fetchJson<ClassroomJoinResponse>("/api/classrooms/join", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: normalized }) });
-      latestSeqRef.current = result.snapshot.seq; setCode(normalized); setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setAudioFloorMs(result.snapshot.audioOffsetMs);
+      latestSeqRef.current = result.snapshot.seq; setCode(normalized); setParticipant(result.participant); setRoom(result.room); setSession(result.snapshot.session); setQuestions(result.questions); setAudioFloorMs(result.snapshot.audioOffsetMs);
       window.sessionStorage.setItem("aituber.classroom.participant", JSON.stringify({ code: normalized, participant: result.participant }));
       window.history.replaceState(null, "", `?code=${encodeURIComponent(normalized)}`);
     } catch (reason) { setError(errorMessage(reason)); } finally { setJoining(false); }
@@ -150,6 +153,8 @@ function ClassroomApp() {
     reactionActive,
   });
 
+  useEffect(() => { setSelectedTargetId(null); }, [scene?.id]);
+
   async function submitAnswer(event: FormEvent) {
     event.preventDefault();
     if (!session || !participant || !room || !answer.trim()) return;
@@ -160,6 +165,16 @@ function ClassroomApp() {
       });
       setSession(result.snapshot.session); setAnswer("");
     } catch (reason) { setError(errorMessage(reason)); } finally { setAnswering(false); }
+  }
+
+  async function submitQuestion(event: FormEvent) {
+    event.preventDefault();
+    if (!session || !participant || !room || !scene || !selectedTargetId || !questionText.trim()) return;
+    setQuestioning(true); setError(null);
+    try {
+      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, semanticTargetId: selectedTargetId }) });
+      setQuestions(result.questions); setSession(result.snapshot.session); setQuestionText("");
+    } catch (reason) { setError(errorMessage(reason)); } finally { setQuestioning(false); }
   }
 
   if (!session) return <JoinClassroom code={code} setCode={setCode} joining={joining} error={error} onSubmit={joinClassroom} />;
@@ -212,7 +227,7 @@ function ClassroomApp() {
         </div>
         <aside className="lecture-rail">
           <section className="concept-card" aria-labelledby="current-goal-title"><p>LEARNING FOCUS</p><h2 id="current-goal-title">現在の学習目標</h2><strong>{currentGoal ?? "講義のまとめ"}</strong></section>
-          {scene && session.status !== "FINISHED" && <nav className="target-list" aria-label="質問対象"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={target.focused} onClick={() => setSelectedTargetId(target.id)}><span>{target.label}</span>{target.focused && <b>選択中</b>}</button>)}</div></nav>}
+          {scene && session.status !== "FINISHED" && <section className="target-list" aria-label="質問"><p>ASK ABOUT</p><h2>質問する箇所</h2><div className="target-controls">{scene.targets.map((target) => <button key={target.id} type="button" aria-pressed={selectedTargetId === target.id} onClick={() => setSelectedTargetId(target.id)}><span>{target.label}</span>{selectedTargetId === target.id && <b>選択中</b>}</button>)}</div><form className="question-form" onSubmit={(event) => void submitQuestion(event)}><label>質問<textarea value={questionText} maxLength={1000} onChange={(event) => setQuestionText(event.target.value)} placeholder={selectedTargetId ? `${scene.targets.find((target) => target.id === selectedTargetId)?.label ?? "選択箇所"}について質問` : "先に質問する箇所を選んでください"} /></label><button type="submit" disabled={questioning || !selectedTargetId || !questionText.trim()}>{questioning ? "受付中…" : "質問を送る"}</button></form>{questions.length > 0 && <div className="question-queue" aria-live="polite"><h3>質問の受付状況</h3>{questions.map((question) => <article key={question.id} className={`question-card question-card--${question.disposition}`}><div><strong>受付済み · {question.disposition === "answer-now" ? "授業中に回答" : "授業後に回答"}</strong><span>{question.supporterCount}人</span></div><p>{question.text}</p><small>{question.reason}</small></article>)}</div>}</section>}
         </aside>
       </div>
     </main>
