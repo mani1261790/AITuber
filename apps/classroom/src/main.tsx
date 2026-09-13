@@ -2,12 +2,13 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { FixedSessionView } from "@aituber/contracts";
-import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveStageScene } from "@aituber/presentation";
+import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveMascotPresentation, resolveStageScene } from "@aituber/presentation";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "katex/dist/katex.min.css";
+import { MascotView } from "./mascot-view.tsx";
 import { TargetView } from "./target-view.tsx";
 import "./styles.css";
 
@@ -21,8 +22,11 @@ function ClassroomApp() {
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
+  const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
+  const [reactionActive, setReactionActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const previousStatusRef = useRef<FixedSessionView["status"] | null>(null);
   const sessionId = new URLSearchParams(window.location.search).get("session");
 
   useEffect(() => {
@@ -44,6 +48,20 @@ function ClassroomApp() {
     const timer = window.setInterval(update, 100);
     return () => window.clearInterval(timer);
   }, [session?.speech.startedAt, session?.speech.playing]);
+
+  useEffect(() => {
+    if (!session?.speech.playing || !session.speech.audioUrl) setAudioPlaybackActive(false);
+  }, [session?.speech.playing, session?.speech.audioUrl]);
+
+  useEffect(() => {
+    const nextStatus = session?.status ?? null;
+    const previousStatus = previousStatusRef.current;
+    previousStatusRef.current = nextStatus;
+    if (!previousStatus || previousStatus === nextStatus || (nextStatus !== "CHECKPOINT" && nextStatus !== "FINISHED")) return;
+    setReactionActive(true);
+    const timer = window.setTimeout(() => setReactionActive(false), 1_200);
+    return () => window.clearTimeout(timer);
+  }, [session?.status]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -73,6 +91,15 @@ function ClassroomApp() {
   const currentGoal = displayUnit
     ? session?.course.learningGoals.find((goal) => displayUnit.learningGoalIds.includes(goal.id))?.description
     : null;
+  const focusedTarget = scene?.targets.find((target) => target.focused) ?? null;
+  const mascotPresentation = resolveMascotPresentation({
+    audiblePlayback: audioPlaybackActive && session?.speech.mode !== "caption-fallback",
+    elapsedMs: speechElapsedMs,
+    segment: activeSpeechSegment,
+    targetId: focusedTarget?.id ?? null,
+    targetLabel: focusedTarget?.label ?? null,
+    reactionActive,
+  });
 
   async function submitAnswer(event: FormEvent) {
     event.preventDefault();
@@ -107,10 +134,11 @@ function ClassroomApp() {
         <div className="broadcast-main">
           {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
-          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" />}
+          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-labelledby="scene-title">
+            <MascotView presentation={mascotPresentation} />
             <div className="scene-heading"><div><span>NOW EXPLAINING</span><h2 id="scene-title">{scene.title}</h2></div><p>選ぶと、この箇所について質問できます</p></div>
             <div className={`scene-grid scene-grid--${scene.templateId}`}>
               {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={setSelectedTargetId} />)}

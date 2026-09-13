@@ -9,11 +9,11 @@
 - **Composition:** 教室は講義ヘッダー、紙面状のステージ、連続する字幕帯、学習目標と質問対象のレールで構成する。運営画面は設定と進行モニターを並べた制御卓とする。両画面とも100dvh内で完結させ、文書全体ではなく、教材、字幕、質問対象、設定、監視の各領域だけを必要時にスクロールさせる
 - **Tone:** 子ども向けの玩具調や一般的なSaaSダッシュボードに寄せず、専門用語と数式を落ち着いて読める密度にする
 - **Information provenance:** 表示内容、対象名、TeX数式は検証済みCourse Packageから取得する。数式描画は `trust: false`、厳格な構文検査、展開量と寸法の上限を使い、失敗時は入力を安全な文字列として表示する。画面固有の架空学習結果は表示しない
-- **Components:** 標準HTMLの見出し、region、button、list、formを用い、講義固有の意味ID選択ステージを実装する
-- **States:** 通常、focus visible、hover、selected、字幕更新、講義中、一時停止、完了。選択は色に加えて輪郭、左側のマーカー、「選択中」の文字とaria-pressedを併用する
+- **Components:** 標準HTMLの見出し、region、button、list、formを用い、講義固有の意味ID選択ステージと[軽量2Dマスコット](../mascot.md)を実装する
+- **States:** 通常、focus visible、hover、selected、字幕更新、講義中、一時停止、完了。選択は色に加えて輪郭、左側のマーカー、「選択中」の文字とaria-pressedを併用する。マスコットは通常、口開き、意味IDの指示、1.2秒の反応を持ち、実音声が止まれば口を閉じる
 - **Accessibility:** DOMと視覚の読み順を一致させる。全対象をキーボードで選択でき、live字幕を提供し、色・位置・音だけに依存しない
 - **Responsive:** 320、375、414、768、1024、1440pxと200% zoomで、教室の右レールと運営画面の二列を一列へ再構成し、文書全体の縦横スクロールを出さない。長い教材、字幕、質問対象、設定、監視、数式は、それぞれの領域内だけでスクロールを許す
 - **Motion:** ライブ点滅以外は短い色・輪郭変化に限定し、reduced motionではアニメーションとtransitionを停止する
 - **Performance:** CSSとReact DOMで描画し、連続的な背景処理や毎フレーム生成を使わない。1080pで30fpsを妨げない
 - **Privacy:** 実利用者データ、顔、視線、音声を表示または取得しない
-- **Validation:** pnpm check、実ブラウザの375px、768px、1440px表示、文書のscrollHeightとclientHeightの一致、領域内スクロール、TeXから生成したMathML、キーボード選択、意味ID解決、安全なDOM、Liberka参照の不在を確認する
+- **Validation:** pnpm check、実ブラウザの375px、768px、1440px表示、文書のscrollHeightとclientHeightの一致、領域内スクロール、TeXから生成したMathML、マスコットの口開閉・意味ID指示・短い反応・停止時の閉口、キーボード選択、意味ID解決、安全なDOM、Liberka参照の不在を確認する

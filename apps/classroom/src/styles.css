@@ -75,11 +75,33 @@ button { cursor: pointer; }
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.26);
 }
 .stage::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: linear-gradient(90deg, var(--live), #ffb15c 34%, var(--focus) 72%, #8d89ff); }
-.scene-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 26px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.scene-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 26px; padding: 0 142px 18px 0; border-bottom: 1px solid var(--line); }
 .scene-heading span, .section-kicker, .concept-card > p, .target-list > p { display: block; margin: 0 0 6px; color: var(--focus); font-family: "IBM Plex Mono", monospace; font-size: 0.64rem; letter-spacing: 0.13em; }
 .scene-heading h2, .caption h2, .target-list h2, .concept-card h2 { margin: 0; font-weight: 500; }
 .scene-heading h2 { font-size: clamp(1.6rem, 3.2vw, 2.65rem); line-height: 1.2; }
 .scene-heading p { max-width: 22rem; margin: 0; color: var(--muted); font-size: 0.82rem; text-align: right; }
+.mascot { position: absolute; z-index: 2; top: 24px; right: 22px; width: 108px; margin: 0; color: var(--ink); pointer-events: none; }
+.mascot-character { position: relative; display: block; width: 86px; height: 83px; margin: 0 auto; filter: drop-shadow(0 8px 8px rgba(23, 24, 38, 0.14)); }
+.mascot-head { position: absolute; z-index: 2; top: 10px; left: 16px; width: 58px; height: 51px; border: 2px solid var(--ink); border-radius: 45% 45% 42% 42%; background: var(--paper-high); }
+.mascot-head::before, .mascot-head::after { content: ""; position: absolute; top: 16px; width: 7px; height: 3px; border-radius: 50%; background: #c8c0af; }
+.mascot-head::before { left: -7px; }
+.mascot-head::after { right: -7px; }
+.mascot-antenna { position: absolute; z-index: 1; top: 0; left: 44px; width: 2px; height: 13px; background: var(--ink); transform: rotate(12deg); transform-origin: bottom; }
+.mascot-antenna::after { content: ""; position: absolute; top: -3px; left: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.16); }
+.mascot-eye { position: absolute; top: 18px; width: 5px; height: 7px; border-radius: 50%; background: var(--ink); }
+.mascot-eye--left { left: 15px; }
+.mascot-eye--right { right: 15px; }
+.mascot-mouth { position: absolute; bottom: 10px; left: 50%; width: 14px; height: 2px; border-radius: 2px; background: var(--live); transform: translateX(-50%); }
+.mascot--mouth-open .mascot-mouth { width: 12px; height: 9px; border: 2px solid var(--live); border-radius: 50%; background: #ffceb9; }
+.mascot-body { position: absolute; bottom: 0; left: 27px; width: 39px; height: 31px; border: 2px solid var(--ink); border-radius: 15px 15px 7px 7px; background: var(--focus-soft); }
+.mascot-body::after { content: ""; position: absolute; top: 8px; left: 50%; width: 8px; height: 8px; border-radius: 50%; background: var(--focus); transform: translateX(-50%); }
+.mascot-arm { position: absolute; z-index: 1; top: 55px; left: 24px; width: 30px; height: 7px; border: 2px solid var(--ink); border-radius: 8px; background: var(--focus-soft); opacity: 0; transform: rotate(18deg); transform-origin: right center; }
+.mascot--pointing .mascot-arm { opacity: 1; transform: translateX(-20px) rotate(-18deg); }
+.mascot-spark { position: absolute; z-index: 3; top: 0; right: 2px; color: var(--live); font-size: 1.15rem; opacity: 0; }
+.mascot--reaction .mascot-spark { opacity: 1; animation: mascot-pop 400ms ease-out both; }
+.mascot--reaction .mascot-eye { top: 20px; width: 8px; height: 4px; border-top: 2px solid var(--ink); border-radius: 50%; background: transparent; }
+.mascot figcaption { margin-top: 4px; overflow: hidden; color: #55515c; font-family: "IBM Plex Mono", monospace; font-size: 0.55rem; line-height: 1.35; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes mascot-pop { from { opacity: 0; transform: scale(0.4) rotate(-20deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
 .scene-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .target { position: relative; min-width: 0; min-height: 128px; padding: 17px 18px 18px 22px; border: 1px solid rgba(109, 106, 112, 0.25); border-radius: 6px; color: var(--ink); background: rgba(255, 253, 246, 0.72); text-align: left; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
 .target::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; background: transparent; }
@@ -154,7 +176,7 @@ button { cursor: pointer; }
   .broadcast-layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(112px, 26dvh); gap: 10px; }
   .lecture-rail { grid-row: 2; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); grid-template-rows: minmax(0, 1fr); gap: 10px; overflow-y: hidden; }
   .stage { min-height: 0; padding: 22px 14px; border-radius: 18px 18px 4px 4px; }
-  .scene-heading { display: block; }
+  .scene-heading { display: block; padding-right: 82px; }
   .scene-heading p { margin-top: 10px; text-align: left; }
   .scene-grid { grid-template-columns: 1fr; }
   .target--formula { grid-column: auto; }
@@ -170,6 +192,8 @@ button { cursor: pointer; }
   .lesson-progress span { display: none; }
   .broadcast-layout { grid-template-rows: minmax(0, 1fr) minmax(104px, 24dvh); }
   .scene-heading { margin-bottom: 14px; padding-bottom: 12px; }
+  .mascot { top: 16px; right: 8px; width: 72px; transform: scale(0.72); transform-origin: top right; }
+  .mascot figcaption { display: none; }
   .target { min-height: 104px; }
   .caption { max-height: 30%; }
 }
@@ -181,7 +205,7 @@ button { cursor: pointer; }
 }
 @media (prefers-reduced-motion: reduce) {
   .target, .target-controls button { transition: none; }
-  .playback-dot { animation: none; }
+  .playback-dot, .mascot--reaction .mascot-spark { animation: none; }
 }
 @media (forced-colors: active) {
   .target[aria-pressed="true"], .target-controls button[aria-pressed="true"] { outline: 3px solid Highlight; }
