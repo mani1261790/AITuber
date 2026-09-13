@@ -8,6 +8,7 @@ import type {
   LiveSupplementView,
   ReadonlyCoursePackage,
   AssessmentEvaluationView,
+  AfterClassAnswerView,
   LearningEvidenceSummaryView,
   SessionCommandRequest,
   SupplementOriginView,
@@ -39,6 +40,7 @@ interface RuntimeSession {
   boardCorrections: Map<string, { readonly sceneId: string; readonly content: string }>;
   learningEvidence: readonly LearningEvidenceSummaryView[];
   lastAssessmentEvaluation: AssessmentEvaluationView | null;
+  afterClassAnswers: readonly AfterClassAnswerView[];
 }
 
 interface PendingSupplement {
@@ -60,6 +62,7 @@ export class FixedLectureService {
   readonly #retiredSpeechArtifacts = new Map<string, { readonly sessionId: string; readonly epoch: number; readonly artifact: SpeechArtifact; readonly timer: ReturnType<typeof setTimeout> }>();
   readonly #listeners = new Set<SessionListener>();
   #currentSessionId: string | null = null;
+  #beforeFinish: ((sessionId: string) => boolean) | null = null;
 
   constructor(options: {
     store: LectureEventStore;
@@ -121,6 +124,7 @@ export class FixedLectureService {
       boardCorrections: new Map(),
       learningEvidence: course.learningGoals.map((goal) => ({ scopeId: goal.id, label: goal.description, state: "unconfirmed", evidenceCount: 0, lastEvidenceAt: null })),
       lastAssessmentEvaluation: null,
+      afterClassAnswers: [],
     };
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
@@ -159,6 +163,7 @@ export class FixedLectureService {
       boardCorrections: [...runtime.boardCorrections].map(([targetId, value]) => ({ sceneId: value.sceneId, targetId, content: value.content })),
       learningEvidence: runtime.learningEvidence,
       lastAssessmentEvaluation: runtime.lastAssessmentEvaluation,
+      afterClassAnswers: runtime.afterClassAnswers,
     };
   }
 
@@ -173,6 +178,9 @@ export class FixedLectureService {
     if (evaluation) runtime.lastAssessmentEvaluation = evaluation;
     this.#publish(runtime);
   }
+
+  updateAfterClassAnswers(sessionId: string, answers: readonly AfterClassAnswerView[]): void { const runtime = this.#requireSession(sessionId); runtime.afterClassAnswers = answers; this.#publish(runtime); }
+  setBeforeFinishHandler(handler: ((sessionId: string) => boolean) | null): void { this.#beforeFinish = handler; }
 
   announceSupplement(sessionId: string, view: LiveSupplementView, options: { readonly interrupt: boolean; readonly bridgeText: string | null; readonly bridgeTargetIds: readonly string[]; readonly onBridgeStarted?: (occurredAt: string, audible: boolean) => void }): void {
     const runtime = this.#requireSession(sessionId);
@@ -280,6 +288,7 @@ export class FixedLectureService {
     if (runtime.state.status !== "TEACHING") return;
     const unitId = runtime.state.activeUnitId;
     if (!unitId) {
+      if (this.#beforeFinish?.(runtime.id)) return;
       this.#apply(runtime, { type: "FINISH_REQUESTED", epoch: runtime.state.epoch });
       return;
     }
@@ -397,9 +406,8 @@ export class FixedLectureService {
     this.#verifyRejoin(runtime, pending.view.origin);
     this.#apply(runtime, { type: "REJOIN_VERIFIED", epoch: runtime.state.epoch });
     runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, status: "completed" } : null;
-    runtime.pendingSupplement = null; this.#publish(runtime);
+    runtime.pendingSupplement = null; this.#publish(runtime); pending.onCompleted();
     if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch }); else this.#schedule(runtime);
-    pending.onCompleted();
   }
 
   #verifyRejoin(runtime: RuntimeSession, origin: SupplementOriginView) {

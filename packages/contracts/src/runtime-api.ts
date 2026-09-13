@@ -25,6 +25,7 @@ export interface FixedSessionView {
   readonly boardCorrections: readonly { readonly sceneId: string; readonly targetId: string; readonly content: string }[];
   readonly learningEvidence: readonly LearningEvidenceSummaryView[];
   readonly lastAssessmentEvaluation: AssessmentEvaluationView | null;
+  readonly afterClassAnswers: readonly AfterClassAnswerView[];
 }
 
 export type LearningEvidenceState = "unconfirmed" | "support-requested" | "struggle-evidence" | "confirmed-for-item" | "conflicting";
@@ -47,6 +48,20 @@ export interface AssessmentEvaluationView {
   readonly correction: string | null;
   readonly linkedSupplementId: string | null;
   readonly recordedAt: string;
+}
+
+export interface AfterClassAnswerView {
+  readonly id: string;
+  readonly questionId: string;
+  readonly questionText: string;
+  readonly status: "preparing" | "available" | "unanswered";
+  readonly answerText: string | null;
+  readonly sourceIds: readonly string[];
+  readonly knowledgeBasis: "course" | "general" | null;
+  readonly failure: string | null;
+  readonly attempts: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface SupplementOriginView {
@@ -202,6 +217,13 @@ export interface SubmitLearningEvidenceRequest {
   readonly value: "understood" | "need-help" | "recheck" | "target-selected";
   readonly sceneId: string;
   readonly semanticTargetId: string;
+}
+
+export interface SubmitAfterClassSurveyRequest {
+  readonly accessToken: string;
+  readonly questionHelpfulness: number;
+  readonly rejoinNaturalness: number;
+  readonly comment?: string;
 }
 
 export interface LlmSettingsView {

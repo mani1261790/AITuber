@@ -31,6 +31,9 @@ function ClassroomApp() {
   const [questionText, setQuestionText] = useState("");
   const [questioning, setQuestioning] = useState(false);
   const [evidenceSubmitting, setEvidenceSubmitting] = useState(false);
+  const [surveyAnswers, setSurveyAnswers] = useState({ questionHelpfulness: 0, rejoinNaturalness: 0, comment: "" });
+  const [surveySubmitting, setSurveySubmitting] = useState(false);
+  const [surveySubmitted, setSurveySubmitted] = useState(false);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
@@ -198,6 +201,13 @@ function ClassroomApp() {
 
   function selectTarget(targetId: string) { setSelectedTargetId(targetId); void submitEvidence("explicit-action", "target-selected", targetId); }
 
+  async function submitSurvey(event: FormEvent) {
+    event.preventDefault(); if (!participant || !room || !surveyAnswers.questionHelpfulness || !surveyAnswers.rejoinNaturalness) return;
+    setSurveySubmitting(true); setError(null);
+    try { await fetchJson(`/api/classrooms/${encodeURIComponent(room.code)}/survey`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, ...surveyAnswers }) }); setSurveySubmitted(true); }
+    catch (reason) { setError(errorMessage(reason)); } finally { setSurveySubmitting(false); }
+  }
+
   if (!session) return <JoinClassroom code={code} setCode={setCode} joining={joining} error={error} onSubmit={joinClassroom} />;
 
   return (
@@ -219,7 +229,7 @@ function ClassroomApp() {
           {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
           {session.liveSupplement?.status === "preparing" && <p className="notice notice--supplement" role="status">質問に答える補足を教材から準備しています。本編は安全な区切りまで続きます。</p>}
           {session.liveSupplement?.status === "bridging" && <p className="notice notice--supplement" role="status">次の説明に必要な質問です。補足の準備中につなぎ説明をしています。</p>}
-          {session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
+          {session.status !== "FINISHED" && session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
           {session.lastAssessmentEvaluation?.outcome === "incorrect" && session.liveSupplement && !new Set(["completed", "deferred"]).has(session.liveSupplement.status) && <p className="notice notice--learning" role="status">確認問題の回答から、もう一度確かめる箇所が見つかりました。短い補足のあと同じ問いで確認します。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
           {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
@@ -250,6 +260,10 @@ function ClassroomApp() {
             <p>{session.unfinishedUnitIds.length === 0 ? "予定していた説明をすべて完了しました。" : "途中で終了しました。未完了の説明は次回へ残ります。"}</p>
             <dl><div><dt>説明完了</dt><dd>{session.completedUnitIds.length} 件</dd></div><div><dt>未完了</dt><dd>{session.unfinishedUnitIds.length} 件</dd></div></dl>
             <h3>学習の確認状況</h3><ul className="evidence-summary">{session.learningEvidence.map((item) => <li key={item.scopeId}><span>{item.label}</span><strong>{evidenceLabels[item.state]}</strong></li>)}</ul>
+            <h3>質問と訂正</h3><div className="result-counts"><span>回答済み <strong>{questions.filter((item) => item.resolution === "answered").length}</strong></span><span>保留・未回答 <strong>{questions.filter((item) => item.resolution !== "answered").length}</strong></span><span>訂正 <strong>{session.boardCorrections.length}</strong></span></div>
+            {session.afterClassAnswers.length > 0 && <div className="after-class-answers" aria-live="polite">{session.afterClassAnswers.map((item) => <article key={item.id}><strong>{item.status === "preparing" ? "回答を自動生成・審査中" : item.status === "available" ? "授業後の回答" : "未回答"}</strong><h4>{item.questionText}</h4>{item.answerText && <p>{item.answerText}</p>}{item.status === "unanswered" && <p>{item.failure}</p>}</article>)}</div>}
+            {session.boardCorrections.length > 0 && <ul className="correction-summary">{session.boardCorrections.map((item) => <li key={`${item.sceneId}:${item.targetId}`}>{item.targetId}: {item.content}</li>)}</ul>}
+            <h3>任意アンケート</h3>{surveySubmitted ? <p className="survey-complete" role="status">回答を保存しました。学習の証拠とは別に扱われます。</p> : <form className="after-class-survey" onSubmit={(event) => void submitSurvey(event)}><RatingField legend="質問した箇所を理解しやすくなりましたか" value={surveyAnswers.questionHelpfulness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, questionHelpfulness: value }))} /><RatingField legend="補足後、本編へ自然に戻れましたか" value={surveyAnswers.rejoinNaturalness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, rejoinNaturalness: value }))} /><label>自由記述<textarea maxLength={2000} value={surveyAnswers.comment} onChange={(event) => setSurveyAnswers((current) => ({ ...current, comment: event.target.value }))} /></label><button disabled={surveySubmitting || !surveyAnswers.questionHelpfulness || !surveyAnswers.rejoinNaturalness}>{surveySubmitting ? "保存中…" : "任意アンケートを送る"}</button></form>}
           </section>}
         </div>
         <aside className="lecture-rail">
@@ -266,6 +280,7 @@ const evidenceLabels: Record<FixedSessionView["learningEvidence"][number]["state
 function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
   return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;
 }
+function RatingField({ legend, value, onChange }: { legend: string; value: number; onChange(value: number): void }) { return <fieldset><legend>{legend}</legend><div>{[1, 2, 3, 4, 5].map((rating) => <label key={rating}><input type="radio" name={legend} value={rating} checked={value === rating} onChange={() => onChange(rating)} />{rating}</label>)}</div></fieldset>; }
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> { const response = await fetch(input, init); const value = await response.json() as T & { message?: string }; if (!response.ok) throw new Error(value.message ?? `HTTP ${response.status}`); return value; }
 function errorMessage(reason: unknown) { return reason instanceof Error ? reason.message : "処理に失敗しました。"; }
 function readSavedParticipant(): { code: string; participant: ClassroomParticipantAccess } | null {

@@ -1,6 +1,6 @@
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 
-export type LlmPurpose = "generation" | "review" | "live-supplement" | "live-supplement-review";
+export type LlmPurpose = "generation" | "review" | "live-supplement" | "live-supplement-review" | "post-class-answer" | "post-class-answer-review";
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
 export interface LlmUsage {

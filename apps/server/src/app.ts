@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitLearningEvidenceRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
+import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitAfterClassSurveyRequest, SubmitLearningEvidenceRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
@@ -7,6 +7,7 @@ export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSe
 export interface AuthoringApi { list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
 export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 export interface PedagogyApi { answer(input: { sessionId: string; participantId: string; answer: string }): FixedSessionView; submitEvidence(input: { sessionId: string; participantId: string; request: SubmitLearningEvidenceRequest }): FixedSessionView }
+export interface AfterClassApi { submitSurvey(input: { sessionId: string; participantId: string; request: SubmitAfterClassSurveyRequest }): unknown }
 
 export interface LectureApi {
   listCourses(): unknown;
@@ -25,7 +26,7 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi): Server {
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi, afterClass?: AfterClassApi): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
@@ -89,6 +90,12 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         const body = await readJson<SubmitLearningEvidenceRequest>(request); const access = classrooms.authenticate(evidenceMatch[1]!, body.accessToken);
         pedagogy.submitEvidence({ sessionId: access.sessionId, participantId: access.participant.id, request: body });
         return json(response, 201, { snapshot: api.getSnapshot(access.sessionId) });
+      }
+      const surveyMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/survey$/);
+      if (request.method === "POST" && surveyMatch) {
+        requireSurface(request, "classroom"); if (!afterClass) throw new RangeError("After-class survey is unavailable");
+        const body = await readJson<SubmitAfterClassSurveyRequest>(request); const access = classrooms.authenticate(surveyMatch[1]!, body.accessToken);
+        return json(response, 201, { survey: afterClass.submitSurvey({ sessionId: access.sessionId, participantId: access.participant.id, request: body }) });
       }
       if (request.method === "GET" && url.pathname === "/api/courses") { requireSurface(request, "operator"); return json(response, 200, { courses: api.listCourses() }); }
       if (request.method === "GET" && url.pathname === "/api/sessions/current") {

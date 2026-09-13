@@ -42,7 +42,14 @@ export class QuestionQueueService {
   subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void) { this.#listeners.add(listener); return () => this.#listeners.delete(listener); }
   markAnswering(id: string): void { const question = this.#store.updateProcessing(id, "answering"); this.#notify(question.sessionId); }
   markAnswered(id: string): void { const question = this.#store.resolve(id, "answered", "授業中に回答しました。"); this.#reclassifyAndNotify(question.sessionId); }
+  markPostClassAnswered(id: string): void { const question = this.#store.resolve(id, "answered", "授業後の審査済み回答を公開しました。"); this.#reclassifyAndNotify(question.sessionId); }
   defer(id: string, reason: string): void { const question = this.#store.resolve(id, "deferred", reason); this.#reclassifyAndNotify(question.sessionId); }
+  promoteForClosing(sessionId: string): boolean {
+    const context = this.#context(sessionId); if (context.remainingMs < 20_000) return false;
+    const selected = this.list(sessionId).find((question) => question.resolution === "pending" && question.status === "accepted"); if (!selected) return false;
+    this.#store.updateClassifications([{ id: selected.id, disposition: "answer-now", reason: "授業末の残り時間で重要な保留質問へ回答します。", priority: { ...selected.priority, remainingMs: context.remainingMs }, updatedAt: new Date().toISOString() }]);
+    this.#notify(sessionId); return true;
+  }
 
   #classify(sessionId: string, context: QuestionSessionContext, now: string): readonly ClassroomQuestionView[] {
     const open = this.#store.listOpen(sessionId); const course = context.session.course; const activeUnit = course.teachingUnits.find((unit) => unit.id === context.session.currentUnitId) ?? null;

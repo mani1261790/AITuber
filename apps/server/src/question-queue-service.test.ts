@@ -44,6 +44,13 @@ describe("QuestionQueueService", () => {
     expect(p95).toBeLessThan(1_000);
     store.close();
   });
+
+  it("promotes the highest ranked held question when the lecture ends with enough time", () => {
+    const { service, store } = setup(40_000); const first = service.submit(input("learner.one", "target.math.vertex-form", "scene.math.form", "最初の質問", "2026-09-14T00:00:00.000Z"));
+    service.submit(input("learner.two", "target.math.h-term", "scene.math.form", "次の質問", "2026-09-14T00:00:01.000Z")); service.markAnswering(first.question.id);
+    expect(service.promoteForClosing("session.questions")).toBe(true);
+    expect(service.list("session.questions").filter((question) => question.disposition === "answer-now" && question.status === "accepted")).toHaveLength(1); store.close();
+  });
 });
 
 function setup(remainingMs: number) {
@@ -52,4 +59,4 @@ function setup(remainingMs: number) {
   return { store, service };
 }
 function input(participantId: string, semanticTargetId: string, sceneId: string, text: string, submittedAt: string) { return { sessionId: "session.questions", participantId, submittedAt, request: { accessToken: "ignored-at-domain-boundary", text, sceneId, semanticTargetId } }; }
-function sessionView(): FixedSessionView { return { id: "session.questions", course: quadraticFunctionsFixture, configuredDurationMinutes: 6, status: "TEACHING", epoch: 1, completedUnitIds: ["unit.math.intro"], unfinishedUnitIds: quadraticFunctionsFixture.schedule.orderedUnitIds.slice(1), currentUnitId: "unit.math.parts", displayUnitId: "unit.math.parts", progress: { completed: 1, total: quadraticFunctionsFixture.schedule.orderedUnitIds.length }, assessment: null, liveSupplement: null, boardCorrections: [], learningEvidence: [], lastAssessmentEvaluation: null, speech: { mode: "test", playing: false, epoch: 1, unitId: null, text: null, startedAt: null, durationMs: 0, audioUrl: null, segments: [], failure: null, provider: null, model: null, voiceId: null, firstAudioMs: null, synthesisMs: null } }; }
+function sessionView(): FixedSessionView { return { id: "session.questions", course: quadraticFunctionsFixture, configuredDurationMinutes: 6, status: "TEACHING", epoch: 1, completedUnitIds: ["unit.math.intro"], unfinishedUnitIds: quadraticFunctionsFixture.schedule.orderedUnitIds.slice(1), currentUnitId: "unit.math.parts", displayUnitId: "unit.math.parts", progress: { completed: 1, total: quadraticFunctionsFixture.schedule.orderedUnitIds.length }, assessment: null, liveSupplement: null, boardCorrections: [], learningEvidence: [], lastAssessmentEvaluation: null, afterClassAnswers: [], speech: { mode: "test", playing: false, epoch: 1, unitId: null, text: null, startedAt: null, durationMs: 0, audioUrl: null, segments: [], failure: null, provider: null, model: null, voiceId: null, firstAudioMs: null, synthesisMs: null } }; }

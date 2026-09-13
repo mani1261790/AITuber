@@ -184,6 +184,24 @@ button { cursor: pointer; }
 .evidence-summary li { display: flex; align-items: start; justify-content: space-between; gap: 18px; padding: 9px 11px; border: 1px solid #393b53; border-radius: 6px; }
 .evidence-summary li span { color: #d5d5df; font-size: 0.78rem; line-height: 1.5; }
 .evidence-summary li strong { flex: 0 0 auto; color: #bcb9ff; font-size: 0.72rem; }
+.result-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.result-counts span { padding: 9px; border: 1px solid #393b53; border-radius: 6px; color: #bfc0cc; font-size: 0.72rem; }
+.result-counts strong { display: block; margin-top: 3px; color: #fff; font: 500 1.15rem/1.2 "IBM Plex Mono", monospace; }
+.after-class-answers { display: grid; gap: 8px; margin-top: 10px; }
+.after-class-answers article { padding: 11px; border: 1px solid #474963; border-radius: 6px; background: #22243d; }
+.after-class-answers article > strong { color: #bcb9ff; font-size: 0.7rem; }
+.after-class-answers h4 { margin: 5px 0; font-size: 0.82rem; }
+.after-class-answers p, .survey-complete { margin: 5px 0 0; color: #d8d8e1; font-size: 0.78rem; line-height: 1.55; }
+.correction-summary { color: #d8d8e1; font-size: 0.75rem; }
+.after-class-survey { display: grid; gap: 10px; }
+.after-class-survey fieldset { margin: 0; padding: 0; border: 0; }
+.after-class-survey legend, .after-class-survey > label { color: #d8d8e1; font-size: 0.76rem; font-weight: 700; }
+.after-class-survey fieldset div { display: flex; gap: 5px; margin-top: 6px; }
+.after-class-survey fieldset label { display: flex; min-width: 36px; align-items: center; justify-content: center; gap: 3px; padding: 5px; border: 1px solid #4d4f69; border-radius: 5px; }
+.after-class-survey > label { display: grid; gap: 6px; }
+.after-class-survey textarea { min-height: 70px; padding: 8px; resize: vertical; border: 1px solid #555870; border-radius: 5px; color: #fff; background: #22243d; }
+.after-class-survey > button { min-height: 42px; border: 0; border-radius: 5px; color: #171826; background: #aaa7ff; font-weight: 700; }
+.after-class-survey > button:disabled { cursor: wait; opacity: 0.45; }
 
 .centered-message { width: min(100% - 32px, 650px); max-height: calc(100dvh - 32px); margin: clamp(16px, 16vh, 150px) auto 0; padding: 36px; overflow-y: auto; border: 1px solid rgba(247, 243, 232, 0.16); border-radius: 22px; background: var(--night-raised); box-shadow: 0 28px 70px rgba(0, 0, 0, 0.26); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
