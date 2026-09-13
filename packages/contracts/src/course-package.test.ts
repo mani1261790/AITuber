@@ -28,6 +28,7 @@ function validCoursePackage(): CoursePackage {
       sceneId: "scene.vertex",
       kind: "formula",
       label: "平方完成した式",
+      content: "y = (x - 2)^2 - 1",
       sourceIds: ["source.main"],
     }],
     teachingUnits: [{

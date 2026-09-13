@@ -44,6 +44,12 @@ importers:
 
   apps/classroom:
     dependencies:
+      '@aituber/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@aituber/presentation':
+        specifier: workspace:*
+        version: link:../../packages/presentation
       '@vitejs/plugin-react':
         specifier: 6.1.1
         version: 6.1.1(vite@8.3.0(@types/node@26.5.1))
@@ -84,7 +90,11 @@ importers:
 
   packages/lesson: {}
 
-  packages/presentation: {}
+  packages/presentation:
+    dependencies:
+      '@aituber/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/providers: {}
 

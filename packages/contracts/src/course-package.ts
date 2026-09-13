@@ -63,6 +63,9 @@ export const SemanticTargetSchema = closedObject({
     Type.Literal("diagram"),
   ]),
   label: ShortText,
+  content: NonEmptyText,
+  assetId: Type.Optional(Identifier),
+  altText: Type.Optional(ShortText),
   sourceIds: Type.Array(Identifier, { minItems: 1, maxItems: MAX_SOURCES, uniqueItems: true }),
 });
 
@@ -250,6 +253,18 @@ function validateReferences(coursePackage: CoursePackage): ValidationIssue[] {
   coursePackage.semanticTargets.forEach((target, index) => {
     checkReference(target.sceneId, sceneIds, `/semanticTargets/${index}/sceneId`, issues);
     checkReferences(target.sourceIds, sourceIds, `/semanticTargets/${index}/sourceIds`, issues);
+    if (target.kind === "image" && (!target.assetId || !target.altText)) {
+      issues.push({
+        path: `/semanticTargets/${index}`,
+        message: "An image target requires assetId and altText",
+      });
+    }
+    if (target.kind !== "image" && (target.assetId !== undefined || target.altText !== undefined)) {
+      issues.push({
+        path: `/semanticTargets/${index}`,
+        message: "Only image targets can define assetId or altText",
+      });
+    }
   });
   coursePackage.teachingUnits.forEach((unit, index) => {
     checkReferences(unit.learningGoalIds, goalIds, `/teachingUnits/${index}/learningGoalIds`, issues);

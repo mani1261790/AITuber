@@ -5,8 +5,11 @@
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@aituber/contracts": "workspace:*"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
   }
 }

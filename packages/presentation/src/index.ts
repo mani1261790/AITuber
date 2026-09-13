@@ -1,1 +1,1 @@
-export const PRESENTATION_PACKAGE = "@aituber/presentation" as const;
+export * from "./stage-model.ts";

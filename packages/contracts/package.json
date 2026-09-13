@@ -9,7 +9,7 @@
     "@sinclair/typebox": "0.34.52"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
   }
 }

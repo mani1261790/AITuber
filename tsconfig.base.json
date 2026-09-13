@@ -3,6 +3,10 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@aituber/contracts": ["./packages/contracts/src/index.ts"],
+      "@aituber/presentation": ["./packages/presentation/src/index.ts"]
+    },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
