@@ -44,6 +44,16 @@ describe("OpenAiCompatibleLlmProvider", () => {
     expect(() => new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "remote", baseUrl: "https://secret@example.com/v1" })).toThrow(/credentials/);
   });
 
+  it("disables hidden reasoning for bounded Ollama structured output", async () => {
+    let body: Record<string, unknown> = {};
+    const provider = new OpenAiCompatibleLlmProvider({ model: "qwen3:8b", baseUrl: "http://localhost:11434/v1", fetch: async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ decision: "accept", reasons: [] }) } }] });
+    } });
+    await provider.createContext({ purpose: "review", systemInstruction: "Review." }).generate({ prompt: "value", schemaName: "review", schema, maxOutputTokens: 128 });
+    expect(body.reasoning_effort).toBe("none");
+  });
+
   it("retries one transient provider failure inside the same timeout boundary", async () => {
     let calls = 0;
     const provider = new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "model", fetch: async () => {

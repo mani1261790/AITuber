@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AuthoringSourceUpload, CoursePackage } from "@aituber/contracts";
 import { extractText, getDocumentProxy } from "unpdf";
+
+const pdfJsRoot = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
+const pdfAssetOptions = { cMapUrl: `${join(pdfJsRoot, "cmaps")}/`, cMapPacked: true, standardFontDataUrl: `${join(pdfJsRoot, "standard_fonts")}/` };
 
 type SourceMaterial = CoursePackage["sources"][number];
 export interface IngestedSources {
@@ -26,7 +31,7 @@ export async function ingestSources(uploads: readonly AuthoringSourceUpload[]): 
     const kind = upload.mimeType === "application/pdf" ? "pdf" : upload.mimeType.startsWith("image/") ? "image" : upload.mimeType === "text/markdown" ? "markdown" : "instructor-note";
     sources.push({ id, kind, fileName, contentHash: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, rights: upload.rights });
     if (upload.mimeType === "application/pdf") {
-      const document = await getDocumentProxy(bytes);
+      const document = await getDocumentProxy(bytes, pdfAssetOptions);
       try {
         if (!Number.isSafeInteger(document.numPages) || document.numPages < 1 || document.numPages > 500) throw new TypeError(`source ${index + 1} exceeds the 500-page PDF limit`);
         const extracted = await extractText(document, { mergePages: true });

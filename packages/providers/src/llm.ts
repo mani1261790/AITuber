@@ -62,7 +62,7 @@ export function openAiCompatibleOptionsFromEnv(env: Readonly<Record<string, stri
 }
 
 export class OpenAiCompatibleLlmProvider implements LlmProvider {
-  readonly #options: Required<Pick<OpenAiCompatibleLlmOptions, "model" | "timeoutMs" | "maxOutputBytes">> & OpenAiCompatibleLlmOptions;
+  readonly #options: Required<Pick<OpenAiCompatibleLlmOptions, "model" | "baseUrl" | "timeoutMs" | "maxOutputBytes">> & OpenAiCompatibleLlmOptions;
 
   constructor(options: OpenAiCompatibleLlmOptions) {
     if (!options.model.trim()) throw new TypeError("LLM model is required");
@@ -91,6 +91,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
           model: this.#options.model,
           messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.images?.length ? [{ type: "text", text: request.prompt }, ...request.images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.dataBase64}` } }))] : request.prompt }],
           response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
+          ...(isOllamaBaseUrl(this.#options.baseUrl) ? { reasoning_effort: "none" } : {}),
           temperature: request.temperature ?? 0,
           max_tokens: request.maxOutputTokens ?? 4_096,
           stream: false,
@@ -187,6 +188,7 @@ function boundedText(value: string, max: number, name: string): string { if (!va
 function normalizeBaseUrl(value: string): string { const url = new URL(value); if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError("LLM Base URL must use http or https"); if (url.username || url.password) throw new TypeError("LLM Base URL must not contain credentials"); return url.toString().replace(/\/$/, ""); }
 export function isLocalLlmBaseUrl(value: string): boolean { const host = new URL(value).hostname; return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]"; }
 function isLocalBaseUrl(value: string): boolean { return isLocalLlmBaseUrl(value); }
+function isOllamaBaseUrl(value: string): boolean { const url = new URL(value); return isLocalBaseUrl(value) && url.port === "11434"; }
 function naturalNumber(value: unknown): number | null { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null; }
 function optionalNonNegativeNumber(value: string | undefined, name: string): number | undefined { if (!value?.trim()) return undefined; const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new TypeError(`${name} must be a non-negative number`); return parsed; }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
