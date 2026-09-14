@@ -79,7 +79,7 @@ function serializeHeaders(headers: IncomingHttpHeaders): string {
 }
 
 function securityHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY", "content-security-policy": "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'", ...extra };
+  return { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY", "content-security-policy": "default-src 'self'; connect-src 'self' blob: ws: wss:; img-src 'self' data: blob:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'", ...extra };
 }
 
 async function regularFile(path: string): Promise<boolean> { try { return (await stat(path)).isFile(); } catch { return false; } }

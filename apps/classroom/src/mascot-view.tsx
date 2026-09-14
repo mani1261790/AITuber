@@ -1,5 +1,7 @@
+import { lazy, Suspense } from "react";
 import type { MascotPresentation } from "@aituber/presentation";
-import astralTutor from "./assets/astral-tutor.webp";
+
+const VrmAvatar = lazy(async () => ({ default: (await import("./vrm-avatar.tsx")).VrmAvatar }));
 
 export function MascotView({ presentation }: { presentation: MascotPresentation }) {
   return (
@@ -9,12 +11,12 @@ export function MascotView({ presentation }: { presentation: MascotPresentation 
       data-mouth={presentation.mouthOpen ? "open" : "closed"}
       data-target-id={presentation.targetId ?? undefined}
     >
-      <div className="mascot-character" role="img" aria-label={presentation.announcement}>
+      <div className="mascot-character" role="img" aria-label={presentation.announcement} data-avatar-engine="vrm-3d">
         <span className="mascot-aura" aria-hidden="true" />
-        <img src={astralTutor} alt="" aria-hidden="true" />
+        <Suspense fallback={<span className="avatar-loading" aria-hidden="true" />}><VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} /></Suspense>
         <span className="mascot-spark" aria-hidden="true" />
       </div>
-      <figcaption>{presentation.announcement}</figcaption>
+      <figcaption><span>{presentation.announcement}</span><small>AvatarSample_C · VRoid Project</small></figcaption>
     </figure>
   );
 }

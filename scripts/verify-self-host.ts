@@ -17,8 +17,10 @@ try {
   const output: string[] = []; process_.stdout?.on("data", (chunk) => output.push(String(chunk))); process_.stderr?.on("data", (chunk) => output.push(String(chunk)));
   const operator = `http://127.0.0.1:${operatorPort}`; const classroom = `http://127.0.0.1:${classroomPort}`;
   await waitFor(async () => (await fetch(`${operator}/api/courses`)).ok, 10_000, () => output.join(""));
-  const operatorHtml = await (await fetch(operator)).text(); const classroomHtml = await (await fetch(classroom)).text();
+  const operatorHtml = await (await fetch(operator)).text(); const classroomResponse = await fetch(classroom); const classroomHtml = await classroomResponse.text();
   assert(operatorHtml.includes("/assets/") && classroomHtml.includes("/assets/"), "Built HTML was not served");
+  const classroomCsp = classroomResponse.headers.get("content-security-policy") ?? "";
+  assert(classroomCsp.includes("connect-src 'self' blob:") && classroomCsp.includes("img-src 'self' data: blob:"), "Classroom CSP did not permit embedded VRM textures");
   const runtimeConfig = await json<{ classroomOrigin: string }>(await fetch(`${operator}/aituber-runtime-config.json`));
   assert(runtimeConfig.classroomOrigin === classroom, "Operator gateway did not expose the runtime classroom origin");
   assert((await fetch(`${classroom}/api/courses`, { headers: { "x-aituber-surface": "operator" } })).status === 403, "Classroom gateway trusted a forged operator surface");

@@ -9,5 +9,8 @@ describe("MascotView", () => {
     expect(markup).toContain('data-mouth="open"');
     expect(markup).toContain('data-target-id="target.math.vertex"');
     expect(markup).toContain('aria-label="頂点を案内しています"');
+    expect(markup).toContain('data-avatar-engine="vrm-3d"');
+    expect(markup).toContain("AvatarSample_C · VRoid Project");
+    expect(markup).not.toContain("<img");
   });
 });

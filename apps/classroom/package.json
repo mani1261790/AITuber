@@ -17,6 +17,10 @@
     "katex": "0.18.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "three": "^0.186.0",
     "vite": "8.3.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0"
   }
 }
