@@ -8,9 +8,9 @@ import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "katex/dist/katex.min.css";
-import { MascotView } from "./mascot-view.tsx";
+import { LessonStage } from "./lesson-texture.tsx";
 import { RichText } from "./rich-text.tsx";
-import { TargetView } from "./target-view.tsx";
+
 import "./styles.css";
 
 const statusLabels: Record<FixedSessionView["status"], string> = {
@@ -33,7 +33,7 @@ function ClassroomApp() {
   const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
   const [questionText, setQuestionText] = useState("");
   const [questioning, setQuestioning] = useState(false);
-  const [evidenceSubmitting, setEvidenceSubmitting] = useState(false);
+  const [, setEvidenceSubmitting] = useState(false);
   const [surveyAnswers, setSurveyAnswers] = useState({ questionHelpfulness: 0, rejoinNaturalness: 0, comment: "" });
   const [surveySubmitting, setSurveySubmitting] = useState(false);
   const [surveySubmitted, setSurveySubmitted] = useState(false);
@@ -182,10 +182,10 @@ function ClassroomApp() {
 
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
-    if (!session || !participant || !room || !scene || !(selectedTargetId ?? focusedTarget?.id) || !questionText.trim()) return;
+    if (!session || !participant || !room || !scene || !questionText.trim()) return;
     setQuestioning(true); setError(null);
     try {
-      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, semanticTargetId: selectedTargetId ?? focusedTarget?.id }) });
+      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, ...(selectedTargetId ? { semanticTargetId: selectedTargetId } : {}) }) });
       setQuestions(result.questions); setSession(result.snapshot.session); setQuestionText("");
     } catch (reason) { setError(errorMessage(reason)); } finally { setQuestioning(false); }
   }
@@ -237,16 +237,7 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <MascotView presentation={mascotPresentation} />
-            <div className="blackboard" aria-hidden="true"><span>AITuber Classroom</span></div>
-            <div className={`projection ${projecting ? "projection--open" : ""}`} aria-hidden={!projecting} inert={!projecting}>
-            <div key={`${scene.id}:${displayUnit?.id}`} className="slide-content">
-            <div className="scene-heading"><div><span>{supplementCandidate ? "LIVE SUPPLEMENT" : "NOW EXPLAINING"}</span><h2 id="scene-title">{scene.title}</h2></div><p>{supplementCandidate ? "質問に関連する箇所を補足しています" : "選ぶと、この箇所について質問できます"}</p></div>
-            <div className={`scene-grid scene-grid--${scene.templateId}`}>
-              {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={selectTarget} />)}
-            </div>
-            </div></div>
-            {!projecting && <div className="board-content"><h2>{scene.title}</h2><div className="scene-grid">{scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={selectTarget} />)}</div></div>}
+            <LessonStage scene={scene} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} />
             <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button></div>
             {captions && displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{supplementCandidate?.captionText ?? displayUnit.captionText ?? session.speech.text ?? displayUnit.speechText}</p></section>}
           </section>}
@@ -280,9 +271,8 @@ function ClassroomApp() {
               {questions.map((question) => <article className="chat-message" key={question.id}><strong>{question.origin === "learner-question" ? "質問" : "先生"} <small>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.text} /></article>)}
             </div>
             {session.status !== "FINISHED" && <form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
-              <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? focusedTarget?.id ?? ""} onChange={(event) => selectTarget(event.target.value)}>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
-              <div className="chat-input"><input aria-label="質問" placeholder="質問を入力…" maxLength={1000} value={questionText} onChange={(event) => setQuestionText(event.target.value)} /><button aria-label="質問を送る" disabled={questioning || !(selectedTargetId ?? focusedTarget?.id) || !questionText.trim()}><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg></button></div>
-              <div className="quick-feedback"><button type="button" disabled={evidenceSubmitting} onClick={() => void submitEvidence("self-report", "understood")}>わかった</button><button type="button" disabled={evidenceSubmitting} onClick={() => void submitEvidence("self-report", "recheck")}>もう一度</button></div>
+              <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? ""} onChange={(event) => event.target.value ? selectTarget(event.target.value) : setSelectedTargetId(null)}><option value="">指定なし</option>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
+              <div className="chat-input"><input aria-label="質問" placeholder="質問を入力…" maxLength={1000} value={questionText} onChange={(event) => setQuestionText(event.target.value)} /><button aria-label="質問を送る" disabled={questioning || !questionText.trim()}><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg></button></div>
             </form>}
           </section>}
         </aside>

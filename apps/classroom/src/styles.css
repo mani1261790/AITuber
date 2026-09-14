@@ -367,3 +367,30 @@ button { cursor: pointer; }
   .chat-composer { padding: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .projection, .slide-content { transition: none; animation: none; } }
+
+.stage > .vrm-avatar { inset: 0; pointer-events: auto; }
+.lesson-image-source { position: fixed; left: -20000px; top: 0; width: 1280px; height: 720px; padding: 48px; color: #252a35; background: #faf9f3; font-family: "Zen Kaku Gothic New", sans-serif; pointer-events: none; }
+.lesson-image-source h2 { margin: 0 0 24px; height: 58px; font-size: 38px; line-height: 1.4; }
+.image-targets { display: flex; flex-direction: column; height: 530px; gap: 20px; }
+.lesson-image-source .target { flex: 1; padding: 20px 26px; width: 100%; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
+.lesson-image-source .target--diagram, .lesson-image-source .target--image { flex: 3; }
+.lesson-image-source .target-label { font-size: 22px; margin-bottom: 12px; }
+.lesson-image-source .target-content { font-size: 32px; line-height: 1.55; }
+.lesson-image-source .formula { font-size: 42px; }
+.lesson-image-source .lesson-diagram { height: 100%; max-height: 360px; width: 100%; }
+.lesson-image-source--board { color: #f2f3dc; background: #204a3d; }
+.lesson-image-source--board .target-label { color: #c6d9c4; }
+.stage-loading { position: absolute; z-index: 5; left: 20px; top: 20px; color: white; font-size: 13px; }
+@media (aspect-ratio >= 1/1) {
+ .broadcast-layout { grid-template-columns: minmax(0,1fr) clamp(220px,24vw,300px); grid-template-rows: minmax(0,1fr); }
+ .lesson-header { grid-template-columns: 100px minmax(0,1fr) auto; }
+}
+@media (aspect-ratio < 1/1) {
+ .broadcast-layout { display: flex; flex-direction: column; }
+ .broadcast-main { flex: none; height: auto; container-type: inline-size; }
+ .stage { width: min(100%,calc((100dvh - 310px)*16/9)); flex: none; aspect-ratio: 16/9; }
+ .checkpoint { flex: none; max-height: 120px; }
+ .lecture-rail { flex: 1; min-height: 120px; }
+ .lesson-header { grid-template-columns: minmax(0,1fr) auto; }
+ .lesson-header .studio-brand { display: none; }
+}

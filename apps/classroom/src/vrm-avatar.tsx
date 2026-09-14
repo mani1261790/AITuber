@@ -3,10 +3,14 @@ import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+import type { LessonImage } from "./lesson-texture.tsx";
+
 type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
-export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion; mouthOpen: boolean; targetId: string | null }) {
+export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect }: { state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef({ lessonImage, projecting, onSelect });
+  useEffect(() => { stageRef.current = { lessonImage, projecting, onSelect }; }, [lessonImage, projecting, onSelect]);
   const motionRef = useRef({ state, mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -17,9 +21,9 @@ export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion;
     if (!host) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 20);
-    camera.position.set(0, 0.88, 4.8);
-    camera.lookAt(0, 0.88, 0);
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+    camera.position.set(0, 1.65, 7.8);
+    camera.lookAt(0, 1.65, 0);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setClearAlpha(0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -38,6 +42,43 @@ export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion;
     rimLight.position.set(3, 2, -2);
     scene.add(rimLight);
 
+
+    scene.background = new THREE.Color("#202c31");
+    const room = new THREE.Group();
+    scene.add(room);
+    const box = (w: number, h: number, d: number, color: string, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color, roughness:.85}));
+      mesh.position.set(x,y,z); room.add(mesh); return mesh;
+    };
+    box(9,5,.15,"#546260",0,1.7,-.65);
+    box(9,.15,3,"#806951",0,-.68,.1);
+    box(6.2,3.55,.13,"#755741",-1,1.65,-.4);
+    box(5.94,3.29,.08,"#204a3d",-1,1.65,-.3);
+    box(6.35,.12,.26,"#a0a4a1",-1,3.48,-.05);
+    const boardMaterial = new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped:false });
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(5.65,3.18), boardMaterial);
+    board.position.set(-1,1.65,-.22); room.add(board);
+    const screenMaterial = new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped:false });
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(5.8,3.2625), screenMaterial);
+    room.add(screen);
+    const rail = box(5.9,.065,.1,"#bec2be",-1,3.4,-.03);
+    let currentImage: LessonImage | null = null;
+    let texture: THREE.CanvasTexture | null = null;
+    let boardTexture: THREE.CanvasTexture | null = null;
+    let curtain = 0;
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const click = (event: PointerEvent) => {
+      const frame = renderer.domElement.getBoundingClientRect();
+      pointer.set((event.clientX-frame.left)/frame.width*2-1,1-(event.clientY-frame.top)/frame.height*2);
+      raycaster.setFromCamera(pointer,camera);
+      const hit = raycaster.intersectObjects(screen.visible ? [screen, board] : [board])[0];
+      if (!hit?.uv) return;
+      const x=hit.uv.x, y=1-hit.uv.y;
+      const region = currentImage?.regions.find(r => x>=r.x && x<=r.x+r.width && y>=r.y && y<=r.y+r.height);
+      if(region) stageRef.current.onSelect?.(region.id);
+    };
+    renderer.domElement.addEventListener("pointerup",click);
     let avatar: VRM | null = null;
     let disposed = false;
     let animationFrame = 0;
@@ -62,6 +103,8 @@ export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion;
       avatar = gltf.userData.vrm as VRM;
       VRMUtils.rotateVRM0(avatar);
       fitAvatarToStage(avatar);
+      avatar.scene.scale.multiplyScalar(.85);
+      avatar.scene.position.set(2.25,-.15,.6);
       avatar.springBoneManager?.setInitState();
       avatar.springBoneManager?.reset();
       scene.add(avatar.scene);
@@ -72,11 +115,30 @@ export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion;
       if (disposed) return;
       const delta = Math.min(clock.getDelta(), 0.05);
       const time = clock.elapsedTime;
+
+      if (currentImage !== stageRef.current.lessonImage) {
+        currentImage = stageRef.current.lessonImage;
+        texture?.dispose();
+        boardTexture?.dispose();
+        texture = currentImage ? new THREE.CanvasTexture(currentImage.canvas) : null;
+        boardTexture = currentImage ? new THREE.CanvasTexture(currentImage.boardCanvas) : null;
+        if(texture) { texture.colorSpace=THREE.SRGBColorSpace; texture.anisotropy=renderer.capabilities.getMaxAnisotropy(); }
+        if(boardTexture) { boardTexture.colorSpace=THREE.SRGBColorSpace; boardTexture.anisotropy=renderer.capabilities.getMaxAnisotropy(); }
+        boardMaterial.map=boardTexture; screenMaterial.map=texture;
+        boardMaterial.needsUpdate=true; screenMaterial.needsUpdate=true;
+      }
+      curtain = reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
+      screen.scale.y=Math.max(.001,curtain);
+      const screenUv = screen.geometry.attributes.uv!;
+      screenUv.setY(2,1-curtain); screenUv.setY(3,1-curtain); screenUv.needsUpdate=true;
+      screen.position.set(-1,3.4-3.2625*curtain/2,-.06);
+      screen.visible=curtain>.002;
+      rail.position.y=3.4-3.2625*curtain;
+      board.visible=Boolean(currentImage);
       if (avatar) {
-        const target = [...(host.closest(".stage")?.querySelectorAll<HTMLElement>("[data-semantic-id]") ?? [])].find((element) => element.dataset.semanticId === motionRef.current.targetId && !element.closest('[aria-hidden="true"]'));
-        const bounds = target?.getBoundingClientRect();
-        const frame = host.getBoundingClientRect();
-        const elevation = bounds ? Math.atan2(frame.top + frame.height * .38 - (bounds.top + bounds.height / 2), Math.max(40, frame.left + frame.width * .55 - (bounds.left + bounds.width / 2))) : 0;
+        const region = currentImage?.regions.find(r=>r.id===motionRef.current.targetId);
+        const targetY = region ? 3.24-(region.y+region.height/2)*3.18 : 1.6;
+        const elevation = Math.atan2(targetY-1.8, 2.8);
         animateAvatar(avatar, motionRef.current, time, delta, reducedMotion, elevation);
         avatar.scene.updateMatrixWorld(true);
         avatar.springBoneManager?.update(delta);
@@ -91,6 +153,10 @@ export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion;
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       if (avatar) { scene.remove(avatar.scene); VRMUtils.deepDispose(avatar.scene); }
+      renderer.domElement.removeEventListener("pointerup",click);
+      texture?.dispose();
+      boardTexture?.dispose();
+      VRMUtils.deepDispose(room);
       renderer.dispose();
       renderer.domElement.remove();
     };

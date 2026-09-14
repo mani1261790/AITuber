@@ -14,7 +14,8 @@ export class QuestionQueueService {
     const text = boundedQuestion(input.request.text); const now = input.submittedAt ?? new Date().toISOString();
     const context = this.#context(input.sessionId); const course = context.session.course;
     const scene = course.scenes.find((item) => item.id === input.request.sceneId);
-    const target = course.semanticTargets.find((item) => item.id === input.request.semanticTargetId);
+    const contextualTargetId = input.request.semanticTargetId ?? scene?.targetIds[0];
+    const target = course.semanticTargets.find((item) => item.id === contextualTargetId);
     if (!scene || !target || target.sceneId !== scene.id || !scene.targetIds.includes(target.id)) throw new TypeError("質問対象が現在の教材に存在しません。");
     const normalizedIntent = normalizeIntent(text);
     const duplicate = this.#store.listOpen(input.sessionId).find((item) => item.semanticTargetId === target.id && sameIntent(item.normalizedIntent, normalizedIntent));

@@ -203,7 +203,7 @@ export interface SubmitQuestionRequest {
   readonly accessToken: string;
   readonly text: string;
   readonly sceneId: string;
-  readonly semanticTargetId: string;
+  readonly semanticTargetId?: string;
 }
 export interface SubmitQuestionResponse {
   readonly question: ClassroomQuestionView;
