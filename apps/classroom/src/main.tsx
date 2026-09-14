@@ -10,6 +10,7 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "katex/dist/katex.min.css";
 import { LessonStage } from "./lesson-texture.tsx";
 import { RichText } from "./rich-text.tsx";
+import { QuestionInput } from "./question-input.tsx";
 
 import "./styles.css";
 
@@ -272,7 +273,7 @@ function ClassroomApp() {
             </div>
             {session.status !== "FINISHED" && <form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
               <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? ""} onChange={(event) => event.target.value ? selectTarget(event.target.value) : setSelectedTargetId(null)}><option value="">指定なし</option>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
-              <div className="chat-input"><input aria-label="質問" placeholder="質問を入力…" maxLength={1000} value={questionText} onChange={(event) => setQuestionText(event.target.value)} /><button aria-label="質問を送る" disabled={questioning || !questionText.trim()}><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg></button></div>
+              <QuestionInput value={questionText} onChange={setQuestionText} sending={questioning} />
             </form>}
           </section>}
         </aside>
