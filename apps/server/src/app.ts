@@ -18,6 +18,7 @@ export interface LectureApi {
   subscribe(listener: (sessionId: string, snapshot: ClassroomSnapshot) => void): () => void;
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
+  reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number): void;
 }
 
 const unavailableApi: LectureApi = {
@@ -67,6 +68,14 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "classroom");
         const access = classrooms.authenticate(reconnectMatch[1]!, (await readJson<ClassroomReconnectRequest>(request)).accessToken);
         return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
+      }
+      const playbackMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/playback$/);
+      if (request.method === "POST" && playbackMatch) {
+        requireSurface(request, "classroom");
+        const body = await readJson<{ accessToken: string; epoch: number; audioUrl: string; remainingMs: number }>(request);
+        const access = classrooms.authenticate(playbackMatch[1]!, body.accessToken);
+        api.reportPlayback?.(access.sessionId, body.epoch, body.audioUrl, body.remainingMs);
+        return json(response, 200, { ok: true });
       }
       const questionMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/questions$/);
       if (request.method === "POST" && questionMatch) {

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CachedSpeechProvider, createSpeechCacheKey, FishAudioTtsProvider, TestToneSpeechProvider, type SpeechArtifact, type SpeechRequest, type TextToSpeechProvider } from "./speech.ts";
+import { opusDurationMs, CachedSpeechProvider, createSpeechCacheKey, FishAudioTtsProvider, TestToneSpeechProvider, type SpeechArtifact, type SpeechRequest, type TextToSpeechProvider } from "./speech.ts";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))); });
@@ -36,6 +36,12 @@ describe("speech cache", () => {
 });
 
 describe("FishAudioTtsProvider", () => {
+  it("measures the audio tail from Opus samples rather than subtitle timestamps", () => {
+    const header = Buffer.alloc(47); header.write("OggS"); header[26] = 1; header[27] = 19; header.write("OpusHead",28); header.writeUInt16LE(312,38);
+    const end = Buffer.alloc(28); end.write("OggS"); end[5] = 4; end[26] = 1; end.writeBigInt64LE(96312n,6);
+    expect(opusDurationMs(Buffer.concat([header,end]))).toBe(2_000);
+    expect(opusDurationMs(Buffer.from([1,2,3]))).toBeNull();
+  });
   it("parses streamed audio and replaces cumulative timestamp snapshots", async () => {
     const events = [
       { audio_base64: Buffer.from([1]).toString("base64"), content: "頂点は", chunk_seq: 0, chunk_audio_offset_sec: 0, alignment: { audio_duration: 0.2, segments: [{ text: "頂点", start: 0, end: 0.2 }] } },

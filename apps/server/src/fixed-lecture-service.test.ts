@@ -108,6 +108,22 @@ describe("FixedLectureService", () => {
     expect(service.getSession(started.id).speech.audioUrl).toBeNull();
   });
 
+  it("waits for delayed browser playback and a gap before completing the unit", async () => {
+    service.close();
+    service = new FixedLectureService({ store, courses: [quadraticFunctionsFixture], playbackUnitMs: 100, speechProvider: fixedProvider(), voiceId: "voice.standard" });
+    const started = service.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
+    await vi.waitFor(() => expect(service.getSession(started.id).speech.audioUrl).not.toBeNull());
+    const speech = service.getSession(started.id).speech;
+    service.reportPlayback(started.id, speech.epoch, speech.audioUrl!, 1_000);
+    vi.advanceTimersByTime(1_000);
+    expect(service.getSession(started.id).progress.completed).toBe(0);
+    service.reportPlayback(started.id, speech.epoch, speech.audioUrl!, 0);
+    vi.advanceTimersByTime(849);
+    expect(service.getSession(started.id).progress.completed).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(service.getSession(started.id).progress.completed).toBe(1);
+  });
+
   it("discards a provider result after pause changes the epoch", async () => {
     service.close();
     let resolveSpeech!: (artifact: SpeechArtifact) => void;

@@ -113,6 +113,13 @@ function ClassroomApp() {
     const audio = audioRef.current;
     const startedAt = session?.speech.startedAt;
     if (!audio || !startedAt || !session.speech.audioUrl) return;
+    if (audio.getAttribute("src") !== session.speech.audioUrl) audio.setAttribute("src", session.speech.audioUrl);
+    const report = () => {
+      if (!participant || !room || !Number.isFinite(audio.duration)) return;
+      void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/playback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, epoch: session.speech.epoch, audioUrl: session.speech.audioUrl, remainingMs: Math.max(0,(audio.duration-audio.currentTime)*1000) }) }).catch(() => {});
+    };
+    audio.addEventListener("playing", report);
+    audio.addEventListener("ended", report);
     const synchronize = () => {
       audio.volume = 0.8;
       const targetMs = Math.max(audioFloorMs, Math.max(0, Date.now() - Date.parse(startedAt)));
@@ -121,8 +128,15 @@ function ClassroomApp() {
     };
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) synchronize();
     else audio.addEventListener("loadedmetadata", synchronize, { once: true });
-    return () => audio.removeEventListener("loadedmetadata", synchronize);
-  }, [session?.speech.audioUrl, session?.speech.startedAt, audioFloorMs]);
+    return () => {
+      audio.removeEventListener("loadedmetadata", synchronize);
+      audio.removeEventListener("playing", report);
+      audio.removeEventListener("ended", report);
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    };
+  }, [session?.speech.audioUrl, session?.speech.startedAt, participant?.accessToken, room?.code]);
 
   async function joinClassroom(event: FormEvent) {
     event.preventDefault();
@@ -243,7 +257,7 @@ function ClassroomApp() {
           {session.status !== "FINISHED" && session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
           {session.lastAssessmentEvaluation?.outcome === "incorrect" && session.liveSupplement && !new Set(["completed", "deferred"]).has(session.liveSupplement.status) && <p className="notice notice--learning" role="status">確認問題の回答から、もう一度確かめる箇所が見つかりました。短い補足のあと同じ問いで確認します。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
-          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
+          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>

@@ -22,8 +22,8 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
-    camera.position.set(-.65, 2.05, 6.7);
-    camera.lookAt(-.65, 2.05, 0);
+    camera.position.set(-.15, 2.05, 7.1);
+    camera.lookAt(-.15, 2.05, 0);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setClearAlpha(0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -62,6 +62,8 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(5.8,3.2625), screenMaterial);
     room.add(screen);
     const rail = box(5.9,.065,.1,"#bec2be",-1,3.4,-.03);
+    // Reserve a presenter lane outside the entire projected surface.
+    for (const surface of room.children.slice(2)) { surface.scale.set(.82,.82,1); surface.position.x = surface.position.x*.82-.65; surface.position.y = (surface.position.y-1.65)*.82+2; }
     let currentImage: LessonImage | null = null;
     let texture: THREE.CanvasTexture | null = null;
     let boardTexture: THREE.CanvasTexture | null = null;
@@ -85,7 +87,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     let animationFrame = 0;
     const clock = new THREE.Clock();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let destinationX = 1.7;
+    let destinationX = 2.35;
     let lastTarget: string | null | undefined;
     let gaitPhase = 0;
     const footPosition = new THREE.Vector3();
@@ -108,8 +110,8 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       avatar = gltf.userData.vrm as VRM;
       VRMUtils.rotateVRM0(avatar);
       fitAvatarToStage(avatar);
-      avatar.scene.scale.multiplyScalar(1.25);
-      avatar.scene.position.set(1.7,-.15,.6);
+      avatar.scene.scale.multiplyScalar(1.08);
+      avatar.scene.position.set(2.35,-.15,.6);
       avatar.scene.updateMatrixWorld(true);
       const foot = avatar.humanoid.getRawBoneNode("leftFoot");
       if (foot) avatar.scene.position.y += -.52 - foot.getWorldPosition(footPosition).y;
@@ -136,12 +138,12 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
         boardMaterial.needsUpdate=true; screenMaterial.needsUpdate=true;
       }
       curtain = reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
-      screen.scale.y=Math.max(.001,curtain);
+      screen.scale.y=Math.max(.001,curtain)*.82;
       const screenUv = screen.geometry.attributes.uv!;
       screenUv.setY(2,1-curtain); screenUv.setY(3,1-curtain); screenUv.needsUpdate=true;
-      screen.position.set(-1,3.4-3.2625*curtain/2,-.06);
+      screen.position.set(-1.47,3.44-3.2625*.82*curtain/2,-.06);
       screen.visible=curtain>.002;
-      rail.position.y=3.4-3.2625*curtain;
+      rail.position.y=3.44-3.2625*.82*curtain;
       board.visible=Boolean(currentImage);
       if (avatar) {
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
@@ -149,18 +151,19 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
         const targetKey = `${stageRef.current.projecting}:${motionRef.current.targetId}:${regions?.length}`;
         if (lastTarget !== targetKey) {
           lastTarget = targetKey;
-          destinationX = !region ? -.65 : region.anchorX < .4 ? 1.7 : -3;
+          destinationX = stageRef.current.projecting || region ? 2.35 : -.65;
         }
         const distance = destinationX-avatar.scene.position.x;
         const walking = Math.abs(distance) > .035 && !reducedMotion;
-        const step = Math.sign(distance)*Math.min(Math.abs(distance), delta*1.05);
+        const step = Math.sign(distance)*Math.min(Math.abs(distance), delta*Math.min(1.05,Math.abs(distance)*1.8));
         avatar.scene.position.x += reducedMotion ? distance : step;
         if (walking) gaitPhase += Math.abs(step)*7.5;
         const facing = walking ? Math.sign(distance)*Math.PI/2 : (avatar.scene.position.x < -1 ? .18 : -.18);
         avatar.scene.rotation.y = THREE.MathUtils.damp(avatar.scene.rotation.y,facing,6,delta);
         const targetY = region ? 3.24-(region.y+region.height/2)*3.18 : 1.6;
         const elevation = Math.atan2(targetY-1.8, 2.8);
-        animateAvatar(avatar, motionRef.current, time, delta, reducedMotion, elevation, walking, gaitPhase, avatar.scene.position.x < -1);
+        const gestureMotion = { ...motionRef.current, state: region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
+        animateAvatar(avatar, gestureMotion, time, delta, reducedMotion, elevation, walking, gaitPhase, avatar.scene.position.x < -1);
         avatar.scene.updateMatrixWorld(true);
         const feet = [avatar.humanoid.getRawBoneNode("leftFoot"), avatar.humanoid.getRawBoneNode("rightFoot")].filter((foot): foot is THREE.Object3D => Boolean(foot));
         if (feet.length) {
@@ -213,9 +216,9 @@ function fitAvatarToStage(avatar: VRM) {
 function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean, elevation = 0, walking = false, gaitPhase = 0, standLeft = false) {
   const motionAmount = reducedMotion ? 0 : 1;
   const speaking = motion.state === "mouth-open" || motion.mouthOpen;
-  const pointing = motion.state === "pointing" && !walking && (reducedMotion || time % 7 < 3.8);
+  const pointing = motion.state === "pointing" && !walking;
   const reacting = motion.state === "reaction";
-  const ease = 1 - Math.exp(-delta * 8);
+  const ease = 1 - Math.exp(-delta * 4);
   const bone = (name: Parameters<VRM["humanoid"]["getRawBoneNode"]>[0]) => rig.humanoid.getRawBoneNode(name);
 
   const hips = bone("hips");
