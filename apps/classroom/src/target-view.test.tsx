@@ -22,4 +22,12 @@ describe("TargetView", () => {
     expect(markup).not.toContain("<script>");
     expect(markup).toContain("&lt;script&gt;globalThis.compromised = true&lt;/script&gt;");
   });
+
+  it("renders the quadratic graph as an accessible visual layer", () => {
+    const markup = renderToStaticMarkup(<TargetView target={{ id: "target.math.complete-graph", sceneId: "scene.math.complete", kind: "diagram", label: "グラフで見る変化", content: "shift", sourceIds: ["source.test"], visible: true, focused: true }} onSelect={() => undefined} />);
+    expect(markup).toContain("<svg");
+    expect(markup).toContain("右へ2");
+    expect(markup).toContain("下へ1");
+    expect(markup).toContain('aria-label="yイコールx二乗を右へ2、下へ1移動するグラフ"');
+  });
 });

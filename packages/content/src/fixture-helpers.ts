@@ -6,12 +6,13 @@ export function unit(input: Omit<TeachingUnit, "postconditions" | "boardPatches"
   sourceId: string;
   postcondition: string;
   skippable?: boolean;
+  boardPatches?: TeachingUnit["boardPatches"];
 }): TeachingUnit {
-  const { sourceId, postcondition, skippable = false, ...rest } = input;
+  const { sourceId, postcondition, skippable = false, boardPatches, ...rest } = input;
   return {
     ...rest,
     postconditions: [postcondition],
-    boardPatches: rest.focusTargetIds.map((targetId) => ({ operation: "show" as const, targetId })),
+    boardPatches: boardPatches ?? rest.focusTargetIds.map((targetId) => ({ operation: "show" as const, targetId })),
     sourceIds: [sourceId],
     skippable,
   };

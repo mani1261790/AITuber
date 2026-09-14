@@ -28,11 +28,13 @@ describe("FixedLectureService", () => {
     });
     expect(started.status).toBe("TEACHING");
     expect(started.speech.playing).toBe(true);
-    vi.advanceTimersByTime(500);
+    const assessment = quadraticFunctionsFixture.assessments[0]!;
+    const checkpointUnitCount = quadraticFunctionsFixture.schedule.orderedUnitIds.indexOf(assessment.afterUnitId) + 1;
+    vi.advanceTimersByTime(checkpointUnitCount * 100);
 
     const checkpoint = service.getSession(started.id);
     expect(checkpoint.status).toBe("CHECKPOINT");
-    expect(checkpoint.progress).toEqual({ completed: 5, total: 6 });
+    expect(checkpoint.progress).toEqual({ completed: checkpointUnitCount, total: quadraticFunctionsFixture.schedule.orderedUnitIds.length });
     expect(checkpoint.assessment?.id).toBe("assessment.math.vertex");
 
     service.command(started.id, { command: "answer", answer: "(-3, -4)" });

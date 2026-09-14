@@ -1,5 +1,6 @@
 import { localAssetUrl, type StageTarget } from "@aituber/presentation";
 import { FormulaView } from "./formula-view.tsx";
+import { DiagramView } from "./diagram-view.tsx";
 
 export function TargetView({ target, onSelect }: { target: StageTarget; onSelect: (targetId: string) => void }) {
   return (
@@ -15,6 +16,8 @@ export function TargetView({ target, onSelect }: { target: StageTarget; onSelect
         <img src={localAssetUrl(target.assetId)} alt={target.altText ?? target.label} />
       ) : target.kind === "formula" ? (
         <FormulaView tex={target.content} />
+      ) : target.kind === "diagram" ? (
+        <DiagramView target={target} />
       ) : (
         <span className="target-content">{target.content}</span>
       )}

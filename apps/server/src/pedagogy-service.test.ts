@@ -18,6 +18,12 @@ describe("PedagogyService", () => {
   });
   afterEach(() => { lecture.close(); events.close(); evidence.close(); questionStore.close(); vi.useRealTimers(); });
 
+  const advanceToAssessment = () => {
+    const assessment = quadraticFunctionsFixture.assessments[0]!;
+    const checkpointUnitCount = quadraticFunctionsFixture.schedule.orderedUnitIds.indexOf(assessment.afterUnitId) + 1;
+    vi.advanceTimersByTime(checkpointUnitCount * 100);
+  };
+
   it("does not turn viewing, target selection, or an understood self-report into confirmed understanding", () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     expect(session.learningEvidence.every((item) => item.state === "unconfirmed" && item.evidenceCount === 0)).toBe(true);
@@ -35,7 +41,7 @@ describe("PedagogyService", () => {
   });
 
   it("keeps a wrong answer as struggle evidence, supplements it, and records the post-supplement answer as new evidence", () => {
-    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(500);
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
     const wrong = pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(3, -4)" });
     expect(wrong.lastAssessmentEvaluation).toMatchObject({ outcome: "incorrect", linkedSupplementId: null });
     expect(wrong.learningEvidence.find((item) => item.scopeId === "goal.math.calculate")?.state).toBe("struggle-evidence");
@@ -53,7 +59,7 @@ describe("PedagogyService", () => {
   });
 
   it("does not accept a partial numeric token as satisfying a short-answer rubric", () => {
-    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(500);
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
     expect(pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "-3" }).lastAssessmentEvaluation?.outcome).toBe("incorrect");
   });
 

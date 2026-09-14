@@ -196,7 +196,7 @@ function OperatorApp() {
           {error && <p className="error" role="alert">{error}</p>}
           {session ? <section className="panel session-panel" aria-labelledby="session-heading">
             <div className="panel-heading"><span>02</span><div><p>LIVE MONITOR</p><h2>進行状況</h2></div></div>
-            <div className="session-heading"><div><p className={`status status--${session.status.toLowerCase()}`}><span aria-hidden="true" />{statusLabels[session.status]}</p><h3 id="session-heading">{session.course.title}</h3></div><strong><span>UNIT</span>{session.progress.completed}<b>/</b>{session.progress.total}</strong></div>
+            <div className="session-heading"><div><p className={`status status--${session.status.toLowerCase()}`}><span aria-hidden="true" />{statusLabels[session.status]}</p><h3 id="session-heading">{session.course.title}</h3></div><strong><span>進行</span>{session.progress.completed}<b>/</b>{session.progress.total}</strong></div>
             <progress value={session.progress.completed} max={session.progress.total}>{session.progress.completed} / {session.progress.total}</progress>
             {session.speech.mode === "caption-fallback" && <p className="speech-warning">音声合成に失敗したため、字幕で講義を続けています。</p>}
             {classroom && <div className="classroom-access"><div><span>教室コード</span><strong>{classroom.code}</strong></div><p>{classroom.participantCount} / {classroom.capacity} 人参加</p></div>}
