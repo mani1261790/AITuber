@@ -13,7 +13,7 @@ export function MascotView({ presentation }: { presentation: MascotPresentation 
     >
       <div className="mascot-character" role="img" aria-label={presentation.announcement} data-avatar-engine="vrm-3d">
         <span className="mascot-aura" aria-hidden="true" />
-        <Suspense fallback={<span className="avatar-loading" aria-hidden="true" />}><VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} /></Suspense>
+        <Suspense fallback={<span className="avatar-loading" aria-hidden="true" />}><VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} /></Suspense>
         <span className="mascot-spark" aria-hidden="true" />
       </div>
       <figcaption className="sr-only"><span>{presentation.announcement}</span><small>AITuber Teacher</small></figcaption>

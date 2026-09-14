@@ -5,12 +5,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
-export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen: boolean }) {
+export function VrmAvatar({ state, mouthOpen, targetId }: { state: AvatarMotion; mouthOpen: boolean; targetId: string | null }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const motionRef = useRef({ state, mouthOpen });
+  const motionRef = useRef({ state, mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
-  useEffect(() => { motionRef.current = { state, mouthOpen }; }, [state, mouthOpen]);
+  useEffect(() => { motionRef.current = { state, mouthOpen, targetId }; }, [state, mouthOpen, targetId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -18,17 +18,20 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 20);
-    camera.position.set(0, 0.88, 4.15);
+    camera.position.set(0, 0.88, 4.8);
     camera.lookAt(0, 0.88, 0);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setClearAlpha(0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
     renderer.domElement.setAttribute("aria-hidden", "true");
     host.append(renderer.domElement);
 
-    scene.add(new THREE.HemisphereLight(0xfff5e8, 0x31334d, 1.15));
-    const keyLight = new THREE.DirectionalLight(0xfff0dd, 1.4);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c5d5, 1.3));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
     keyLight.position.set(-2, 4, 4);
     scene.add(keyLight);
     const rimLight = new THREE.DirectionalLight(0x7772ff, 0.45);
@@ -58,7 +61,6 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
       if (disposed) return;
       avatar = gltf.userData.vrm as VRM;
       VRMUtils.rotateVRM0(avatar);
-      avatar.scene.getObjectByName("robo_arm")?.removeFromParent();
       fitAvatarToStage(avatar);
       avatar.springBoneManager?.setInitState();
       avatar.springBoneManager?.reset();
@@ -70,7 +72,15 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
       if (disposed) return;
       const delta = Math.min(clock.getDelta(), 0.05);
       const time = clock.elapsedTime;
-      if (avatar) animateAvatar(avatar, motionRef.current, time, delta, reducedMotion);
+      if (avatar) {
+        const target = [...(host.closest(".stage")?.querySelectorAll<HTMLElement>("[data-semantic-id]") ?? [])].find((element) => element.dataset.semanticId === motionRef.current.targetId && !element.closest('[aria-hidden="true"]'));
+        const bounds = target?.getBoundingClientRect();
+        const frame = host.getBoundingClientRect();
+        const elevation = bounds ? Math.atan2(frame.top + frame.height * .38 - (bounds.top + bounds.height / 2), Math.max(40, frame.left + frame.width * .55 - (bounds.left + bounds.width / 2))) : 0;
+        animateAvatar(avatar, motionRef.current, time, delta, reducedMotion, elevation);
+        avatar.scene.updateMatrixWorld(true);
+        avatar.springBoneManager?.update(delta);
+      }
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
     };
@@ -107,7 +117,7 @@ function fitAvatarToStage(avatar: VRM) {
   model.updateMatrixWorld(true);
 }
 
-function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean) {
+function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean, elevation = 0) {
   const motionAmount = reducedMotion ? 0 : 1;
   const speaking = motion.state === "mouth-open" || motion.mouthOpen;
   const pointing = motion.state === "pointing";
@@ -133,7 +143,7 @@ function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boole
   }
   if (head) {
     const base = basePose(head);
-    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, base.rotationY + motionAmount * Math.sin(time * 0.72) * 0.08, ease);
+    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, base.rotationY + (pointing ? -.22 : motionAmount * Math.sin(time * 0.72) * 0.08), ease);
     head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, base.rotationX + (speaking ? motionAmount * Math.sin(time * 3.1) * 0.025 : 0), ease);
     head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, base.rotationZ + (reacting ? -0.1 : motionAmount * Math.sin(time * 0.9) * 0.018), ease);
   }
@@ -147,7 +157,7 @@ function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boole
   }
   if (rightUpperArm) {
     const base = basePose(rightUpperArm);
-    rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, base.rotationZ + (pointing ? 0.06 : 1.08), ease);
+    rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, base.rotationZ + (pointing ? -THREE.MathUtils.clamp(elevation, -.7, .65) : 1.08), ease);
     rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, base.rotationY + (pointing ? -0.2 : 0), ease);
   }
   if (rightLowerArm) {
