@@ -383,6 +383,7 @@ button { cursor: pointer; }
 .lesson-image-source .lesson-diagram { height: 100%; max-height: 360px; width: 100%; }
 .lesson-image-source--board { color: #f2f3dc; background: #204a3d; }
 .lesson-image-source--board .target-label { color: #c6d9c4; }
+.lesson-image-source--board .rich-text { font-size: 36px; line-height: 1.65; }
 .stage-loading { position: absolute; z-index: 5; left: 20px; top: 20px; color: white; font-size: 13px; }
 @media (aspect-ratio >= 1/1) {
  .broadcast-layout { grid-template-columns: minmax(0,1fr) clamp(220px,24vw,300px); grid-template-rows: minmax(0,1fr); }

@@ -28,7 +28,7 @@ function ClassroomApp() {
   const [audioFloorMs, setAudioFloorMs] = useState(0);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [captions, setCaptions] = useState(false);
-  const [projecting, setProjecting] = useState(false);
+  const [projecting, setProjecting] = useState(true);
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
   const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
@@ -154,6 +154,15 @@ function ClassroomApp() {
     return resolveStageScene(session.course, sceneId, board);
   }, [session, displayUnit, supplementCandidate, selectedTargetId, activeSpeechSegment]);
   const evidenceTargetId = selectedTargetId ?? displayUnit?.focusTargetIds[0] ?? null;
+  const slideScene = useMemo(() => {
+    if (!session || !displayUnit) return null;
+    return resolveStageScene(session.course, displayUnit.sceneId, applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches));
+  }, [session?.course, displayUnit]);
+  const noteTargetIds = new Set([
+    ...(supplementCandidate?.boardPatches.map(patch => patch.targetId) ?? []),
+    ...(session?.boardCorrections.filter(patch => patch.sceneId === scene?.id).map(patch => patch.targetId) ?? []),
+  ]);
+  const boardNotes = scene?.targets.filter(target => noteTargetIds.has(target.id)) ?? [];
   const focusedTarget = scene?.targets.find((target) => target.visible && target.id === (selectedTargetId ?? scene.focusedTargetId)) ?? null;
   const mascotPresentation = resolveMascotPresentation({
     audiblePlayback: audioPlaybackActive && session?.speech.mode !== "caption-fallback",
@@ -166,8 +175,8 @@ function ClassroomApp() {
 
   useEffect(() => { setSelectedTargetId(null); }, [scene?.id, displayUnit?.id]);
   useEffect(() => {
-    setProjecting(Boolean(scene?.targets.some((target) => target.visible && (target.kind === "image" || target.kind === "diagram"))));
-  }, [scene?.id, displayUnit?.id, supplementCandidate?.sceneId]);
+    setProjecting(!supplementCandidate);
+  }, [displayUnit?.id, Boolean(supplementCandidate)]);
 
   async function submitAnswer(event: FormEvent) {
     event.preventDefault();
@@ -238,7 +247,7 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage scene={scene} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} />
+            <LessonStage scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} />
             <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button></div>
             {captions && displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{supplementCandidate?.captionText ?? displayUnit.captionText ?? session.speech.text ?? displayUnit.speechText}</p></section>}
           </section>}
