@@ -16,7 +16,7 @@ export function MascotView({ presentation }: { presentation: MascotPresentation 
         <Suspense fallback={<span className="avatar-loading" aria-hidden="true" />}><VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} /></Suspense>
         <span className="mascot-spark" aria-hidden="true" />
       </div>
-      <figcaption className="sr-only"><span>{presentation.announcement}</span><small>Seed-san · VirtualCast, Inc.</small></figcaption>
+      <figcaption className="sr-only"><span>{presentation.announcement}</span><small>AITuber Teacher</small></figcaption>
     </figure>
   );
 }

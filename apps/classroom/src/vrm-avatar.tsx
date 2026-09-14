@@ -54,7 +54,7 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
-    void loader.loadAsync("/models/tutor.vrm?v=adult-v5").then((gltf) => {
+    void loader.loadAsync("/models/tutor.vrm?v=aituber-teacher-v1").then((gltf) => {
       if (disposed) return;
       avatar = gltf.userData.vrm as VRM;
       VRMUtils.rotateVRM0(avatar);
