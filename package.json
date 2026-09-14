@@ -33,7 +33,8 @@
     "study:delete": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete",
     "study:delete-raw": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete-raw",
     "verify:client-boundaries": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-client-boundaries.ts",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries && pnpm verify:self-host"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries && pnpm verify:self-host",
+    "preview:voices": "pnpm build:provider-tools && node --env-file-if-exists=.env --experimental-strip-types scripts/preview-voices.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
