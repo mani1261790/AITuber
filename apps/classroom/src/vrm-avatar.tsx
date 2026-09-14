@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
-type MorphTarget = { influences: number[]; blinkIndices: number[]; mouthIndices: number[]; happyIndices: number[] };
-type AvatarRig = { scene: THREE.Object3D; bones: Map<string, THREE.Object3D>; morphTargets: MorphTarget[] };
 
 export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -36,7 +35,7 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
     rimLight.position.set(3, 2, -2);
     scene.add(rimLight);
 
-    let avatar: AvatarRig | null = null;
+    let avatar: VRM | null = null;
     let disposed = false;
     let animationFrame = 0;
     const clock = new THREE.Clock();
@@ -54,16 +53,12 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
     resize();
 
     const loader = new GLTFLoader();
-    void loader.loadAsync("/models/tutor.vrm").then(async (gltf) => {
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+    void loader.loadAsync("/models/tutor.vrm?v=adult-v4").then((gltf) => {
       if (disposed) return;
-      const vrm = gltf.parser.json.extensions?.VRM as { humanoid?: { humanBones?: Array<{ bone: string; node: number }> } } | undefined;
-      const bones = new Map<string, THREE.Object3D>();
-      for (const binding of vrm?.humanoid?.humanBones ?? []) {
-        const node = await gltf.parser.getDependency("node", binding.node) as THREE.Object3D | null;
-        if (node) bones.set(binding.bone, node);
-      }
-      avatar = { scene: gltf.scene, bones, morphTargets: collectMorphTargets(gltf.scene) };
-      avatar.scene.rotation.y = Math.PI;
+      avatar = gltf.userData.vrm as VRM;
+      VRMUtils.rotateVRM0(avatar);
+      addReadableFace(avatar);
       fitAvatarToStage(avatar.scene);
       scene.add(avatar.scene);
       setLoadState("ready");
@@ -83,7 +78,7 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
-      if (avatar) { scene.remove(avatar.scene); deepDispose(avatar.scene); }
+      if (avatar) { scene.remove(avatar.scene); VRMUtils.deepDispose(avatar.scene); }
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -92,19 +87,35 @@ export function VrmAvatar({ state, mouthOpen }: { state: AvatarMotion; mouthOpen
   return <div ref={hostRef} className="vrm-avatar" data-avatar-ready={loadState === "ready"}>{loadState === "error" && <span role="status">3Dモデルを読み込めません</span>}</div>;
 }
 
-function collectMorphTargets(model: THREE.Object3D) {
-  const targets: MorphTarget[] = [];
-  model.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) || !object.morphTargetDictionary || !object.morphTargetInfluences) return;
-    const matching = (pattern: RegExp) => Object.entries(object.morphTargetDictionary!).filter(([name]) => pattern.test(name)).map(([, index]) => index);
-    targets.push({
-      influences: object.morphTargetInfluences,
-      blinkIndices: matching(/blink/i),
-      mouthIndices: matching(/(^|[_-])(a|aa)($|[_-])|mouth.*a|fcl_mth_a/i),
-      happyIndices: matching(/joy|happy|fun/i),
-    });
-  });
-  return targets;
+function addReadableFace(avatar: VRM) {
+  const head = avatar.scene.getObjectByName("J_Bip_C_Head");
+  if (!head) return;
+
+  const eyes = new THREE.Group();
+  eyes.name = "AITuberFaceEyes";
+  const irisMaterial = new THREE.MeshBasicMaterial({ color: 0x4b2924, depthWrite: false });
+  const highlightMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false });
+
+  for (const x of [-0.027, 0.027]) {
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(0.009, 24), irisMaterial);
+    iris.position.set(x, 0.061, 0.078);
+    iris.scale.set(0.72, 1, 1);
+    iris.renderOrder = 21;
+    eyes.add(iris);
+
+    const highlight = new THREE.Mesh(new THREE.CircleGeometry(0.0015, 12), highlightMaterial);
+    highlight.position.set(x - 0.0025, 0.063, 0.079);
+    highlight.renderOrder = 22;
+    eyes.add(highlight);
+  }
+
+  const mouth = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.021, 0.0018),
+    new THREE.MeshBasicMaterial({ color: 0x9b4d55, depthWrite: false }),
+  );
+  mouth.position.set(0, 0.027, 0.081);
+  mouth.renderOrder = 20;
+  head.add(eyes, mouth);
 }
 
 function fitAvatarToStage(model: THREE.Object3D) {
@@ -112,7 +123,7 @@ function fitAvatarToStage(model: THREE.Object3D) {
   const initialBounds = new THREE.Box3().setFromObject(model);
   const initialSize = initialBounds.getSize(new THREE.Vector3());
   if (!Number.isFinite(initialSize.y) || initialSize.y <= 0) return;
-  model.scale.setScalar(2.25 / initialSize.y);
+  model.scale.setScalar(4.25 / initialSize.y);
   model.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(model);
   const center = bounds.getCenter(new THREE.Vector3());
@@ -121,13 +132,13 @@ function fitAvatarToStage(model: THREE.Object3D) {
   model.updateMatrixWorld(true);
 }
 
-function animateAvatar(rig: AvatarRig, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean) {
+function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean) {
   const motionAmount = reducedMotion ? 0 : 1;
   const speaking = motion.state === "mouth-open" || motion.mouthOpen;
   const pointing = motion.state === "pointing";
   const reacting = motion.state === "reaction";
   const ease = 1 - Math.exp(-delta * 8);
-  const bone = (name: string) => rig.bones.get(name);
+  const bone = (name: Parameters<VRM["humanoid"]["getNormalizedBoneNode"]>[0]) => rig.humanoid.getNormalizedBoneNode(name);
 
   const hips = bone("hips");
   const chest = bone("chest");
@@ -143,7 +154,7 @@ function animateAvatar(rig: AvatarRig, motion: { state: AvatarMotion; mouthOpen:
     head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, speaking ? motionAmount * Math.sin(time * 3.1) * 0.025 : 0, ease);
     head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, reacting ? -0.1 : motionAmount * Math.sin(time * 0.9) * 0.018, ease);
   }
-  if (leftUpperArm) leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, 1.08, ease);
+  if (leftUpperArm) leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, -1.08, ease);
   if (rightUpperArm) {
     rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, pointing ? 0.06 : 1.08, ease);
     rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, pointing ? -0.2 : 0, ease);
@@ -153,21 +164,11 @@ function animateAvatar(rig: AvatarRig, motion: { state: AvatarMotion; mouthOpen:
   const blinkPhase = time % 4.6;
   const blink = blinkPhase > 4.42 ? Math.sin(((blinkPhase - 4.42) / 0.18) * Math.PI) : 0;
   const mouth = motion.mouthOpen ? 0.32 + 0.52 * Math.abs(Math.sin(time * 10.5)) : 0;
-  for (const target of rig.morphTargets) {
-    for (const index of target.blinkIndices) target.influences[index] = blink;
-    for (const index of target.mouthIndices) target.influences[index] = mouth;
-    for (const index of target.happyIndices) target.influences[index] = reacting ? 0.72 : speaking ? 0.12 : 0.04;
-  }
-}
-
-function deepDispose(model: THREE.Object3D) {
-  model.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
-    object.geometry.dispose();
-    const materials = Array.isArray(object.material) ? object.material : [object.material];
-    for (const material of materials) {
-      for (const value of Object.values(material)) if (value instanceof THREE.Texture) value.dispose();
-      material.dispose();
-    }
-  });
+  rig.expressionManager?.setValue("neutral", 1);
+  rig.expressionManager?.setValue("blink", blink);
+  rig.expressionManager?.setValue("aa", mouth);
+  rig.expressionManager?.setValue("happy", reacting ? 0.72 : speaking ? 0.12 : 0);
+  const faceEyes = rig.scene.getObjectByName("AITuberFaceEyes");
+  if (faceEyes) faceEyes.scale.y = Math.max(0.08, 1 - blink);
+  rig.update(delta);
 }

@@ -85,8 +85,8 @@ button { cursor: pointer; }
 .scene-heading h2, .caption h2, .target-list h2, .concept-card h2 { margin: 0; font-weight: 500; }
 .scene-heading h2 { font-size: clamp(1.6rem, 3.2vw, 2.65rem); line-height: 1.2; }
 .scene-heading p { max-width: 22rem; margin: 0; color: var(--muted); font-size: 0.82rem; text-align: right; }
-.mascot { position: absolute; z-index: 3; right: clamp(4px, 1vw, 14px); bottom: 62px; width: clamp(126px, 13vw, 196px); margin: 0; color: var(--ink); pointer-events: none; transform-origin: bottom center; transition: transform 240ms ease-out; }
-.mascot-character { position: relative; display: block; width: 100%; height: clamp(210px, 29vh, 292px); filter: drop-shadow(0 14px 12px rgba(23, 24, 38, 0.2)); }
+.mascot { position: absolute; z-index: 3; right: clamp(0px, 0.5vw, 8px); bottom: 62px; width: clamp(360px, 32vw, 430px); margin: 0; color: var(--ink); pointer-events: none; transform-origin: bottom center; transition: transform 240ms ease-out; }
+.mascot-character { position: relative; display: block; width: 100%; height: clamp(250px, 37vh, 330px); filter: drop-shadow(0 14px 12px rgba(23, 24, 38, 0.2)); }
 .vrm-avatar { position: absolute; z-index: 2; inset: 0; overflow: hidden; }
 .vrm-avatar canvas { display: block; width: 100%; height: 100%; }
 .vrm-avatar > span { position: absolute; inset: auto 0 12px; color: #812a21; font-size: 0.68rem; font-weight: 700; text-align: center; }
@@ -103,7 +103,7 @@ button { cursor: pointer; }
 @keyframes mascot-pop { from { opacity: 0; transform: scale(0.3) rotate(20deg); } to { opacity: 1; transform: scale(1) rotate(45deg); } }
 @keyframes avatar-loading { to { transform: translate(-50%, -50%) rotate(360deg); } }
 @keyframes stage-enter { from { opacity: 0; transform: translateX(22px) scale(0.992); } to { opacity: 1; transform: translateX(0) scale(1); } }
-.scene-grid { display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: clamp(8px, 1vw, 14px); overflow: hidden; padding: 0 clamp(86px, 11vw, 168px) 76px 0; }
+.scene-grid { display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: clamp(8px, 1vw, 14px); overflow: hidden; padding: 0 clamp(240px, 22vw, 290px) 76px 0; }
 .target { position: relative; min-width: 0; min-height: 0; overflow: hidden; padding: clamp(11px, 1.2vw, 17px) clamp(12px, 1.2vw, 18px) clamp(12px, 1.3vw, 18px) clamp(15px, 1.5vw, 22px); border: 1px solid rgba(109, 106, 112, 0.25); border-radius: 10px; color: var(--ink); background: rgba(255, 253, 246, 0.82); text-align: left; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; animation: target-enter 420ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes target-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .target::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; background: transparent; }
