@@ -403,3 +403,19 @@ button { cursor: pointer; }
  .lesson-header { grid-template-columns: minmax(0,1fr) auto; }
  .lesson-header .studio-brand { display: none; }
 }
+
+.lesson-ended { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.6rem 1rem; }
+.lesson-ended p { margin:0; }
+.exit-survey { position:fixed; inset:0; width:100vw; height:100dvh; max-width:none; max-height:none; margin:0; border:0; padding:clamp(1rem,4vw,4rem); background:#17192d; color:#f5f2e9; overflow-y:auto; }
+.exit-survey::backdrop { background:#17192d; }
+.exit-survey-content { width:min(100%,48rem); margin:0 auto; }
+.exit-survey h3 { font-size:1.8rem; }
+.exit-actions { display:flex; justify-content:space-between; gap:1rem; margin-top:2rem; }
+.lesson-ended button, .exit-actions button { border:1px solid #5e617b; border-radius:999px; padding:.65rem 1.15rem; background:#292d47; color:#faf8f1; font:inherit; cursor:pointer; white-space:nowrap; }
+.exit-actions button:last-child { background:transparent; }
+.exit-survey .after-class-survey { gap:1.5rem; }
+.exit-survey .after-class-survey fieldset { padding:0; border:0; }
+.exit-survey .after-class-survey legend { margin-bottom:.8rem; font-size:1.05rem; }
+.exit-survey .after-class-survey textarea { min-height:8rem; }
+.exit-survey .after-class-survey button { color:white; border-radius:.8rem; }
+.exit-survey .after-class-survey button:disabled { color:#b5b7c8; background:#30334e; }

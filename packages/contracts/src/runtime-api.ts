@@ -202,6 +202,7 @@ export interface QuestionPrioritySignals {
   readonly remainingMs: number;
 }
 export interface ClassroomQuestionView {
+  readonly triage?: undefined | "pending" | "immediate" | "later" | "comment" | "ignore";
   readonly id: string;
   readonly text: string;
   readonly coursePackageId: string;

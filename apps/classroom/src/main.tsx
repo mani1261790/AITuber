@@ -38,6 +38,7 @@ function ClassroomApp() {
   const [surveyAnswers, setSurveyAnswers] = useState({ questionHelpfulness: 0, rejoinNaturalness: 0, comment: "" });
   const [surveySubmitting, setSurveySubmitting] = useState(false);
   const [surveySubmitted, setSurveySubmitted] = useState(false);
+  const surveyDialog = useRef<HTMLDialogElement>(null);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
@@ -276,25 +277,21 @@ function ClassroomApp() {
             </form>
           </section>}
 
-          {session.status === "FINISHED" && <section className="finish-result" aria-labelledby="result-title">
-            <p className="section-kicker">SESSION COMPLETE</p><h2 id="result-title">講義結果</h2>
-            <p>{session.unfinishedUnitIds.length === 0 ? "予定していた説明をすべて完了しました。" : "途中で終了しました。未完了の説明は次回へ残ります。"}</p>
-            <dl><div><dt>説明完了</dt><dd>{session.completedUnitIds.length} 件</dd></div><div><dt>未完了</dt><dd>{session.unfinishedUnitIds.length} 件</dd></div></dl>
-            <h3>学習の確認状況</h3><ul className="evidence-summary">{session.learningEvidence.map((item) => <li key={item.scopeId}><span>{item.label}</span><strong>{evidenceLabels[item.state]}</strong></li>)}</ul>
-            <h3>質問と訂正</h3><div className="result-counts"><span>回答済み <strong>{questions.filter((item) => item.resolution === "answered").length}</strong></span><span>保留・未回答 <strong>{questions.filter((item) => item.resolution !== "answered").length}</strong></span><span>訂正 <strong>{session.boardCorrections.length}</strong></span></div>
-            {session.afterClassAnswers.length > 0 && <div className="after-class-answers" aria-live="polite">{session.afterClassAnswers.map((item) => <article key={item.id}><strong>{item.status === "preparing" ? "回答を自動生成・審査中" : item.status === "available" ? "授業後の回答" : "未回答"}</strong><h4>{item.questionText}</h4>{item.answerText && <p>{item.answerText}</p>}{item.status === "unanswered" && <p>{item.failure}</p>}</article>)}</div>}
-            {session.boardCorrections.length > 0 && <ul className="correction-summary">{session.boardCorrections.map((item) => <li key={`${item.sceneId}:${item.targetId}`}>{item.targetId}: {item.content}</li>)}</ul>}
+          {session.status === "FINISHED" && <section className="lesson-ended"><p>授業が終了しました。引き続きコメント・質問を受け付けています。</p><button onClick={() => surveyDialog.current?.showModal()}>退出する</button></section>}
+          <dialog ref={surveyDialog} className="exit-survey" aria-label="退出前の任意アンケート"><div className="exit-survey-content">
             <h3>任意アンケート</h3>{surveySubmitted ? <p className="survey-complete" role="status">回答を保存しました。学習の証拠とは別に扱われます。</p> : <form className="after-class-survey" onSubmit={(event) => void submitSurvey(event)}><RatingField legend="質問した箇所を理解しやすくなりましたか" value={surveyAnswers.questionHelpfulness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, questionHelpfulness: value }))} /><RatingField legend="補足後、本編へ自然に戻れましたか" value={surveyAnswers.rejoinNaturalness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, rejoinNaturalness: value }))} /><label>自由記述<textarea maxLength={2000} value={surveyAnswers.comment} onChange={(event) => setSurveyAnswers((current) => ({ ...current, comment: event.target.value }))} /></label><button disabled={surveySubmitting || !surveyAnswers.questionHelpfulness || !surveyAnswers.rejoinNaturalness}>{surveySubmitting ? "保存中…" : "任意アンケートを送る"}</button></form>}
-          </section>}
+            <div className="exit-actions"><button onClick={() => surveyDialog.current?.close()}>教室に戻る</button><button onClick={() => { window.sessionStorage.removeItem("aituber.classroom.participant"); window.location.assign("/"); }}>{surveySubmitted ? "退出する" : "回答せずに退出する"}</button></div>
+          </div></dialog>
         </div>
         <aside className="lecture-rail">
           {scene && <section className="chat-panel" aria-label="コメントと質問">
             <h2>コメント <small>{room?.participantCount ?? 0}人</small></h2>
             <div className="chat-messages" role="log" aria-label="質問の受付状況">
               {questions.length === 0 && <p className="chat-empty">気になる箇所をクリックして質問できます。</p>}
-              {questions.map((question) => <article className="chat-message" key={question.id}><strong>{question.origin === "learner-question" ? "質問" : "先生"} <small>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.text} /></article>)}
+              {[...questions].sort((a,b)=>a.submittedAt.localeCompare(b.submittedAt)).map((question) => <article className="chat-message" key={question.id}><strong>{question.origin !== "learner-question" ? "先生" : question.triage === "comment" || question.triage === "ignore" || question.triage === "pending" ? "コメント" : "質問"} <small>{question.triage === "ignore" ? "" : question.triage === "pending" ? "受付済み" : question.triage === "comment" ? "授業後にお返事" : question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.text} /></article>)}
+              {session.afterClassAnswers.map(item => <article className="chat-message" key={item.id}><strong>先生 <small>{item.status === "preparing" ? "回答を準備中" : item.status === "unanswered" ? "回答できませんでした" : "授業後の回答"}</small></strong><blockquote>{item.questionText}</blockquote>{item.answerText && <RichText text={item.answerText} />}{item.failure && <p>{item.failure}</p>}</article>)}
             </div>
-            {session.status !== "FINISHED" && <form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
+            {<form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
               <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? ""} onChange={(event) => event.target.value ? selectTarget(event.target.value) : setSelectedTargetId(null)}><option value="">指定なし</option>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
               <QuestionInput value={questionText} onChange={setQuestionText} sending={questioning} />
             </form>}
@@ -305,7 +302,6 @@ function ClassroomApp() {
   );
 }
 
-const evidenceLabels: Record<FixedSessionView["learningEvidence"][number]["state"], string> = { unconfirmed: "未確認", "support-requested": "支援希望", "struggle-evidence": "つまずきあり", "confirmed-for-item": "この問いで確認", conflicting: "追加確認が必要" };
 
 function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
   return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;

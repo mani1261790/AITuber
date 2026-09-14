@@ -91,7 +91,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         body: JSON.stringify({
           model: this.#options.model,
           messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.images?.length ? [{ type: "text", text: request.prompt }, ...request.images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.dataBase64}` } }))] : request.prompt }],
-          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
+          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: isOllamaBaseUrl(this.#options.baseUrl) ? ollamaGrammarSchema(request.schema) : request.schema } },
           ...(isOllamaBaseUrl(this.#options.baseUrl) ? { reasoning_effort: "none" } : {}),
           temperature: request.temperature ?? 0,
           max_tokens: request.maxOutputTokens ?? 4_096,
@@ -223,4 +223,12 @@ function retryDelay(signal: AbortSignal): Promise<void> {
     const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 50);
     signal.addEventListener("abort", abort, { once: true });
   });
+}
+
+// Large bounded string repetitions can exceed llama.cpp's grammar expansion limit,
+// especially in nested review arrays. The original schema still validates the response.
+function ollamaGrammarSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(ollamaGrammarSchema);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "maxLength").map(([key,item]) => [key,ollamaGrammarSchema(item)]));
 }

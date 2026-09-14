@@ -15,11 +15,14 @@ describe("CourseAuthoringService", () => {
     const source = upload(`Source notes for ${fixture.title}`);
     const candidate = remapSource(fixture, sourceId(source));
     const provider = new FixedResponseLlmProvider([candidate, passingReview()]);
-    const service = new CourseAuthoringService({ directory: mkdtempSync(join(tmpdir(), "aituber-authoring-")), llm: () => provider });
+    const directory = mkdtempSync(join(tmpdir(), "aituber-authoring-"));
+    const service = new CourseAuthoringService({ directory, llm: () => provider });
 
     const result = await service.create({ durationMinutes: fixture.durationMinutes, sources: [source] });
 
     expect(result.status).toBe("available");
+    const hash = result.course!.sources[0]!.contentHash.replace("sha256:", "");
+    expect(readFileSync(join(directory,"sources",hash))).toEqual(Buffer.from(source.dataBase64,"base64"));
     expect(result.course?.title).toBe(fixture.title);
     expect(result.course?.targetLevel).toBe(fixture.targetLevel);
     expect(result.course?.learningGoals).toEqual(fixture.learningGoals);

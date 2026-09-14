@@ -7,6 +7,7 @@ import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
 import { createLessonPlanner } from "./lesson-director.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
+import { createCommentClassifier } from "./comment-classifier.ts";
 import { QuestionQueueService } from "./question-queue-service.ts";
 import { LiveSupplementService } from "./live-supplement-service.ts";
 import { PedagogyService } from "./pedagogy-service.ts";
@@ -63,7 +64,7 @@ const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvi
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;
-const questions = new QuestionQueueService({ store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
+const questions = new QuestionQueueService({ classifier: createCommentClassifier(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }), store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
 pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
@@ -77,6 +78,7 @@ server.listen(port, host, () => {
 function shutdown() {
   dataRetention.close();
   afterClass.close();
+  questions.close();
   supplements.close();
   lecture.close();
   server.emit("aituber:shutdown");

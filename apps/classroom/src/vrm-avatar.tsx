@@ -1,3 +1,5 @@
+import { classroomMaterials } from "./classroom-materials.ts";
+import { applyClassroomCamera, selectClassroomCamera, type ClassroomCameraId } from "./classroom-camera.ts";
 import type { LessonDirectionView } from "@aituber/contracts";
 import { useEffect, useRef, useState } from "react";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
@@ -31,13 +33,18 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute("aria-hidden", "true");
     host.append(renderer.domElement);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c5d5, 1.3));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
-    keyLight.position.set(-2, 4, 4);
+    keyLight.position.set(-3, 5, 4);
+    keyLight.castShadow = true; keyLight.shadow.mapSize.set(2048,2048);
+    Object.assign(keyLight.shadow.camera,{left:-6,right:6,top:6,bottom:-4,near:.1,far:20});
+    keyLight.shadow.bias=-.001; keyLight.shadow.normalBias=.03;
     scene.add(keyLight);
     const rimLight = new THREE.DirectionalLight(0x7772ff, 0.45);
     rimLight.position.set(3, 2, -2);
@@ -45,6 +52,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
 
 
     scene.background = new THREE.Color("#202c31");
+    const finishes = classroomMaterials();
     const room = new THREE.Group();
     scene.add(room);
     const box = (w: number, h: number, d: number, color: string, x: number, y: number, z: number) => {
@@ -53,7 +61,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     };
     box(9,5,.15,"#546260",0,1.7,-.65);
     box(9,.15,3,"#806951",0,-.68,.1);
-    box(6.2,3.55,.13,"#755741",-1,1.65,-.4);
+    box(6.2,3.55,.13,"#747d7b",-1,1.65,-.4);
     box(5.94,3.29,.08,"#204a3d",-1,1.65,-.3);
     box(6.35,.12,.26,"#a0a4a1",-1,3.48,-.05);
     const boardMaterial = new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped:false });
@@ -93,7 +101,10 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     let lastTarget: string | null | undefined;
     let gaitPhase = 0;
     let acknowledgedAction = "";
-    let currentCamera = "";
+    let currentCamera: ClassroomCameraId = "front";
+    let lastCameraCut = -10;
+    let lastCameraCheck = -1;
+    applyClassroomCamera(camera,currentCamera);
     const footPosition = new THREE.Vector3();
 
     const resize = () => {
@@ -113,15 +124,28 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       environment = gltf.scene;
       environment.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
+        object.receiveShadow=true; object.castShadow=true;
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) if (material instanceof THREE.MeshStandardMaterial) {
+          if (material.name === "mat21") { material.color.set("#e1ddd2"); material.bumpMap=finishes.plaster; material.bumpScale=.012; material.roughness=.88; }
+          if (material.name === "mat13" || material.name === "mat18") { material.color.set("#8e9b91"); material.bumpMap=finishes.plaster; material.bumpScale=.006; material.roughness=1; }
+          if (material.name === "mat15" || material.name === "mat22") { material.metalness=.45; material.roughness=.38; }
+          if (material.name === "mat20") { material.map=finishes.wood.map; material.normalMap=finishes.wood.normalMap; material.color.set("#d5c5a8"); material.roughness=.65; }
+        }
         object.geometry.computeBoundingBox();
         const bounds = object.geometry.boundingBox;
         // Remove only the camera-facing wall to make the room a filming set.
-        if (bounds && bounds.min.z > 3.3 && bounds.max.x-bounds.min.x > 6) object.visible = false;
-        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<2.6) object.visible = false;
+        if (bounds && bounds.min.z > 3.1) object.visible = false;
+        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<3.7) object.visible = false;
       });
+      environment.traverse(object => { if (object instanceof THREE.Mesh) { const bounds=object.geometry.boundingBox; if (bounds && bounds.max.y < -1.5 && bounds.max.x-bounds.min.x > 8) object.visible=false; } });
       environment.scale.set(1.05,1.5,1.05);
       environment.position.set(-.3,2.15,2.35);
       scene.add(environment);
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(10,.12,8),finishes.wood);
+      floor.position.set(0,-.6,2.8); floor.receiveShadow=true; room.add(floor);
+      // Window-side fill and soft key shadows give the presenter the same lighting context as the room.
+      const windowLight = new THREE.PointLight(0xe7f2ff,8,12,2); windowLight.position.set(-4,3.2,2); scene.add(windowLight);
       room.children[0]!.visible = false; room.children[1]!.visible = false;
     }).catch(() => { /* The built-in stage remains usable offline or on asset failure. */ });
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -137,6 +161,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       if (foot) avatar.scene.position.y += -.52 - foot.getWorldPosition(footPosition).y;
       avatar.springBoneManager?.setInitState();
       avatar.springBoneManager?.reset();
+      avatar.scene.traverse(object => { if (object instanceof THREE.Mesh) object.castShadow=true; });
       scene.add(avatar.scene);
       setLoadState("ready");
     }).catch(() => { if (!disposed) setLoadState("error"); });
@@ -167,15 +192,19 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       board.visible=Boolean(currentImage);
       if (avatar) {
         const direction = stageRef.current.direction;
-        const requestedCamera = direction?.camera ?? (stageRef.current.projecting ? "lecture" : "board");
-        // Cuts between authored fixed cameras; never chase the moving presenter.
-        if (requestedCamera !== currentCamera) {
-          currentCamera = requestedCamera;
-          if (requestedCamera === "material") { camera.position.set(-1.47,2.05,5.2); camera.lookAt(-1.47,2.05,0); }
-          else if (requestedCamera === "board") { camera.position.set(-.15,2.15,7.3); camera.lookAt(-.15,2,0); }
-          else { camera.position.set(-.15,2.05,7.1); camera.lookAt(-.15,2.05,0); }
+        if (time-lastCameraCheck > 1) {
+          lastCameraCheck = time;
+          const teacherBounds = new THREE.Box3();
+          for (const name of ["head","hips","leftHand","rightHand","leftUpperArm","rightUpperArm"] as const) {
+            const bone = avatar.humanoid.getRawBoneNode(name);
+            if (bone) teacherBounds.expandByPoint(bone.getWorldPosition(new THREE.Vector3()));
+          }
+          teacherBounds.expandByScalar(.16);
+          const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut);
+          if (next !== currentCamera) { currentCamera=next; lastCameraCut=time; applyClassroomCamera(camera,next); }
+          renderer.domElement.dataset.camera=currentCamera;
         }
-        avatar.scene.visible = requestedCamera !== "material";
+        avatar.scene.visible = true;
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
         const targetId = direction ? direction.targetId : motionRef.current.targetId;
         const region = regions?.find(r=>r.id===targetId);
@@ -219,6 +248,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       observer.disconnect();
       if (avatar) { scene.remove(avatar.scene); VRMUtils.deepDispose(avatar.scene); }
       if (environment) VRMUtils.deepDispose(environment);
+      finishes.dispose();
       renderer.domElement.removeEventListener("pointerup",click);
       texture?.dispose();
       boardTexture?.dispose();

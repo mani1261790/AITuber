@@ -28,6 +28,18 @@ describe("AfterClassService", () => {
     expect(afterStore.listAttempts(answer.id)).toHaveLength(2); expect(questions.list(sessionId)[0]?.resolution).toBe("deferred");
   });
 
+  it("answers new questions after the initial after-class queue has drained", async () => {
+    const { sessionId } = finishedWithDeferredQuestion();
+    const provider = new FixedResponseLlmProvider([candidate(), passedReview(), candidate(), passedReview()]);
+    service = new AfterClassService({ store: afterStore, questions, lecture, llm: () => provider });
+    service.consider(sessionId); await service.drain(sessionId);
+    const later = questions.submit({ sessionId, participantId: "late.viewer", request: { accessToken: "ignored", text: "別の式でも同じですか", sceneId: "scene.math.form", semanticTargetId: "target.math.vertex-form" } });
+    await service.drain(sessionId);
+    expect(lecture.getSession(sessionId).afterClassAnswers).toHaveLength(2);
+    expect(questions.list(sessionId).find(q => q.id === later.question.id)?.resolution).toBe("answered");
+    expect(provider.calls).toHaveLength(4);
+  });
+
   it("stores the optional fixed survey apart from learning evidence", () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); lecture.command(session.id, { command: "finish" });
     service = new AfterClassService({ store: afterStore, questions, lecture, llm: () => null });

@@ -54,6 +54,15 @@ describe("OpenAiCompatibleLlmProvider", () => {
     expect(body.reasoning_effort).toBe("none");
   });
 
+  it("avoids Ollama grammar expansion while enforcing the original length limit", async () => {
+    let body = "";
+    const provider = new OpenAiCompatibleLlmProvider({ model:"qwen3:8b",baseUrl:"http://localhost:11434/v1",fetch:async (_input,init)=>{
+      body=String(init?.body); return Response.json({choices:[{message:{content:JSON.stringify({text:"too long"})}}]});
+    }});
+    await expect(provider.createContext({purpose:"review",systemInstruction:"Review"}).generate({prompt:"value",schemaName:"bounded",schema:{type:"object",properties:{text:{type:"string",maxLength:3}},required:["text"],additionalProperties:false}})).rejects.toMatchObject({code:"schema_mismatch"});
+    expect(body).not.toContain("maxLength");
+  });
+
   it("retries one transient provider failure inside the same timeout boundary", async () => {
     let calls = 0;
     const provider = new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "model", fetch: async () => {

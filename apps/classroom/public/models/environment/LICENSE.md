@@ -10,3 +10,9 @@
 - Changes: The application changes scale and placement and hides the camera-facing wall and furniture in the teaching area at runtime; the GLB is unmodified.
 
 Credit is also displayed in the classroom's 素材 panel.
+
+## Surface textures
+Wood Floor — Dimitrios Savva / Poly Haven. CC0.
+https://polyhaven.com/a/wood_floor
+https://polyhaven.com/license
+1K diffuse, OpenGL normal and roughness maps. Room materials recolored and resurfaced; plaster detail generated locally.
