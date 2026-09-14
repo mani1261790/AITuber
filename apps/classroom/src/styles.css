@@ -419,3 +419,5 @@ button { cursor: pointer; }
 .exit-survey .after-class-survey textarea { min-height:8rem; }
 .exit-survey .after-class-survey button { color:white; border-radius:.8rem; }
 .exit-survey .after-class-survey button:disabled { color:#b5b7c8; background:#30334e; }
+
+.speech-audio { display:none !important; }

@@ -100,6 +100,9 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     let destinationX = 2.35;
     let lastTarget: string | null | undefined;
     let gaitPhase = 0;
+    let walkVelocity = 0;
+    let gestureTarget: string | null = null;
+    let gestureStarted = 0;
     let acknowledgedAction = "";
     let currentCamera: ClassroomCameraId = "front";
     let lastCameraCut = -10;
@@ -136,7 +139,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
         const bounds = object.geometry.boundingBox;
         // Remove only the camera-facing wall to make the room a filming set.
         if (bounds && bounds.min.z > 3.1) object.visible = false;
-        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<3.7) object.visible = false;
+        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<4.5) object.visible = false;
       });
       environment.traverse(object => { if (object instanceof THREE.Mesh) { const bounds=object.geometry.boundingBox; if (bounds && bounds.max.y < -1.5 && bounds.max.x-bounds.min.x > 8) object.visible=false; } });
       environment.scale.set(1.05,1.5,1.05);
@@ -155,7 +158,10 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       VRMUtils.rotateVRM0(avatar);
       fitAvatarToStage(avatar);
       avatar.scene.scale.multiplyScalar(1.08);
-      avatar.scene.position.set(2.35,-.15,.6);
+      const initialDirection=stageRef.current.direction;
+      const initialLeft=initialDirection?.position === "left";
+      avatar.scene.position.set(initialLeft ? -4.2 : 2.35,-.15,.6);
+      avatar.scene.rotation.y=initialLeft ? .26 : -.26;
       avatar.scene.updateMatrixWorld(true);
       const foot = avatar.humanoid.getRawBoneNode("leftFoot");
       if (foot) avatar.scene.position.y += -.52 - foot.getWorldPosition(footPosition).y;
@@ -211,19 +217,36 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
         const targetKey = `${direction?.actionId}:${stageRef.current.projecting}:${targetId}:${regions?.length}`;
         if (lastTarget !== targetKey) {
           lastTarget = targetKey;
-          destinationX = direction ? (direction.position === "center" && !stageRef.current.projecting ? -.65 : 2.35) : stageRef.current.projecting || region ? 2.35 : -.65;
+          const side = direction?.position ?? (region && region.anchorX < .4 ? "left" : "right");
+          // Keep the body outside the writing surface; central address is for an empty board.
+          destinationX = side === "left" ? -4.2 : side === "center" && !stageRef.current.projecting && !regions?.length ? -.65 : 2.35;
+          if (region && side !== "center") destinationX += (Math.min(1,Math.max(0,region.y))-.5)*.2;
         }
         const distance = destinationX-avatar.scene.position.x;
-        const walking = Math.abs(distance) > .035 && !reducedMotion;
-        const step = Math.sign(distance)*Math.min(Math.abs(distance), delta*Math.min(1.05,Math.abs(distance)*1.8));
-        avatar.scene.position.x += reducedMotion ? distance : step;
-        if (walking) gaitPhase += Math.abs(step)*7.5;
-        const facing = walking ? Math.sign(distance)*Math.PI/2 : (avatar.scene.position.x < -1 ? .18 : -.18);
-        avatar.scene.rotation.y = THREE.MathUtils.damp(avatar.scene.rotation.y,facing,6,delta);
-        const targetY = region ? 3.24-(region.y+region.height/2)*3.18 : 1.6;
+        const travelling = Math.abs(distance) > .18;
+        const travelFacing = Math.sign(distance)*Math.PI/2;
+        const standingFacing = avatar.scene.position.x < -1 ? .26 : -.26;
+        const facing = travelling ? travelFacing : standingFacing;
+        avatar.scene.rotation.y = THREE.MathUtils.damp(avatar.scene.rotation.y,facing,7,delta);
+        const aligned = Math.abs(avatar.scene.rotation.y-travelFacing)<.3;
+        const desiredVelocity = travelling && aligned ? Math.sign(distance)*Math.min(1.15,Math.sqrt(2*1.6*Math.abs(distance))) : 0;
+        walkVelocity=THREE.MathUtils.damp(walkVelocity,desiredVelocity,5,delta);
+        const step = Math.sign(distance)*Math.min(Math.abs(distance),Math.abs(walkVelocity)*delta);
+        if (reducedMotion) avatar.scene.position.x=destinationX;
+        else if (!travelling) { avatar.scene.position.x=THREE.MathUtils.damp(avatar.scene.position.x,destinationX,6,delta); walkVelocity=0; }
+        else avatar.scene.position.x += step;
+        const walking = !reducedMotion && (travelling || Math.abs(walkVelocity)>.03);
+        gaitPhase += Math.abs(step)*8.2;
+        const targetY = region ? 3.44-(region.y+region.height/2)*2.61 : 1.6;
         const elevation = Math.atan2(targetY-1.8, 2.8);
         const gestureMotion = { ...motionRef.current, state: direction ? (direction.targetId && direction.phase !== "moving" ? "pointing" as const : "normal" as const) : region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
-        animateAvatar(avatar, gestureMotion, time, delta, reducedMotion, elevation, walking, gaitPhase, avatar.scene.position.x < -1);
+        const activeGesture = gestureMotion.state === "pointing" ? targetId ?? null : null;
+        if (activeGesture !== gestureTarget) { gestureTarget=activeGesture; gestureStarted=time; }
+        const gestureAge=time-gestureStarted;
+        const pointWeight=activeGesture ? THREE.MathUtils.smoothstep(gestureAge,0,.5)*(1-.7*THREE.MathUtils.smoothstep(gestureAge,2.5,3.4)) : 0;
+        animateAvatar(avatar, gestureMotion, time, delta, reducedMotion, elevation, walking, gaitPhase, avatar.scene.position.x < -1,pointWeight);
+        renderer.domElement.dataset.teacherX=avatar.scene.position.x.toFixed(2);
+        renderer.domElement.dataset.teacherMotion=walking ? "walking" : gestureMotion.state;
         avatar.scene.updateMatrixWorld(true);
         const feet = [avatar.humanoid.getRawBoneNode("leftFoot"), avatar.humanoid.getRawBoneNode("rightFoot")].filter((foot): foot is THREE.Object3D => Boolean(foot));
         if (feet.length) {
@@ -279,7 +302,7 @@ function fitAvatarToStage(avatar: VRM) {
   model.updateMatrixWorld(true);
 }
 
-function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean, elevation = 0, walking = false, gaitPhase = 0, standLeft = false) {
+function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boolean }, time: number, delta: number, reducedMotion: boolean, elevation = 0, walking = false, gaitPhase = 0, standLeft = false, pointWeight = 1) {
   const motionAmount = reducedMotion ? 0 : 1;
   const speaking = motion.state === "mouth-open" || motion.mouthOpen;
   const pointing = motion.state === "pointing" && !walking;
@@ -297,21 +320,21 @@ function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boole
 
   if (hips) {
     const base = basePose(hips);
-    hips.position.y = THREE.MathUtils.lerp(hips.position.y, base.positionY + motionAmount * Math.sin(time * 1.7) * 0.008 + (reacting ? 0.035 : 0), ease);
+    hips.position.y = THREE.MathUtils.lerp(hips.position.y, base.positionY + motionAmount * Math.sin(time * 1.7) * 0.008 + (walking ? Math.abs(Math.sin(gaitPhase))*.018 : reacting ? .035 : 0), ease);
   }
   if (chest) {
     const base = basePose(chest);
-    chest.rotation.z = THREE.MathUtils.lerp(chest.rotation.z, base.rotationZ + motionAmount * Math.sin(time * 1.15) * 0.025, ease);
+    chest.rotation.z = THREE.MathUtils.lerp(chest.rotation.z, base.rotationZ + motionAmount * (Math.sin(time*.63)*.035+Math.sin(time*1.7)*.008), ease);
   }
   if (head) {
     const base = basePose(head);
-    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, base.rotationY + (pointing ? -.22 : motionAmount * Math.sin(time * 0.72) * 0.08), ease);
+    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, base.rotationY + (pointing ? (standLeft ? .25 : -.25) * (.65+.35*Math.sin(time*.55)) : motionAmount * (Math.sin(time*.47)*.12+Math.sin(time*1.13)*.025)), ease);
     head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, base.rotationX + (speaking ? motionAmount * Math.sin(time * 3.1) * 0.025 : 0), ease);
     head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, base.rotationZ + (reacting ? -0.1 : motionAmount * Math.sin(time * 0.9) * 0.018), ease);
   }
   if (leftUpperArm) {
     const base = basePose(leftUpperArm);
-    leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, base.rotationZ + (pointing && standLeft ? THREE.MathUtils.clamp(elevation, -.7, .65) : -1.15 + Math.sin(time*1.2)*.07*motionAmount), ease);
+    leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, base.rotationZ + THREE.MathUtils.lerp(-1.15 + Math.sin(time*1.2)*.07*motionAmount, THREE.MathUtils.clamp(elevation,-.7,.65), pointing && standLeft ? pointWeight : 0), ease);
     leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, base.rotationX + (walking ? Math.sin(gaitPhase)*.35 : Math.sin(time*.8)*.08*motionAmount), ease);
   }
   if (leftLowerArm) {
@@ -320,7 +343,7 @@ function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boole
   }
   if (rightUpperArm) {
     const base = basePose(rightUpperArm);
-    rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, base.rotationZ + (pointing && !standLeft ? -THREE.MathUtils.clamp(elevation, -.7, .65) : 1.15 + Math.sin(time*1.2)*.07*motionAmount), ease);
+    rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, base.rotationZ + THREE.MathUtils.lerp(1.15 + Math.sin(time*1.2)*.07*motionAmount, -THREE.MathUtils.clamp(elevation,-.7,.65), pointing && !standLeft ? pointWeight : 0), ease);
     rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, base.rotationX + (walking ? -Math.sin(gaitPhase)*.35 : -Math.sin(time*.8)*.08*motionAmount), ease);
     rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, base.rotationY + (pointing ? -0.2 : 0), ease);
   }
@@ -334,7 +357,8 @@ function animateAvatar(rig: VRM, motion: { state: AvatarMotion; mouthOpen: boole
   }
   if (rightLowerArm) {
     const base = basePose(rightLowerArm);
-    rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, base.rotationY + (pointing ? 0.05 : -0.18), ease);
+    rightLowerArm.rotation.z = THREE.MathUtils.lerp(rightLowerArm.rotation.z, base.rotationZ + (pointing && !standLeft ? .18 : .25), ease);
+    rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, base.rotationY + (pointing ? 0.18 : -0.18), ease);
   }
 
   const blinkPhase = time % 4.6;

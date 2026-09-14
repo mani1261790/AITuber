@@ -40,12 +40,13 @@ describe("lesson director",()=>{
 
   it("waits for the correct motion completion, then speaks the generated text",async()=>{
     vi.useFakeTimers();
-    const planner: LessonPlanner = async()=>({source:"generated",reason:null,actions:[{type:"move_to",position:"right"},{type:"speak",text:"その場で生成した説明です。"}]});
+    const planner: LessonPlanner = async()=>({source:"generated",reason:null,actions:[{type:"move_to",position:"left"},{type:"speak",text:"その場で生成した説明です。"}]});
     const runtime = setup(planner);
     try {
       await vi.advanceTimersByTimeAsync(0);
       const moving = runtime.service.getSession(runtime.session.id);
       expect(moving.direction?.phase).toBe("moving");
+      expect(moving.direction?.position).toBe("left");
       expect(moving.speech.playing).toBe(false);
       runtime.service.completeStageAction(moving.id,moving.epoch+1,moving.direction!.actionId);
       expect(runtime.service.getSession(moving.id).speech.playing).toBe(false);

@@ -2,14 +2,14 @@ import * as THREE from "three";
 
 export const CAMERA_HOLD_SECONDS = 10;
 export const CLASSROOM_CAMERAS = [
-  { id: "front", position: [0, 2.65, 7.2], bias: .02 },
-  { id: "right-front", position: [1.2, 2.7, 7.3], bias: 0 },
-  { id: "left-front", position: [-1.2, 2.7, 7.3], bias: .01 },
+  { id: "front", position: [-.8, 2.65, 8.2], bias: .02 },
+  { id: "right-front", position: [.4, 2.7, 8.3], bias: 0 },
+  { id: "left-front", position: [-2, 2.7, 8.3], bias: .01 },
 ] as const;
 export type ClassroomCameraId = typeof CLASSROOM_CAMERAS[number]["id"];
 export function applyClassroomCamera(camera: THREE.PerspectiveCamera, id: ClassroomCameraId) {
   const preset = CLASSROOM_CAMERAS.find(item => item.id === id)!;
-  camera.position.set(preset.position[0],preset.position[1],preset.position[2]); camera.lookAt(-.45, 1.95, 0); camera.updateMatrixWorld(true);
+  camera.position.set(preset.position[0],preset.position[1],preset.position[2]); camera.lookAt(-.85, 1.95, 0); camera.updateMatrixWorld(true);
 }
 function projected(box: THREE.Box3, camera: THREE.PerspectiveCamera) {
   const points = [box.min.x,box.max.x].flatMap(x => [box.min.y,box.max.y].flatMap(y => [box.min.z,box.max.z].map(z => new THREE.Vector3(x,y,z).project(camera))));

@@ -388,8 +388,8 @@ export class FixedLectureService {
     switch(action.type) {
       case "move_to":
         // Projection stays unobstructed; semantic positions are resolved by the stage.
-        update({phase:"moving",position:"right",targetId:null});
-        this.#stageNext.set(runtime,next); wait(direction.position === "right" ? 450 : 6500); return;
+        update({phase:"moving",position:action.position,targetId:null});
+        this.#stageNext.set(runtime,next); wait(12000); return;
       case "point_at": update({phase:"pointing",targetId:action.targetId}); wait(550); return;
       case "camera": update({camera:action.view === "board" ? "lecture" : action.view,phase:"resting"}); wait(100); return;
       case "release_point": update({targetId:null,phase:"resting"}); wait(350); return;

@@ -41,6 +41,7 @@ function ClassroomApp() {
   const surveyDialog = useRef<HTMLDialogElement>(null);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -125,7 +126,7 @@ function ClassroomApp() {
       audio.volume = 0.8;
       const targetMs = Math.max(audioFloorMs, Math.max(0, Date.now() - Date.parse(startedAt)));
       audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, targetMs / 1_000);
-      void audio.play().catch(() => { /* The visible controls let the viewer start audio when autoplay is blocked. */ });
+      void audio.play().then(()=>setAudioBlocked(false)).catch(()=>setAudioBlocked(true));
     };
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) synchronize();
     else audio.addEventListener("loadedmetadata", synchronize, { once: true });
@@ -258,12 +259,12 @@ function ClassroomApp() {
           {session.status !== "FINISHED" && session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
           {session.lastAssessmentEvaluation?.outcome === "incorrect" && session.liveSupplement && !new Set(["completed", "deferred"]).has(session.liveSupplement.status) && <p className="notice notice--learning" role="status">確認問題の回答から、もう一度確かめる箇所が見つかりました。短い補足のあと同じ問いで確認します。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
-          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
+          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} hidden preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
             <LessonStage scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} direction={session.direction} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
-            <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button></div>
+            <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button>{audioBlocked && session.speech.audioUrl && <button onClick={() => void audioRef.current?.play().then(()=>setAudioBlocked(false)).catch(()=>setAudioBlocked(true))}>音声を再生</button>}</div>
             {captions && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText}</p></section>}
           </section>}
 
