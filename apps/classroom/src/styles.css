@@ -385,6 +385,11 @@ button { cursor: pointer; }
 .lesson-image-source--board .target-label { color: #c6d9c4; }
 .lesson-image-source--board .rich-text { font-size: 36px; line-height: 1.65; }
 .stage-loading { position: absolute; z-index: 5; left: 20px; top: 20px; color: white; font-size: 13px; }
+.director-planning { top: auto; bottom: 44px; padding: 6px 10px; border-radius: 8px; background: #181b2acc; }
+.stage-credits { position: absolute; bottom: 10px; right: 12px; z-index: 6; color: #e4e7e4; font-size: 10px; }
+.stage-credits summary { cursor: pointer; opacity: .65; }
+.stage-credits p { background: #181b2aee; padding: 12px; border-radius: 8px; }
+.stage-credits a { color: inherit; }
 @media (aspect-ratio >= 1/1) {
  .broadcast-layout { grid-template-columns: minmax(0,1fr) clamp(220px,24vw,300px); grid-template-rows: minmax(0,1fr); }
  .lesson-header { grid-template-columns: 100px minmax(0,1fr) auto; }

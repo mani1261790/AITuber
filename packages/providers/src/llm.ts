@@ -84,6 +84,7 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     const startedAt = performance.now();
     const { signal, dispose } = withTimeout(request.signal, this.#options.timeoutMs);
     try {
+      signal.throwIfAborted();
       const response = await fetchWithRetry(this.#options.fetch ?? globalThis.fetch, `${this.#options.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", ...(this.#options.apiKey ? { authorization: `Bearer ${this.#options.apiKey}` } : {}) },
@@ -195,7 +196,7 @@ function asRecord(value: unknown): Record<string, unknown> { return value && typ
 function withTimeout(parent: AbortSignal | undefined, timeoutMs: number) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw new TypeError("timeoutMs must be between 1 and 300000");
   const controller = new AbortController(); const abort = () => controller.abort(parent?.reason);
-  parent?.addEventListener("abort", abort, { once: true });
+  if (parent?.aborted) abort(); else parent?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), timeoutMs);
   return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener("abort", abort); } };
 }

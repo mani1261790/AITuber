@@ -103,6 +103,11 @@ export const TeachingUnitSchema = closedObject({
   boardPatches: Type.Array(BoardPatchSchema, { maxItems: 128 }),
   focusTargetIds: Type.Array(Identifier, { maxItems: 64, uniqueItems: true }),
   speechText: NonEmptyText,
+  speakingGuidance: Type.Optional(closedObject({
+    requiredPhrases: Type.Array(ShortText, { maxItems: 16 }),
+    avoidPhrases: Type.Array(ShortText, { maxItems: 16 }),
+    explanationNotes: ShortText,
+  })),
   captionText: NonEmptyText,
   skippable: Type.Boolean(),
   estimatedDurationMs: Type.Integer({ minimum: 250, maximum: 900_000 }),

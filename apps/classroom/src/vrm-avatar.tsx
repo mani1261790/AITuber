@@ -1,3 +1,4 @@
+import type { LessonDirectionView } from "@aituber/contracts";
 import { useEffect, useRef, useState } from "react";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import * as THREE from "three";
@@ -7,10 +8,10 @@ import type { LessonImage } from "./lesson-texture.tsx";
 
 type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
-export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect }: { state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete }: { direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ lessonImage, projecting, onSelect });
-  useEffect(() => { stageRef.current = { lessonImage, projecting, onSelect }; }, [lessonImage, projecting, onSelect]);
+  const stageRef = useRef({ lessonImage, projecting, onSelect, direction, onStageComplete });
+  useEffect(() => { stageRef.current = { lessonImage, projecting, onSelect, direction, onStageComplete }; }, [lessonImage, projecting, onSelect, direction, onStageComplete]);
   const motionRef = useRef({ state, mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -83,6 +84,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     };
     renderer.domElement.addEventListener("pointerup",click);
     let avatar: VRM | null = null;
+    let environment: THREE.Group | null = null;
     let disposed = false;
     let animationFrame = 0;
     const clock = new THREE.Clock();
@@ -90,6 +92,8 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     let destinationX = 2.35;
     let lastTarget: string | null | undefined;
     let gaitPhase = 0;
+    let acknowledgedAction = "";
+    let currentCamera = "";
     const footPosition = new THREE.Vector3();
 
     const resize = () => {
@@ -104,6 +108,22 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     resize();
 
     const loader = new GLTFLoader();
+    void new GLTFLoader().loadAsync("/models/environment/classroom.glb").then(gltf => {
+      if (disposed) { VRMUtils.deepDispose(gltf.scene); return; }
+      environment = gltf.scene;
+      environment.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.geometry.computeBoundingBox();
+        const bounds = object.geometry.boundingBox;
+        // Remove only the camera-facing wall to make the room a filming set.
+        if (bounds && bounds.min.z > 3.3 && bounds.max.x-bounds.min.x > 6) object.visible = false;
+        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<2.6) object.visible = false;
+      });
+      environment.scale.set(1.05,1.5,1.05);
+      environment.position.set(-.3,2.15,2.35);
+      scene.add(environment);
+      room.children[0]!.visible = false; room.children[1]!.visible = false;
+    }).catch(() => { /* The built-in stage remains usable offline or on asset failure. */ });
     loader.register((parser) => new VRMLoaderPlugin(parser));
     void loader.loadAsync("/models/tutor.vrm?v=aituber-teacher-v1").then((gltf) => {
       if (disposed) return;
@@ -146,12 +166,23 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       rail.position.y=3.44-3.2625*.82*curtain;
       board.visible=Boolean(currentImage);
       if (avatar) {
+        const direction = stageRef.current.direction;
+        const requestedCamera = direction?.camera ?? (stageRef.current.projecting ? "lecture" : "board");
+        // Cuts between authored fixed cameras; never chase the moving presenter.
+        if (requestedCamera !== currentCamera) {
+          currentCamera = requestedCamera;
+          if (requestedCamera === "material") { camera.position.set(-1.47,2.05,5.2); camera.lookAt(-1.47,2.05,0); }
+          else if (requestedCamera === "board") { camera.position.set(-.15,2.15,7.3); camera.lookAt(-.15,2,0); }
+          else { camera.position.set(-.15,2.05,7.1); camera.lookAt(-.15,2.05,0); }
+        }
+        avatar.scene.visible = requestedCamera !== "material";
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
-        const region = regions?.find(r=>r.id===motionRef.current.targetId);
-        const targetKey = `${stageRef.current.projecting}:${motionRef.current.targetId}:${regions?.length}`;
+        const targetId = direction ? direction.targetId : motionRef.current.targetId;
+        const region = regions?.find(r=>r.id===targetId);
+        const targetKey = `${direction?.actionId}:${stageRef.current.projecting}:${targetId}:${regions?.length}`;
         if (lastTarget !== targetKey) {
           lastTarget = targetKey;
-          destinationX = stageRef.current.projecting || region ? 2.35 : -.65;
+          destinationX = direction ? (direction.position === "center" && !stageRef.current.projecting ? -.65 : 2.35) : stageRef.current.projecting || region ? 2.35 : -.65;
         }
         const distance = destinationX-avatar.scene.position.x;
         const walking = Math.abs(distance) > .035 && !reducedMotion;
@@ -162,7 +193,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
         avatar.scene.rotation.y = THREE.MathUtils.damp(avatar.scene.rotation.y,facing,6,delta);
         const targetY = region ? 3.24-(region.y+region.height/2)*3.18 : 1.6;
         const elevation = Math.atan2(targetY-1.8, 2.8);
-        const gestureMotion = { ...motionRef.current, state: region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
+        const gestureMotion = { ...motionRef.current, state: direction ? (direction.targetId && direction.phase !== "moving" ? "pointing" as const : "normal" as const) : region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
         animateAvatar(avatar, gestureMotion, time, delta, reducedMotion, elevation, walking, gaitPhase, avatar.scene.position.x < -1);
         avatar.scene.updateMatrixWorld(true);
         const feet = [avatar.humanoid.getRawBoneNode("leftFoot"), avatar.humanoid.getRawBoneNode("rightFoot")].filter((foot): foot is THREE.Object3D => Boolean(foot));
@@ -172,6 +203,10 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
           avatar.scene.updateMatrixWorld(true);
         }
         avatar.springBoneManager?.update(delta);
+        if (direction?.phase === "moving" && !walking && Math.abs(distance)<.04 && Math.abs(avatar.scene.rotation.y-facing)<.08 && acknowledgedAction !== direction.actionId) {
+          acknowledgedAction = direction.actionId;
+          stageRef.current.onStageComplete?.(direction.actionId);
+        }
       }
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
@@ -183,6 +218,7 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       if (avatar) { scene.remove(avatar.scene); VRMUtils.deepDispose(avatar.scene); }
+      if (environment) VRMUtils.deepDispose(environment);
       renderer.domElement.removeEventListener("pointerup",click);
       texture?.dispose();
       boardTexture?.dispose();

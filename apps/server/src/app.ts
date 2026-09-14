@@ -19,6 +19,7 @@ export interface LectureApi {
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
   reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number): void;
+  completeStageAction?(sessionId: string, epoch: number, actionId: string): void;
 }
 
 const unavailableApi: LectureApi = {
@@ -70,6 +71,14 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
       }
       const playbackMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/playback$/);
+      const stageMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/stage-complete$/);
+      if (request.method === "POST" && stageMatch) {
+        requireSurface(request,"classroom");
+        const body = await readJson<{accessToken:string;epoch:number;actionId:string}>(request);
+        const access = classrooms.authenticate(stageMatch[1]!,body.accessToken);
+        api.completeStageAction?.(access.sessionId,body.epoch,body.actionId);
+        return json(response,200,{ok:true});
+      }
       if (request.method === "POST" && playbackMatch) {
         requireSurface(request, "classroom");
         const body = await readJson<{ accessToken: string; epoch: number; audioUrl: string; remainingMs: number }>(request);

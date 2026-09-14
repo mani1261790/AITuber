@@ -1,3 +1,4 @@
+import type { LessonDirectionView } from "@aituber/contracts";
 import { useEffect, useRef, useState } from "react";
 import { toCanvas } from "html-to-image";
 import type { StageScene, StageTarget } from "@aituber/presentation";
@@ -9,7 +10,7 @@ import type { MascotPresentation } from "@aituber/presentation";
 export interface LessonImage { canvas: HTMLCanvasElement; boardCanvas: HTMLCanvasElement; regions: ImageRegion[]; boardRegions: ImageRegion[] }
 interface ImageRegion { id: string; x: number; y: number; width: number; height: number; anchorX: number }
 
-export function LessonStage({ scene, notes = [], noteText, presentation, projecting, onSelect }: { scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
+export function LessonStage({ scene, notes = [], noteText, presentation, projecting, onSelect, direction, onStageComplete }: { direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
   const source = useRef<HTMLDivElement>(null);
   const boardSource = useRef<HTMLDivElement>(null);
   const [image, setImage] = useState<LessonImage | null>(null);
@@ -52,8 +53,10 @@ export function LessonStage({ scene, notes = [], noteText, presentation, project
   return <>
     <div className="lesson-image-source" aria-hidden="true" inert ref={source}><h2>{scene.title}</h2><div className="image-targets">{scene.targets.filter(t => t.visible).map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}</div></div>
     <div className="lesson-image-source lesson-image-source--board" aria-hidden="true" inert ref={boardSource}>{(notes.length > 0 || noteText) && <><h2>補足メモ</h2><div className="image-targets">{notes.map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}{noteText && <RichText text={noteText} />}</div></>}</div>
-    <VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} />
+    <VrmAvatar state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onStageComplete={onStageComplete} />
     <div className="sr-only" aria-label="教材の内容"><h2>{scene.title}</h2>{scene.targets.filter(t => t.visible).map(target => <p key={target.id}>{target.label}: {target.content}</p>)}</div>
     {!image && <span className="stage-loading" role="status">{error ? "教材画像を作成できません。再読み込みしてください。" : "教材を準備中…"}</span>}
+    {image && direction?.phase === "planning" && <span className="stage-loading director-planning" role="status">次の説明を準備中…</span>}
+    <details className="stage-credits"><summary>素材</summary><p>Classroom by <a href="https://poly.pizza/m/2BTjD6QAdt" target="_blank" rel="noreferrer">Jonathan Granskog</a> · <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a><br />配置・縮尺を調整しています。</p></details>
   </>;
 }

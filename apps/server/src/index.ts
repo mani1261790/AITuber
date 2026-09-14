@@ -5,6 +5,7 @@ import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, F
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
+import { createLessonPlanner } from "./lesson-director.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
 import { QuestionQueueService } from "./question-queue-service.ts";
 import { LiveSupplementService } from "./live-supplement-service.ts";
@@ -57,8 +58,8 @@ if (ttsTestMode === "tone") {
   const price = model === "s2.1-pro-free" ? 0 : optionalNonNegativeNumber(process.env.AITUBER_TTS_USD_PER_MILLION_CHARACTERS, "AITUBER_TTS_USD_PER_MILLION_CHARACTERS");
   speechProvider = new CachedSpeechProvider(new BudgetedSpeechProvider({ backing: new FishAudioTtsProvider({ apiKey: fishApiKey, model }), budget: resourceBudgetStore, scope: "runtime", ...(price !== undefined ? { usdPerMillionCharacters: price } : {}) }), ttsCachePath);
 }
-const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}) });
 const llmSettings = new LlmSettingsStore(llmSettingsPath, process.env, resourceBudgetStore);
+const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }) }) });
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;

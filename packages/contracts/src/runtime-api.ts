@@ -9,6 +9,7 @@ export interface CourseSummary {
 }
 
 export interface FixedSessionView {
+  readonly direction?: LessonDirectionView | null;
   readonly id: string;
   readonly course: ReadonlyCoursePackage;
   readonly configuredDurationMinutes: number;
@@ -26,6 +27,25 @@ export interface FixedSessionView {
   readonly learningEvidence: readonly LearningEvidenceSummaryView[];
   readonly lastAssessmentEvaluation: AssessmentEvaluationView | null;
   readonly afterClassAnswers: readonly AfterClassAnswerView[];
+}
+
+export type StagePosition = "left" | "center" | "right";
+export type StageCamera = "lecture" | "material" | "board";
+export type LessonAction =
+  | { type: "move_to"; position: StagePosition }
+  | { type: "point_at"; targetId: string }
+  | { type: "speak"; text: string }
+  | { type: "release_point" }
+  | { type: "pause"; durationMs: number }
+  | { type: "camera"; view: StageCamera };
+export interface LessonDirectionView {
+  readonly actionId: string;
+  readonly phase: "planning" | "moving" | "pointing" | "speaking" | "resting" | "complete";
+  readonly position: StagePosition;
+  readonly targetId: string | null;
+  readonly camera: StageCamera;
+  readonly source: "generated" | "reference";
+  readonly reason: string | null;
 }
 
 export type LearningEvidenceState = "unconfirmed" | "support-requested" | "struggle-evidence" | "confirmed-for-item" | "conflicting";
