@@ -95,15 +95,20 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
           ...(isOllamaBaseUrl(this.#options.baseUrl) ? { reasoning_effort: "none" } : {}),
           temperature: request.temperature ?? 0,
           max_tokens: request.maxOutputTokens ?? 4_096,
-          stream: false,
+          ...(isOllamaBaseUrl(this.#options.baseUrl) ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
         }),
         signal,
       }, signal);
       if (!response.ok) throw new LlmProviderError("provider_error", `LLM provider returned HTTP ${response.status}`, { retryable: response.status === 429 || response.status >= 500 });
-      const bytes = new Uint8Array(await response.arrayBuffer());
       const maxBytes = request.maxOutputBytes ?? this.#options.maxOutputBytes;
-      if (bytes.byteLength > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
-      const envelope = parseEnvelope(new TextDecoder().decode(bytes));
+      let envelope: Envelope;
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        envelope = await readChatStream(response, maxBytes);
+      } else {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
+        envelope = parseEnvelope(new TextDecoder().decode(bytes));
+      }
       const value = parseAndValidate<T>(envelope.content, request.schema, request.validate);
       return { value, model: envelope.model || this.#options.model, provider: "openai-compatible", usage: usage(envelope.usage, this.#options), latencyMs: performance.now() - startedAt };
     } catch (error) {
@@ -145,6 +150,52 @@ export class LlmProviderError extends Error {
 }
 
 interface Envelope { content: string; model: string; usage: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } }
+async function readChatStream(response: Response, maxBytes: number): Promise<Envelope> {
+  if (!response.body) throw new LlmProviderError("invalid_response", "LLM stream was empty");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const result: Envelope = { content: "", model: "", usage: {} };
+  let pending = "", contentBytes = 0, wireBytes = 0, complete = false;
+  const line = (raw: string) => {
+    if (!raw.startsWith("data:")) return;
+    const data = raw.slice(5).trim();
+    if (data === "[DONE]") { complete = true; return; }
+    if (!data) return;
+    let parsed: unknown;
+    try { parsed = JSON.parse(data); } catch { throw new LlmProviderError("invalid_response", "LLM stream contained invalid JSON"); }
+    const event = asRecord(parsed);
+    if (event.error) throw new LlmProviderError("provider_error", "LLM stream returned an error");
+    const choices = Array.isArray(event.choices) ? event.choices : [];
+    const choice = asRecord(choices[0]);
+    const content = asRecord(choice.delta).content;
+    if (typeof content === "string") {
+      contentBytes += new TextEncoder().encode(content).byteLength;
+      if (contentBytes > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
+      result.content += content;
+    }
+    if (typeof event.model === "string") result.model = event.model;
+    if (event.usage) result.usage = asRecord(event.usage);
+  };
+  try {
+    while (!complete) {
+      const chunk = await reader.read();
+      if (chunk.done) { pending += decoder.decode(); break; }
+      wireBytes += chunk.value.byteLength;
+      if (wireBytes > maxBytes * 256 + 65536) throw new LlmProviderError("response_too_large", "LLM stream exceeded its transport limit");
+      pending += decoder.decode(chunk.value, { stream: true });
+      let end: number;
+      while ((end = pending.indexOf("\n")) !== -1) {
+        line(pending.slice(0,end).replace(/\r$/, "")); pending = pending.slice(end+1);
+        if (complete) break;
+      }
+      if (pending.length > Math.max(maxBytes,65536)) throw new LlmProviderError("response_too_large", "LLM stream event was too large");
+    }
+    if (!complete && pending.trim()) line(pending);
+    if (!complete) throw new LlmProviderError("invalid_response", "LLM stream ended before completion");
+    return result;
+  } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+}
+
 function parseEnvelope(text: string): Envelope {
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new LlmProviderError("invalid_response", "LLM provider returned invalid JSON"); }

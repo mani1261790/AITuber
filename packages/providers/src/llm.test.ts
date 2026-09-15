@@ -129,3 +129,27 @@ describe("FixedResponseLlmProvider", () => {
     }
   });
 });
+
+it("assembles streamed Ollama JSON across UTF-8 chunks and retains usage", async () => {
+ const events = [
+  {model:"qwen3:8b",choices:[{delta:{content:'{"decision":"accept","reasons":["'}}]},
+  {choices:[{delta:{content:'正しいです"]}'}}]},
+ ];
+ const bytes = new TextEncoder().encode(events.map(e=>`data: ${JSON.stringify(e)}\r\n\r\n`).join("")+`data: ${JSON.stringify({choices:[],usage:{prompt_tokens:10,completion_tokens:20,total_tokens:30}})}\n\ndata: [DONE]\n\n`);
+ let body: Record<string,unknown> = {};
+ const provider = new OpenAiCompatibleLlmProvider({model:"qwen3:8b",baseUrl:"http://localhost:11434/v1",fetch:async (_url,init)=>{
+  body=JSON.parse(String(init?.body));
+  return new Response(new ReadableStream({start(controller){for(let i=0;i<bytes.length;i+=3)controller.enqueue(bytes.slice(i,i+3));controller.close();}}),{headers:{"content-type":"text/event-stream"}});
+ }});
+ const result=await provider.createContext({purpose:"generation",systemInstruction:"Generate"}).generate({prompt:"test",schemaName:"result",schema});
+ expect(body).toMatchObject({stream:true,stream_options:{include_usage:true}});
+ expect(result.value).toEqual({decision:"accept",reasons:["正しいです"]});
+ expect(result.usage.totalTokens).toBe(30);
+});
+
+it.each(["truncated","too-large"])("rejects %s streamed output", async mode => {
+ const content=JSON.stringify({decision:"accept",reasons:[]});
+ const stream=`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\n`+(mode==="too-large"?"data: [DONE]\n\n":"");
+ const provider=new OpenAiCompatibleLlmProvider({model:"local",baseUrl:"http://localhost:11434/v1",fetch:async()=>new Response(stream,{headers:{"content-type":"text/event-stream"}})});
+ await expect(provider.createContext({purpose:"generation",systemInstruction:"Generate"}).generate({prompt:"test",schemaName:"result",schema,maxOutputBytes:mode==="too-large"?10:1000})).rejects.toMatchObject({code:mode==="too-large"?"response_too_large":"invalid_response"});
+});
