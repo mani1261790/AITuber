@@ -20,3 +20,5 @@ https://docs.ollama.com/api/openai-compatibility
 追加検証で、非ストリーミング応答が約5分で切断され、HTTP層の再試行に入ることを確認。Node fetch の基盤である undici の headersTimeout も300秒なので、Ollamaには stream=true / include_usage=true を送るように変更した。SSEを内部で組み立ててから従来のJSON Schema検証へ渡す。日本語の分割UTF-8、利用量、途中終了、出力容量の上限をテストしている。
 https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md
 https://docs.ollama.com/api/openai-compatibility
+
+実機結果: 保存済みPDFの同一ジョブで、修正後の生成が約361秒で完了し候補がディスクへ保存された。30秒・HTTP5分の切断を越えて取得できた。続いて決定的な参照検査で concept ID / target ID の混同と sourceIds への page ID の混入が見つかり、既存の自動局所修復へ進んでいる。これは教材の利用可能判定ではなく、今回の通信修正と次段階への到達の確認。lint・型チェック・178テストを通過。
