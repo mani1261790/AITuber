@@ -47,10 +47,10 @@ describe("LlmSettingsStore", () => {
   });
 });
 
-it("allows authoring responses beyond 30 seconds while retaining the runtime deadline", async () => {
+it("allows authoring responses beyond five minutes while retaining the runtime deadline", async () => {
  vi.useFakeTimers();
  vi.stubGlobal("fetch", (_url: unknown, init: RequestInit) => new Promise<Response>((resolve, reject) => {
-  const timer = setTimeout(() => resolve(new Response(JSON.stringify({ choices: [{message:{content:'{"ok":true}'}}] }))), 31_000);
+  const timer = setTimeout(() => resolve(new Response(JSON.stringify({ choices: [{message:{content:'{"ok":true}'}}] }))), 311_000);
   init.signal!.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal!.reason); }, {once:true});
  }));
  const store = new LlmSettingsStore(join(mkdtempSync(join(tmpdir(), "aituber-timeout-")), "settings.json"), {AITUBER_LLM_MODEL:"local",AITUBER_LLM_BASE_URL:"http://localhost:11434/v1"});
@@ -58,7 +58,7 @@ it("allows authoring responses beyond 30 seconds while retaining the runtime dea
  const long = store.createProvider("authoring").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
  const short = store.createProvider("runtime").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
  const failure = expect(short).rejects.toThrow("timed out after 30000ms");
- await vi.advanceTimersByTimeAsync(31_000);
+ await vi.advanceTimersByTimeAsync(311_000);
  await failure;
  expect((await long).value).toEqual({ok:true});
 });
