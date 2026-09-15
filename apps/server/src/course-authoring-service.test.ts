@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { dnaReplicationFixture, quadraticFunctionsFixture, vaeReparameterizationFixture } from "@aituber/content";
 import type { CoursePackage, ReadonlyCoursePackage } from "@aituber/contracts";
-import { FixedResponseLlmProvider } from "@aituber/providers";
+import { type LlmProvider, FixedResponseLlmProvider } from "@aituber/providers";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
 
 const fixtures = [quadraticFunctionsFixture, dnaReplicationFixture, vaeReparameterizationFixture];
@@ -109,3 +109,14 @@ function remapSource(fixture: ReadonlyCoursePackage, id: string): CoursePackage 
 }
 function passingReview() { return { gates: gateIds().map((id) => ({ id, passed: true, rationale: "verified", locations: [], repairInstruction: "" })), repairMode: "local", summary: "all gates passed" }; }
 function gateIds() { return ["source-alignment", "factual-consistency", "goal-alignment", "prerequisites", "references", "renderability", "speech-caption", "safe-content", "rights"] as const; }
+
+it("aborts an in-flight generation at the job deadline and keeps it resumable", async () => {
+ const provider: LlmProvider = { createContext: ({purpose}) => ({ purpose, generate: request => new Promise((_resolve, reject) => {
+  request.signal!.addEventListener("abort", () => reject(request.signal!.reason), {once:true});
+ }) }) };
+ const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(), "aituber-deadline-")),llm:()=>provider});
+ const result = await service.create({durationMinutes:6,sources:[upload("Quadratic notes")],timeBudgetMs:1000});
+ expect(result.status).toBe("budget-exhausted");
+ expect(result.error).toBe("時間または費用の上限に達しました。");
+ expect(service.get(result.id).sourceCount).toBe(1);
+});

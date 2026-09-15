@@ -42,7 +42,7 @@ export class LlmSettingsStore {
   createProvider(scope: UsageScope = "runtime"): LlmProvider {
     const options = this.connectionOptions();
     if (!options) throw new TypeError("LLM接続を先に設定してください。");
-    const backing = new OpenAiCompatibleLlmProvider(options);
+    const backing = new OpenAiCompatibleLlmProvider({ ...options, timeoutMs: scope === "authoring" ? 300_000 : 30_000 });
     if (!this.#usageBudget) return backing;
     const freeLocal = Boolean(options.baseUrl && isLocalLlmBaseUrl(options.baseUrl));
     const inputPrice = options.inputUsdPerMillionTokens ?? (freeLocal ? 0 : undefined); const outputPrice = options.outputUsdPerMillionTokens ?? (freeLocal ? 0 : undefined);
