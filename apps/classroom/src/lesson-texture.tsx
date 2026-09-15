@@ -57,6 +57,6 @@ export function LessonStage({ scene, notes = [], noteText, presentation, project
     <div className="sr-only" aria-label="教材の内容"><h2>{scene.title}</h2>{scene.targets.filter(t => t.visible).map(target => <p key={target.id}>{target.label}: {target.content}</p>)}</div>
     {!image && <span className="stage-loading" role="status">{error ? "教材画像を作成できません。再読み込みしてください。" : "教材を準備中…"}</span>}
     {image && direction?.phase === "planning" && <span className="stage-loading director-planning" role="status">次の説明を準備中…</span>}
-    <details className="stage-credits"><summary>素材</summary><p>Classroom by <a href="https://poly.pizza/m/2BTjD6QAdt" target="_blank" rel="noreferrer">Jonathan Granskog</a> · <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a><br />配置・縮尺・質感を調整しています。<br />Wood Floor: <a href="https://polyhaven.com/a/wood_floor" target="_blank" rel="noreferrer">Poly Haven (CC0)</a></p></details>
+    <details className="stage-credits"><summary>素材</summary><p>Classroom by <a href="https://www.blender.org/download/demo-files/" target="_blank" rel="noreferrer">Christophe Seux</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0</a><br />配置・縮尺・質感を調整しています。</p></details>
   </>;
 }

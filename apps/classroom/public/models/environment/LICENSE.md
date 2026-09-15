@@ -1,18 +1,20 @@
-# Classroom
+# Classroom — Christophe Seux
 
-- Title: classroom
-- Author: Jonathan Granskog
-- Source: https://poly.pizza/m/2BTjD6QAdt
-- Asset: https://static.poly.pizza/efa8bf09-7e3c-4b22-a3ef-6ace648415c0.glb
-- License: Creative Commons Attribution 3.0 Unported
-- License URL: https://creativecommons.org/licenses/by/3.0/
+- Source: https://www.blender.org/download/demo-files/
+- Source archive: https://download.blender.org/demo/test/classroom.zip
+- License: CC0 1.0 Universal
+- License URL: https://creativecommons.org/publicdomain/zero/1.0/
 - Downloaded: 2026-09-15
-- Changes: The application changes scale and placement and hides the camera-facing wall and furniture in the teaching area at runtime; the GLB is unmodified.
+- Runtime asset: classroom-realistic.glb
+- Conversion: scripts/convert-classroom.py (Blender 4.5)
 
-Credit is also displayed in the classroom's 素材 panel.
+Changes: main scene converted to glTF PBR; textures limited to 1024 pixels and JPEG encoded; static meshes merged by material; room aligned with the lecture stage; front furniture, loose stationery, original board and volumetric effects removed. The interactive board and projector screen are rendered separately by AITuber.
 
-## Surface textures
+## Previous asset (not loaded)
+classroom.glb — Jonathan Granskog, https://poly.pizza/m/2BTjD6QAdt
+CC BY 3.0: https://creativecommons.org/licenses/by/3.0/
+
+## Additional surface textures
 Wood Floor — Dimitrios Savva / Poly Haven. CC0.
 https://polyhaven.com/a/wood_floor
 https://polyhaven.com/license
-1K diffuse, OpenGL normal and roughness maps. Room materials recolored and resurfaced; plaster detail generated locally.

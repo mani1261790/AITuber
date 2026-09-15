@@ -1,4 +1,3 @@
-import { classroomMaterials } from "./classroom-materials.ts";
 import { applyClassroomCamera, selectClassroomCamera, type ClassroomCameraId } from "./classroom-camera.ts";
 import type { LessonDirectionView } from "@aituber/contracts";
 import { useEffect, useRef, useState } from "react";
@@ -52,7 +51,6 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
 
 
     scene.background = new THREE.Color("#202c31");
-    const finishes = classroomMaterials();
     const room = new THREE.Group();
     scene.add(room);
     const box = (w: number, h: number, d: number, color: string, x: number, y: number, z: number) => {
@@ -122,35 +120,25 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
     resize();
 
     const loader = new GLTFLoader();
-    void new GLTFLoader().loadAsync("/models/environment/classroom.glb").then(gltf => {
+    void new GLTFLoader().loadAsync("/models/environment/classroom-realistic.glb").then(gltf => {
       if (disposed) { VRMUtils.deepDispose(gltf.scene); return; }
       environment = gltf.scene;
       environment.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
-        object.receiveShadow=true; object.castShadow=true;
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
-        for (const material of materials) if (material instanceof THREE.MeshStandardMaterial) {
-          if (material.name === "mat21") { material.color.set("#e1ddd2"); material.bumpMap=finishes.plaster; material.bumpScale=.012; material.roughness=.88; }
-          if (material.name === "mat13" || material.name === "mat18") { material.color.set("#8e9b91"); material.bumpMap=finishes.plaster; material.bumpScale=.006; material.roughness=1; }
-          if (material.name === "mat15" || material.name === "mat22") { material.metalness=.45; material.roughness=.38; }
-          if (material.name === "mat20") { material.map=finishes.wood.map; material.normalMap=finishes.wood.normalMap; material.color.set("#d5c5a8"); material.roughness=.65; }
-        }
-        object.geometry.computeBoundingBox();
-        const bounds = object.geometry.boundingBox;
-        // Remove only the camera-facing wall to make the room a filming set.
-        if (bounds && bounds.min.z > 3.1) object.visible = false;
-        if (bounds && bounds.max.y < .6 && bounds.max.x-bounds.min.x < 4 && Math.abs((bounds.max.x+bounds.min.x)/2)<4.5) object.visible = false;
+        object.receiveShadow = true;
+        object.castShadow = true;
       });
-      environment.traverse(object => { if (object instanceof THREE.Mesh) { const bounds=object.geometry.boundingBox; if (bounds && bounds.max.y < -1.5 && bounds.max.x-bounds.min.x > 8) object.visible=false; } });
-      environment.scale.set(1.05,1.5,1.05);
-      environment.position.set(-.3,2.15,2.35);
+      // The conversion script aligns the room with the lecture floor and front wall.
       scene.add(environment);
-      const floor = new THREE.Mesh(new THREE.BoxGeometry(10,.12,8),finishes.wood);
-      floor.position.set(0,-.6,2.8); floor.receiveShadow=true; room.add(floor);
-      // Window-side fill and soft key shadows give the presenter the same lighting context as the room.
-      const windowLight = new THREE.PointLight(0xe7f2ff,8,12,2); windowLight.position.set(-4,3.2,2); scene.add(windowLight);
-      room.children[0]!.visible = false; room.children[1]!.visible = false;
-    }).catch(() => { /* The built-in stage remains usable offline or on asset failure. */ });
+      renderer.domElement.dataset.environment = "classroom-seux";
+      const windowLight = new THREE.PointLight(0xe7f2ff, 12, 14, 2);
+      windowLight.position.set(3.6, 3.2, 2);
+      scene.add(windowLight);
+      room.children[0]!.visible = false;
+      room.children[1]!.visible = false;
+    }).catch(() => {
+      renderer.domElement.dataset.environment = "fallback";
+    });
     loader.register((parser) => new VRMLoaderPlugin(parser));
     void loader.loadAsync("/models/tutor.vrm?v=aituber-teacher-v1").then((gltf) => {
       if (disposed) return;
@@ -271,7 +259,6 @@ export function VrmAvatar({ state, mouthOpen, targetId, lessonImage = null, proj
       observer.disconnect();
       if (avatar) { scene.remove(avatar.scene); VRMUtils.deepDispose(avatar.scene); }
       if (environment) VRMUtils.deepDispose(environment);
-      finishes.dispose();
       renderer.domElement.removeEventListener("pointerup",click);
       texture?.dispose();
       boardTexture?.dispose();

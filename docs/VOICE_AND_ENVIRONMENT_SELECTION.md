@@ -38,3 +38,14 @@ https://download.blender.org/demo/test/classroom.zip
 
 ユーザー提示の日本式教室は無料のblend配布。公開商品説明にはアプリへの再配布条件の記述がないため候補として保持する。
 https://booth.pm/ja/items/5502135
+
+## 追記: アニメ声への変更と教室の実装
+
+ユーザーの「もっとアニメ声」「教室は差し替え」の指示により、ローカル声設定を `4a56e31b2ec54484972040592c8ba7e2`（Anime voice）へ変更。比較用の高音候補は `af5846c4409241f3be2d51525a295d34`（Anime）。`pnpm preview:voices anime-teacher anime-bright` で再生成できる。両方とも提供元で日本語・女性・アニメ調のタグが付く公開モデルであり、licensed=true の公式認可モデルではない。ローカル試用の設定で、配布時の標準ボイスには採用していない。
+
+https://fish.audio/m/4a56e31b2ec54484972040592c8ba7e2/
+https://fish.audio/m/af5846c4409241f3be2d51525a295d34/
+
+教室を `classroom-realistic.glb` に差し替え。Blender 4.5 による変換スクリプトは `scripts/convert-classroom.py`。元のCyclesノードをそのままベイクしたものではなく、元画像を使用したWeb用PBR材質へ再構成している。壁・腰壁・窓枠・地図・照明などを残し、元の黒板と教卓周辺の物を除去。教材の投影面とライブ補足用の黒板は別々のまま維持。描画失敗時は既存の簡易セットを表示する。
+
+実機確認: 教室コード KAGTU8 で新GLBの読込を確認。旧セットの代替表示ではなく `classroom-seux` を表示。先生右側・右斜め前カメラで教材遮蔽なし、文書全体の縦スクロールなし、ブラウザーconsoleエラーなし。新しいVoice IDでFish Audio音声を生成し、ブラウザーaudioが再生中であることも確認。型・lint・172テスト・build・client boundary・self-host acceptanceを通過。GLBは約19.1MB、337,672三角形、33マテリアルプリミティブ。PCローカルでの表示確認であり、低性能端末や低速回線の性能保証ではない。
