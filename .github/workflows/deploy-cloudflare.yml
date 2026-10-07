@@ -34,7 +34,7 @@ jobs:
         run: pnpm verify:cloud-account
       - run: pnpm --filter @aituber/server... build
       - name: Verify authentication and providers
-        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts packages/providers/src/llm.test.ts apps/server/src/cloud-recovery.test.ts apps/server/src/course-authoring-service.test.ts apps/cloudflare/src/platform/ajv.test.ts
+        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts apps/cloudflare/src/audio-response.test.ts packages/providers/src/llm.test.ts apps/server/src/cloud-recovery.test.ts apps/server/src/course-authoring-service.test.ts apps/cloudflare/src/platform/ajv.test.ts
       - name: Generate Worker types
         run: pnpm exec wrangler types --config apps/cloudflare/wrangler.jsonc apps/cloudflare/worker-configuration.d.ts
       - run: pnpm --filter @aituber/cloudflare typecheck
@@ -47,7 +47,4 @@ jobs:
           FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
           FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
       - name: Verify public and private boundaries
-        run: |
-          test "$(curl --retry 3 --retry-delay 5 --silent --show-error --output /dev/null --write-out '%{http_code}' https://aituber.mani1261790.workers.dev/login)" = 200
-          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://aituber.mani1261790.workers.dev/api/courses)" = 401
-          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://aituber.mani1261790.workers.dev/_internal/state)" = 404
+        run: node scripts/verify-cloud-public.mjs
