@@ -1,6 +1,12 @@
 name: Deploy AITuber to Cloudflare
+run-name: AITuber deploy ${{ inputs.request_id }}
 on:
   workflow_dispatch:
+    inputs:
+      request_id:
+        description: CLI request identifier
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:

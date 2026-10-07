@@ -39,6 +39,7 @@ try {
     throw new Error(`Deployment stopped: target account access was not verified (HTTP ${response.status}).`);
   }
   console.log(`Verified AITuber account: ${accountId}`);
+  if (!checkOnly) {
   const containerResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/containers/me`, {
     headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000),
   });
@@ -48,6 +49,7 @@ try {
     throw new Error(`Containers access failed (HTTP ${containerResponse.status}): ${JSON.stringify(details)}`);
   }
   console.log("Verified Containers access.");
+  }
   if (!checkOnly) {
     // Deploy with the exact verified credential, independent of global login state.
     const env = { ...process.env, CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: accountId, CI: "true" };
