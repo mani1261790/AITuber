@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "@aituber/runtime-platform/files";
 import { dirname } from "node:path";
 import type { LlmSettingsView, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { BudgetedLlmProvider, isLocalLlmBaseUrl, OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions, type UsageBudget, type UsageScope } from "@aituber/providers";

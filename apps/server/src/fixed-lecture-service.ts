@@ -110,6 +110,38 @@ export class FixedLectureService {
     this.#voiceId = options.voiceId ?? "";
   }
 
+  exportCheckpoint() {
+    const runtime = this.#currentSessionId ? this.#sessions.get(this.#currentSessionId) : null;
+    if (!runtime) return null;
+    return { version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
+      state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
+      startedAtMs: runtime.startedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
+      lastAssessmentEvaluation: runtime.lastAssessmentEvaluation, afterClassAnswers: runtime.afterClassAnswers };
+  }
+
+  /** Re-enter an interrupted unit with a new audio epoch; completed units remain completed. */
+  restoreCheckpoint(saved: NonNullable<ReturnType<FixedLectureService["exportCheckpoint"]>>): boolean {
+    if (saved.version !== 1 || this.#currentSessionId) throw new TypeError("Invalid or duplicate runtime checkpoint");
+    const stored = this.#store.getSession(saved.id);
+    const terminal = saved.state.status === "FINISHED";
+    const waitForAnswer = saved.state.status === "CHECKPOINT";
+    const manuallyPaused = saved.state.status === "PAUSED";
+    const epoch = terminal ? stored.epoch : this.#store.advanceEpoch(saved.id).epoch;
+    const resumedStatus = saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
+    const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
+    const runtime: RuntimeSession = {...saved,state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:emptySpeech(epoch),liveSupplement:null,pendingSupplement:null};
+    this.#courses.set(saved.course.id,saved.course); this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
+    return !terminal && !waitForAnswer && !manuallyPaused;
+  }
+
+  forgetSessionsExcept(ids: ReadonlySet<string>) {
+    for (const [id, runtime] of this.#sessions) {
+      if (ids.has(id)) continue;
+      this.#cancelSpeech(runtime); this.#sessions.delete(id);
+      if (this.#currentSessionId === id) this.#currentSessionId = null;
+    }
+  }
+
   listCourses(): readonly CourseSummary[] {
     return [...this.#courses.values()].map((course) => ({
       id: course.id,
@@ -385,7 +417,8 @@ export class FixedLectureService {
     if (direction.phase !== "moving" && !direction.traveling) return;
     // A live stage may need more than twelve seconds on a slow renderer.
     // Keep the disconnect fallback, but do not interrupt a reported active move.
-    if (this.#stageNext.has(runtime)) runtime.timer?.refresh();
+    const next = this.#stageNext.get(runtime);
+    if (next && runtime.timer) { clearTimeout(runtime.timer); runtime.timer=setTimeout(()=>{runtime.timer=null;this.#stageNext.delete(runtime);next();},12000); }
   }
 
   completeStageAction(sessionId: string, epoch: number, actionId: string) {

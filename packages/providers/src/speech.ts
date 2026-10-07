@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "@aituber/runtime-platform/files-async";
 import { join } from "node:path";
 
 export const FISH_STANDARD_VOICE_ID = "b2d9d8db057042688a5e318b8f405bc2";
@@ -130,7 +130,7 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
     this.#apiKey = options.apiKey;
     this.model = options.model ?? "s2.1-pro-free";
     this.#endpoint = options.endpoint ?? "https://api.fish.audio/v1/tts/stream/with-timestamp";
-    this.#fetch = options.fetch ?? fetch;
+    this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async synthesize(request: SpeechRequest, options: { signal: AbortSignal }): Promise<SpeechArtifact> {

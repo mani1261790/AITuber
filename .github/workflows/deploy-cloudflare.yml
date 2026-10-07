@@ -32,16 +32,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify target account before mutations
         run: pnpm verify:cloud-account
+      - run: pnpm --filter @aituber/server... build
       - name: Verify authentication and providers
-        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts packages/providers/src/llm.test.ts
+        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts packages/providers/src/llm.test.ts apps/server/src/cloud-recovery.test.ts apps/server/src/course-authoring-service.test.ts apps/cloudflare/src/platform/ajv.test.ts
       - name: Generate Worker types
         run: pnpm exec wrangler types --config apps/cloudflare/wrangler.jsonc apps/cloudflare/worker-configuration.d.ts
       - run: pnpm --filter @aituber/cloudflare typecheck
+      - run: pnpm build:cloudflare
+      - run: pnpm verify:cloud-native
       - name: Build and deploy
         run: pnpm deploy:cloudflare
         env:
           OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}
-          STATE_SECRET: ${{ secrets.STATE_SECRET }}
           FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
           FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
       - name: Verify public and private boundaries

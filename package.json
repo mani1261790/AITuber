@@ -43,13 +43,12 @@
     "preview:svg": "pnpm --filter @aituber/providers build && node --experimental-strip-types scripts/preview-svg.ts",
     "build:cloudflare": "node --experimental-strip-types scripts/build-cloudflare.ts",
     "deploy:cloudflare": "node scripts/deploy-cloudflare.mjs",
-    "verify:cloud-persistence": "pnpm --filter @aituber/server... build && node scripts/verify-cloud-persistence.mjs",
     "verify:cloud-account": "node scripts/deploy-cloudflare.mjs --check",
     "cloudflare:check": "node scripts/cloudflare-remote.mjs check",
-    "cloudflare:deploy": "node scripts/cloudflare-remote.mjs deploy"
+    "cloudflare:deploy": "node scripts/cloudflare-remote.mjs deploy",
+    "verify:cloud-native": "node scripts/verify-cloud-native.mjs"
   },
   "devDependencies": {
-    "@cloudflare/containers": "^0.3.7",
     "@eslint/js": "10.0.1",
     "@types/node": "26.5.1",
     "@types/react": "19.3.0",

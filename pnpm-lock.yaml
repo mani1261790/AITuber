@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@cloudflare/containers':
-        specifier: ^0.3.7
-        version: 0.3.7
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.10.0)
@@ -96,9 +93,22 @@ importers:
 
   apps/cloudflare:
     dependencies:
-      '@cloudflare/containers':
-        specifier: 0.3.7
-        version: 0.3.7
+      '@aituber/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@aituber/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@aituber/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
+      '@cfworker/json-schema':
+        specifier: ^4.1.1
+        version: 4.1.1
+    devDependencies:
+      '@aituber/content':
+        specifier: workspace:*
+        version: link:../../packages/content
 
   apps/operator:
     dependencies:
@@ -138,6 +148,9 @@ importers:
       '@aituber/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@aituber/runtime-platform':
+        specifier: workspace:*
+        version: link:../../packages/runtime-platform
       '@aituber/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -177,12 +190,17 @@ importers:
 
   packages/providers:
     dependencies:
+      '@aituber/runtime-platform':
+        specifier: workspace:*
+        version: link:../runtime-platform
       '@xmldom/xmldom':
         specifier: ^0.9.12
         version: 0.9.12
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+
+  packages/runtime-platform: {}
 
   packages/storage:
     dependencies:
@@ -202,8 +220,8 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@cloudflare/containers@0.3.7':
-    resolution: {integrity: sha512-DM9dm3FnIBSyiSJ1FLavKwl/lk3oAmTaynCzZQ9pZR0ncRPquSxkxd8Nu2MFILxmDDsPkxKsSNEh9mHHMty4Fw==}
+  '@cfworker/json-schema@4.1.1':
+    resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
 
   '@cloudflare/kv-asset-handler@0.5.0':
     resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
@@ -1723,7 +1741,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@cloudflare/containers@0.3.7': {}
+  '@cfworker/json-schema@4.1.1': {}
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
 

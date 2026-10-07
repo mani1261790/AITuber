@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AuthoringSourceUpload, CoursePackage } from "@aituber/contracts";
 import { extractText, getDocumentProxy } from "unpdf";
 
-const pdfJsRoot = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
-const pdfAssetOptions = { cMapUrl: `${join(pdfJsRoot, "cmaps")}/`, cMapPacked: true, standardFontDataUrl: `${join(pdfJsRoot, "standard_fonts")}/` };
+import { pdfAssetOptions as resolvePdfAssets } from "@aituber/runtime-platform/pdf-assets";
+const getPdfAssetOptions = () => resolvePdfAssets(() => dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json"))));
 
 type SourceMaterial = CoursePackage["sources"][number];
 export interface IngestedSources {
@@ -31,7 +31,7 @@ export async function ingestSources(uploads: readonly AuthoringSourceUpload[]): 
     const kind = upload.mimeType === "application/pdf" ? "pdf" : upload.mimeType.startsWith("image/") ? "image" : upload.mimeType === "text/markdown" ? "markdown" : "instructor-note";
     sources.push({ id, kind, fileName, contentHash: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, rights: upload.rights });
     if (upload.mimeType === "application/pdf") {
-      const document = await getDocumentProxy(bytes, pdfAssetOptions);
+      const document = await getDocumentProxy(bytes, getPdfAssetOptions());
       try {
         if (!Number.isSafeInteger(document.numPages) || document.numPages < 1 || document.numPages > 500) throw new TypeError(`source ${index + 1} exceeds the 500-page PDF limit`);
         const extracted = await extractText(document, { mergePages: true });
@@ -42,7 +42,7 @@ export async function ingestSources(uploads: readonly AuthoringSourceUpload[]): 
       images.push({ mimeType: upload.mimeType, dataBase64: upload.dataBase64 } as IngestedSources["images"][number]);
       texts.push(`SOURCE ${id} (${fileName}, image). Cite this source id for content derived from the image.`);
     } else {
-      texts.push(`SOURCE ${id} (${fileName})\n${boundedExtractedText(new TextDecoder("utf-8", { fatal: true }).decode(bytes))}`);
+      texts.push(`SOURCE ${id} (${fileName})\n${boundedExtractedText(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes))}`);
     }
   }
   const text = texts.join("\n\n");

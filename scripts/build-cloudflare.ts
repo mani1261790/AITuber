@@ -1,4 +1,6 @@
 import { cp, mkdir, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 const run=(args: string[])=>{const r=spawnSync("pnpm",args,{stdio:"inherit"});if(r.status!==0)process.exit(r.status??1);};
 run(["--filter","@aituber/server...","build"]);
@@ -12,3 +14,9 @@ await cp("apps/operator/dist","dist/cloudflare/operator",{recursive:true});
 await rm("dist/cloudflare/models/candidates",{recursive:true,force:true});
 await rm("dist/cloudflare/models/tutor.vrm",{force:true});
 await rm("dist/cloudflare/models/tutor-refined.vrm",{force:true});
+
+// Japanese PDF extraction uses private binding requests to these static CMaps/fonts.
+const requireServer = createRequire(new URL("../apps/server/package.json", import.meta.url));
+const pdfRoot = dirname(requireServer.resolve("pdfjs-dist/package.json"));
+await cp(join(pdfRoot,"cmaps"),"dist/cloudflare/pdfjs/cmaps",{recursive:true});
+await cp(join(pdfRoot,"standard_fonts"),"dist/cloudflare/pdfjs/standard_fonts",{recursive:true});

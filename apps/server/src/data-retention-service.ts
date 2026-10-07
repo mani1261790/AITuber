@@ -1,4 +1,4 @@
-import { readdir, stat, unlink } from "node:fs/promises";
+import { readdir, stat, unlink } from "@aituber/runtime-platform/files-async";
 import { join } from "node:path";
 import type { DataRetentionStore, RetentionPurgeResult } from "@aituber/storage";
 
