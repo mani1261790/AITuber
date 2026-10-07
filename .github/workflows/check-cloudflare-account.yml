@@ -1,0 +1,26 @@
+name: Check AITuber Cloudflare account
+run-name: AITuber account check ${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: CLI request identifier
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify exact account without modifying resources
+        run: node scripts/deploy-cloudflare.mjs --check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 2ea670c2a6ff28e248ef084adf095e8b

@@ -70,3 +70,53 @@ Secrets: OPERATOR_PASSWORD, STATE_SECRET, FISH_API_KEY, FISH_VOICE_ID。OpenAI A
 誤ってSchedia側のアカウントへ作成したリソースは削除した。ユーザー指定の対象は `mani1261790@gmail.com` 側のアカウント。ログインメールとリソース所属アカウントは別々に確認すること。ユーザー指定URLにより、正しいaccount_idは `2ea670c2a6ff28e248ef084adf095e8b` と確定し設定に固定した。既存OAuthではこのアカウントへのAPIアクセスが403になるため、アクセス権を確認するまで再デプロイ禁止。専用の `aituber-personal` 認証プロファイルを使用し、既存のグローバル認証を変更しない。認証完了後もログインメールだけで判断せず、指定アカウントへのアクセスを確認する。
 
 CLIのみで進める場合もCloudflareの認証済み資格情報が必要。`pnpm deploy:cloudflare` は専用プロファイルまたは環境変数 `CLOUDFLARE_API_TOKEN` を使用し、指定アカウントへのAPIアクセス確認に成功してからビルド・デプロイする。グローバルのデフォルト認証へのフォールバックはしない。トークンは画面・ログ・チャットへ出さない。OAuthやデバイス認証で新しい権限を得るにはCloudflare上で本人による承認が必要で、CLIのみでは完結しない。
+
+## 正しいアカウントでの実行結果（2026-10-07）
+
+GitHub Actionsへユーザー登録のCLOUDFLARE_API_TOKENを設定。指定アカウントへのアクセス、認証・LLMの18テスト、型チェック、フロントエンド・サーバー・コンテナのビルドは成功した。R2 `aituber-state` 作成とWorkerコード・静的アセットのアップロードまで進んだが、Containersで停止した。
+
+実行: https://github.com/mani1261790/AITuber/actions/runs/37597034001
+診断: https://github.com/mani1261790/AITuber/actions/runs/37597386780
+
+`GET /accounts/2ea670c2a6ff28e248ef084adf095e8b/containers/me` はHTTP 401、code 1000で「Deploying containers requires the Workers Paid plan」を返した。対象アカウントのWorkers Paid有効化が必要。workers.dev公開URLは404であり、公開成功とは扱わない。現在はこの検査をリソース変更前に実施する。プラン変更後に同じ手動ワークフローを再実行する。既存Noema・PHOTO-TEXTEのリソースは変更していない。
+
+## アカウント取り違えの原因と接続方法
+
+2026-10-07の `wrangler whoami --json` では、ログインメールはmani1261790@gmail.comでも、アクセス可能アカウントの一覧はSchedia側（36e8ab73692181d70a39ca42ce8f65c4）だけだった。メールアドレスはユーザーの識別であり、リソースの所属先やトークンの対象アカウントを保証しない。既存のグローバルOAuthを暗黙に採用したことが原因。
+
+現在はAITuberのGitHub Repository Secretに対象アカウント用トークンを保持する。ローカルのCloudflare認証は変更せず、次のCLIがGitHub Actions上でそのトークンを使用する。CloudflareトークンをGitHubから読み戻すことはしない。
+
+```sh
+cd /Users/mani/Developer/AITuber
+pnpm cloudflare:check
+pnpm cloudflare:deploy
+```
+
+- `cloudflare:check`: 指定アカウントへの認証だけを読み取り専用で確認する。Containersのプラン制限とは分離。ローカルにはGitHub CLI認証のみ必要。
+- `cloudflare:deploy`: GitHub mainのコードをデプロイする。ローカルの未コミット変更は送らない。現行構成のContainers利用チェックを含むため、Paid未契約なら停止する。
+- アカウントIDとWorker名が想定外なら停止。デフォルトOAuthへのフォールバックは禁止。
+- ローカルからCloudflare APIへ直接アクセスする専用資格情報は未登録。Actions経由の接続成功をローカルWranglerのログイン成功と混同しない。
+- Noema・PHOTO-TEXTEに登録したSecretや既存サービスは変更しない。
+
+## Containersを外す場合
+
+3Dモデル・教室・モーションの描画は閲覧者のブラウザで行うため、ContainersやサーバーGPUは不要。現在Containersを使っているのは既存のNodeサーバーを大きく書き換えず移すためであり、製品要件上の必須条件ではない。
+
+| 現行の依存 | Containersなしの移行先 |
+| --- | --- |
+| better-sqlite3とローカルDBファイル | SQLite-backed Durable Objects（授業状態）と必要に応じD1（一覧・履歴） |
+| 教材、設定、SVG、音声のファイル保存 | R2と適切なDB/Secret保存 |
+| 常駐Nodeサーバー、ws、メモリ上の進行・setTimeout | Durable ObjectsのWebSocket、永続状態、alarms、再開処理 |
+| 教材作成のバックグラウンド処理 | 永続ジョブ状態と小さな処理段階への分割、再試行 |
+| PDF抽出・スライド変換 | 現在のunpdf/pdfjs処理をWorkers上で検証。CPU/メモリ枠に収まらない処理は管理画面側へ移す等を検討 |
+| LLM/TTSへの呼び出し | Workers/DOから外部APIへfetch |
+
+Workersのnode:fsは通常の永続ディスクではなくメモリ上の仮想ファイルシステム。better-sqlite3のネイティブアドオンをそのまま移すこともできない。このためcontainers設定を削除するだけでは動作しない。
+
+SQLite-backed Durable ObjectsはFreeプランでも利用可能だが、無料枠のCPU・ストレージ・リクエスト制限がある。PDF教材作成とライブ授業を実データで検証するまで、無料枠で全機能が動くとは断定しない。今回この移行自体は未実装。
+
+参考:
+- https://developers.cloudflare.com/durable-objects/platform/pricing/
+- https://developers.cloudflare.com/durable-objects/platform/limits/
+- https://developers.cloudflare.com/workers/runtime-apis/nodejs/fs/
+- https://developers.cloudflare.com/sandbox/concepts/
