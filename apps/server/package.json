@@ -9,7 +9,7 @@
     "@aituber/lesson": "workspace:*",
     "@aituber/providers": "workspace:*",
     "@aituber/storage": "workspace:*",
-    "pdfjs-dist": "6.1.200",
+    "pdfjs-dist": "6.2.108",
     "unpdf": "1.8.1",
     "ws": "8.21.3",
     "@aituber/runtime-platform": "workspace:*"
