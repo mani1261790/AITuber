@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "@aituber/runtime-platform/files";
 import { join } from "node:path";
 import { CoursePackageSchema, CoursePackageValidationError, parseCoursePackage, type AuthoringGateId, type AuthoringJobView, type AuthoringReview as ReviewResult, type CoursePackage, type CreateAuthoringRequest, type ResumeAuthoringRequest, type ValidationIssue } from "@aituber/contracts";
 import { LlmProviderError, type LlmProvider, type LlmUsage } from "@aituber/providers";
@@ -17,7 +17,8 @@ interface AuthoringCheckpoint {
 export class CourseAuthoringService {
   readonly #directory: string; readonly #llm: () => LlmProvider; readonly #onAvailable: (course: CoursePackage) => void;
   readonly #running = new Set<string>();
-  constructor(options: { directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void }) { this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
+  readonly #defer: (() => void) | undefined;
+  constructor(options: { directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void; defer?: () => void }) { this.#defer = options.defer; this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
 
   async create(request: CreateAuthoringRequest): Promise<AuthoringJobView> {
     return this.#run(await this.#initialize(request), false);
@@ -39,14 +40,21 @@ export class CourseAuthoringService {
       if (!existsSync(sourcePath)) writeFileSync(sourcePath, Buffer.from(request.sources[index]!.dataBase64, "base64"), { mode: 0o600, flag: "wx" });
     }
     const checkpoint: AuthoringCheckpoint = { id: `authoring.${randomUUID()}`, status: "running", createdAt: now, updatedAt: now, request: { durationMinutes: request.durationMinutes, ...(request.targetLevel?.trim() ? { targetLevel: request.targetLevel.trim() } : {}), ...(request.learningGoals?.length ? { learningGoals: [...request.learningGoals] } : {}), timeBudgetMs: request.timeBudgetMs ?? 900_000, costBudgetUsd: request.costBudgetUsd ?? 2 }, inputs, candidate: null, review: null, attempts: 0, elapsedMs: 0, estimatedCostUsd: 0, error: null }; this.#save(checkpoint); return checkpoint; }
-  #background(checkpoint: AuthoringCheckpoint, forceRegenerate: boolean) { if (this.#running.has(checkpoint.id)) return; this.#running.add(checkpoint.id); void this.#run(checkpoint, forceRegenerate).finally(() => this.#running.delete(checkpoint.id)); }
+  async runPendingStep(): Promise<void> {
+    const pending = this.list().find(job => job.status === "running");
+    if (!pending || this.#running.has(pending.id)) return;
+    this.#running.add(pending.id);
+    try { await this.#run(this.#load(pending.id), false, 1); } finally { this.#running.delete(pending.id); }
+  }
+  #background(checkpoint: AuthoringCheckpoint, forceRegenerate: boolean) { if (this.#defer) { this.#defer(); return; } if (this.#running.has(checkpoint.id)) return; this.#running.add(checkpoint.id); void this.#run(checkpoint, forceRegenerate).finally(() => this.#running.delete(checkpoint.id)); }
 
-  async #run(checkpoint: AuthoringCheckpoint, forceRegenerate: boolean): Promise<AuthoringJobView> {
+  async #run(checkpoint: AuthoringCheckpoint, forceRegenerate: boolean, maxIterations = Infinity): Promise<AuthoringJobView> {
     const deadline = AbortSignal.timeout(Math.max(1, Math.ceil(checkpoint.request.timeBudgetMs - checkpoint.elapsedMs)));
     let markedAt = performance.now();
     const markElapsed = () => { const now = performance.now(); checkpoint.elapsedMs += now - markedAt; markedAt = now; };
     try {
-      while (true) {
+      let iterations = 0;
+      while (iterations++ < maxIterations) {
         markElapsed();
         if (budgetReached(checkpoint)) { stopForBudget(checkpoint); break; }
         checkpoint.attempts += 1;
@@ -90,7 +98,7 @@ export class CourseAuthoringService {
   }
 
   #path(id: string) { if (!/^authoring\.[a-f0-9-]+$/.test(id)) throw new RangeError("Unknown authoring job"); return join(this.#directory, `${id}.json`); }
-  #recoverInterruptedJobs() { for (const file of readdirSync(this.#directory).filter((name) => /^authoring\.[a-f0-9-]+\.json$/.test(name))) { const checkpoint = JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint; if (checkpoint.status === "running") { checkpoint.status = "budget-exhausted"; checkpoint.error = "前回の処理が中断されました。チェックポイントから再開できます。"; this.#save(checkpoint); } } }
+  #recoverInterruptedJobs() { for (const file of readdirSync(this.#directory).filter((name) => /^authoring\.[a-f0-9-]+\.json$/.test(name))) { const checkpoint = JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint; if (checkpoint.status === "running" && !this.#defer) { checkpoint.status = "budget-exhausted"; checkpoint.error = "前回の処理が中断されました。チェックポイントから再開できます。"; this.#save(checkpoint); } } }
   #assertIdle(id: string) { if (this.#running.has(id)) throw new TypeError("Authoring job is already running"); }
   #load(id: string): AuthoringCheckpoint { const path = this.#path(id); if (!existsSync(path)) throw new RangeError("Unknown authoring job"); return JSON.parse(readFileSync(path, "utf8")) as AuthoringCheckpoint; }
   #save(value: AuthoringCheckpoint) { value.updatedAt = new Date().toISOString(); const path = this.#path(value.id); const temp = `${path}.${process.pid}.tmp`; writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); renameSync(temp, path); chmodSync(path, 0o600); }

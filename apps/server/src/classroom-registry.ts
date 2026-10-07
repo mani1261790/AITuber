@@ -18,6 +18,16 @@ export class ClassroomRegistry {
     this.#capacity = capacity;
   }
 
+  exportState() { return [...this.#roomsBySession.values()].map(room=>({sessionId:room.sessionId,code:room.code,participants:[...room.participants]})); }
+  restoreState(rooms: ReturnType<ClassroomRegistry["exportState"]>) {
+    for (const stored of rooms) { const room = {...stored,participants:new Map(stored.participants)}; this.#roomsByCode.set(room.code,room); this.#roomsBySession.set(room.sessionId,room); }
+  }
+  forgetSessionsExcept(ids: ReadonlySet<string>) {
+    for (const [id, room] of this.#roomsBySession) {
+      if (ids.has(id)) continue;
+      this.#roomsBySession.delete(id); this.#roomsByCode.delete(room.code);
+    }
+  }
   create(sessionId: string): ClassroomRoomView {
     const existing = this.#roomsBySession.get(sessionId);
     if (existing) return this.view(existing);

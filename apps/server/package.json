@@ -11,7 +11,8 @@
     "@aituber/storage": "workspace:*",
     "pdfjs-dist": "6.1.200",
     "unpdf": "1.8.1",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "@aituber/runtime-platform": "workspace:*"
   },
   "scripts": {
     "dev": "node --watch --env-file-if-exists=../../.env --experimental-strip-types src/index.ts",

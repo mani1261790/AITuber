@@ -4,14 +4,60 @@
   "account_id": "2ea670c2a6ff28e248ef084adf095e8b",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-07",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "preview_urls": false,
-  "observability": {"enabled": true},
-  "assets": {"directory":"../../dist/cloudflare", "binding":"ASSETS", "run_worker_first":true},
-  "r2_buckets": [{"binding":"STATE","bucket_name":"aituber-state"}],
-  "durable_objects": {"bindings":[{"name":"BACKEND","class_name":"LectureBackend"}]},
-  "migrations": [{"tag":"v1","new_sqlite_classes":["LectureBackend"]}],
-  "containers": [{"class_name":"LectureBackend","image":"../../Dockerfile","instance_type":"basic","max_instances":1}],
-  "vars": {"LLM_MODEL":"gpt-6-luna","LLM_INPUT_PRICE":"0.10","LLM_OUTPUT_PRICE":"0.50"}
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "../../dist/cloudflare",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "STATE",
+      "bucket_name": "aituber-state"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOM",
+        "class_name": "LectureRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "LectureBackend"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "LectureRoom"
+      ],
+      "deleted_classes": [
+        "LectureBackend"
+      ]
+    }
+  ],
+  "vars": {
+    "LLM_MODEL": "gpt-6-luna",
+    "LLM_INPUT_PRICE": "0.10",
+    "LLM_OUTPUT_PRICE": "0.50"
+  },
+  "alias": {
+    "better-sqlite3": "./src/platform/sqlite.ts",
+    "@aituber/runtime-platform/files": "./src/platform/files.ts",
+    "@aituber/runtime-platform/files-async": "./src/platform/files-async.ts",
+    "@aituber/runtime-platform/pdf-assets": "./src/platform/pdf-assets.ts",
+    "ajv": "./src/platform/ajv.ts"
+  }
 }

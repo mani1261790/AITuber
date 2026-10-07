@@ -29,7 +29,7 @@ export class IrodoriTtsProvider implements TextToSpeechProvider {
   readonly #fetch: typeof fetch;
   constructor(options: { endpoint?: string; voiceRevision?: string; fetch?: typeof fetch } = {}) {
     this.#endpoint = options.endpoint ?? "http://127.0.0.1:4313/v1/audio/speech";
-    this.#fetch = options.fetch ?? fetch;
+    this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     // Caption, reference audio or sampler changes need a new revision to invalidate cache.
     this.model = `${IRODORI_ANIME_MODEL}:${options.voiceRevision ?? "teacher-v1"}`;
   }

@@ -8,6 +8,12 @@
     "dev": "wrangler dev"
   },
   "dependencies": {
-    "@cloudflare/containers": "0.3.7"
+    "@cfworker/json-schema": "^4.1.1",
+    "@aituber/contracts": "workspace:*",
+    "@aituber/providers": "workspace:*",
+    "@aituber/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@aituber/content": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "@aituber/runtime-platform/files-async";
 import { join } from "node:path";
 import type { BlackboardDrawing } from "@aituber/contracts";
 import { validateBlackboardSvg, type BlackboardToolCall, type SvgProvider } from "@aituber/providers";

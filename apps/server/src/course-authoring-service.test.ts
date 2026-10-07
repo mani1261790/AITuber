@@ -120,3 +120,18 @@ it("aborts an in-flight generation at the job deadline and keeps it resumable", 
  expect(result.error).toBe("時間または費用の上限に達しました。");
  expect(service.get(result.id).sourceCount).toBe(1);
 });
+
+it('runs one persisted authoring iteration per alarm and resumes after a new service instance', async () => {
+  const source=upload('Quadratic function notes');const valid=remapSource(quadraticFunctionsFixture,sourceId(source));
+  const invalid=structuredClone(valid);invalid.teachingUnits[0]!.captionText='different caption';
+  const provider=new FixedResponseLlmProvider([invalid,valid,passingReview()]);
+  const directory=mkdtempSync(join(tmpdir(),'aituber-authoring-alarm-'));let scheduled=0;
+  const first=new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{scheduled++;}});
+  const job=await first.begin({durationMinutes:6,sources:[source]});
+  expect(scheduled).toBe(1);expect(provider.calls).toHaveLength(0);
+  await first.runPendingStep();expect(first.get(job.id).status).toBe('running');expect(provider.calls).toHaveLength(1);
+  const second=new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{scheduled++;}});
+  expect(second.get(job.id).status).toBe('running');await second.runPendingStep();
+  expect(second.get(job.id).status).toBe('available');expect(second.get(job.id).attempts).toBe(2);
+  await second.runPendingStep();expect(provider.calls).toHaveLength(3);
+});

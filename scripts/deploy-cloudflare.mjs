@@ -40,22 +40,11 @@ try {
   }
   console.log(`Verified AITuber account: ${accountId}`);
   if (!checkOnly) {
-  const containerResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/containers/me`, {
-    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000),
-  });
-  if (!containerResponse.ok) {
-    const problem = await containerResponse.json().catch(() => ({}));
-    const details = Array.isArray(problem.errors) ? problem.errors.map(({code, message}) => ({code, message})) : {code: problem.code, message: problem.message, error: problem.error};
-    throw new Error(`Containers access failed (HTTP ${containerResponse.status}): ${JSON.stringify(details)}`);
-  }
-  console.log("Verified Containers access.");
-  }
-  if (!checkOnly) {
     // Deploy with the exact verified credential, independent of global login state.
     const env = { ...process.env, CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: accountId, CI: "true" };
     for (const name of ["CLOUDFLARE_API_KEY", "CLOUDFLARE_EMAIL", "CF_API_KEY", "CF_EMAIL", "CF_API_TOKEN", "CF_ACCOUNT_ID"]) delete env[name];
     const secrets = {};
-    for (const name of ["OPERATOR_PASSWORD", "STATE_SECRET", "FISH_API_KEY", "FISH_VOICE_ID"]) {
+    for (const name of ["OPERATOR_PASSWORD", "FISH_API_KEY", "FISH_VOICE_ID"]) {
       if (!process.env[name]) throw new Error(`Missing deployment secret: ${name}`);
       secrets[name] = process.env[name];
     }

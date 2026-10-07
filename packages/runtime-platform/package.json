@@ -1,0 +1,1 @@
+{"name":"@aituber/runtime-platform","version":"0.0.0","private":true,"type":"module","exports":{"./files":{"types":"./files.d.ts","default":"./files.js"},"./files-async":{"types":"./files-async.d.ts","default":"./files-async.js"},"./pdf-assets":{"types":"./pdf-assets.d.ts","default":"./pdf-assets.js"}}}
