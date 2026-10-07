@@ -1,3 +1,4 @@
+import { audioResponse } from './audio-response';
 import { DurableObject } from 'cloudflare:workers';
 import type { AppEnv } from './index';
 import { runtimeContext } from './platform/context';
@@ -156,10 +157,4 @@ async function readJson<T>(request:Request,limit:number,allowEmpty=false):Promis
   for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>limit){await reader.cancel();throw new TypeError('request body is too large');}chunks.push(value);}
   if(length===0&&allowEmpty)return {} as T;
   const buffer=new Uint8Array(length);let offset=0;for(const chunk of chunks){buffer.set(chunk,offset);offset+=chunk.length;}return JSON.parse(new TextDecoder().decode(buffer)) as T;
-}
-function audioResponse(request:Request,bytes:Uint8Array,mimeType:string){
-  const headers=new Headers({'content-type':mimeType,'accept-ranges':'bytes','cache-control':'private, max-age=60'});
-  const range=request.headers.get('range');let start=0,end=bytes.length-1,status=200;
-  if(range){const match=/^bytes=(\d+)-(\d*)$/.exec(range);if(!match)return new Response(null,{status:416,headers:{'content-range':`bytes */${bytes.length}`}});start=Number(match[1]);end=match[2]?Math.min(Number(match[2]),end):end;if(start>end)return new Response(null,{status:416,headers:{'content-range':`bytes */${bytes.length}`}});status=206;headers.set('content-range',`bytes ${start}-${end}/${bytes.length}`);}
-  headers.set('content-length',String(end-start+1));return new Response(request.method==='HEAD'?null:bytes.slice(start,end+1),{status,headers});
 }
