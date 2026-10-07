@@ -37,7 +37,8 @@ it("releases a forward swing even while the foot is still close to the floor",()
  root.updateMatrixWorld(true);
  const lifted=nodes.leftFoot!.getWorldPosition(new THREE.Vector3());
  expect(Math.hypot(lifted.x-authored.x,lifted.z-authored.z)).toBeLessThan(.005);
- expect(lifted.y-authored.y).toBeGreaterThan(.01);
+ expect(lifted.y-authored.y).toBeGreaterThan(.003);
+ expect(lifted.y-authored.y).toBeLessThan(.02);
  let previous=lifted;
  for(let i=0;i<90;i++){
   Object.values(nodes).forEach(b=>b.quaternion.identity());
@@ -83,7 +84,8 @@ it("lowers the pelvis smoothly to keep planted feet reachable without freezing a
   expect(Math.abs(hips.position.y-previous)).toBeLessThan(.01);previous=hips.position.y;
   expect(foot.getWorldQuaternion(new THREE.Quaternion()).angleTo(rotation)).toBeLessThan(.001);
  }
- expect(hips.position.y).toBeLessThan(-.01);
+ expect(hips.position.y).toBeLessThan(-.001);
+ expect(hips.position.y).toBeGreaterThan(-.01);
  expect(contact.supportState.every(state=>state.reachRatio!<1)).toBe(true);
  const end=foot.getWorldPosition(new THREE.Vector3());expect(Math.hypot(end.x-start.x,end.z-start.z)).toBeLessThan(.005);
  // Both feet begin toe-off while their horizontal anchors still have weight.

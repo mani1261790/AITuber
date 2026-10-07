@@ -67,7 +67,13 @@ export class PoseTransition {
 /** Show target height in the arm pose, even when the board is several arm lengths away. */
 export function pointingHandGoal(shoulder: THREE.Vector3, target: THREE.Vector3, reach: number, lowReach = reach) {
   const horizontal = target.clone().sub(shoulder).setY(0).normalize();
-  const height = THREE.MathUtils.clamp(target.y - shoulder.y, -reach * .9, reach * .85);
+  let height = THREE.MathUtils.clamp(target.y - shoulder.y, -reach * .9, reach * .85);
+  if(height>0){
+    // A distant high label needs a shallow pointing ray, not a hand raised
+    // almost overhead followed by a sharply downturned wrist.
+    const elevation=Math.atan2(target.y-shoulder.y,Math.hypot(target.x-shoulder.x,target.z-shoulder.z));
+    height=Math.min(height,reach*Math.sin(Math.min(Math.PI/2,elevation+.12)));
+  }
   // Extend low gestures away from clothing without lifting their pointing height.
   const lowAmount = THREE.MathUtils.smoothstep(shoulder.y-target.y, reach*.45, reach*.9);
   const distance = THREE.MathUtils.lerp(reach, Math.max(reach,lowReach), lowAmount);

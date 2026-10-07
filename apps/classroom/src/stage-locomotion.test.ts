@@ -24,7 +24,7 @@ it("pivots before translating and faces the audience only after arriving",()=>{
   const oldX=motion.x,oldPhase=motion.phase;
   motion.update(1/60,-.65,0,1.4,1.2);
   if(oldPhase==="turn")expect(motion.x).toBe(oldX);
-  expect(Math.abs(motion.x-oldX)).toBeLessThanOrEqual(1.4/60+1e-9);
+  expect(Math.abs(motion.x-oldX)).toBeLessThanOrEqual(1.75/60+1e-9);
   if(motion.phase==="walk")sawWalk=true;
   if(sawWalk&&motion.phase==="turn")sawArrivalTurn=true;
  }
@@ -38,7 +38,7 @@ it("can redirect an interrupted journey without teleporting",()=>{
  motion.update(1/60,2.35,-.26,1,1);
  expect(motion.phase).toBe("brake");
  expect(motion.x).toBeLessThan(before);
- expect(speed-motion.speed).toBeCloseTo(1.3/60);
+ expect(speed-motion.speed).toBeCloseTo(1.8/60);
  for(let i=0;i<900;i++)motion.update(1/60,2.35,-.26,1,1);
  expect(motion.x).toBe(2.35);expect(motion.yaw).toBeCloseTo(-.26);expect(motion.phase).toBe("idle");
 });
@@ -56,10 +56,10 @@ it("keeps momentum for an extension and brakes before an interrupted pivot at di
    motion.update(dt,2.35,-.26,1,1);
    if(motion.phase==="brake"){
     sawBrake=true;expect(motion.yaw).toBe(yaw);
-    expect(before-motion.speed).toBeLessThanOrEqual(1.3*dt+1e-9);
+    expect(before-motion.speed).toBeLessThanOrEqual(1.8*dt+1e-9);
    }
    if(phase==="brake"&&motion.phase==="turn"){
-    expect(before).toBeLessThanOrEqual(1.3*dt+1e-9);break;
+    expect(before).toBeLessThanOrEqual(1.8*dt+1e-9);break;
    }
   }
   expect(sawBrake).toBe(true);expect(motion.phase).toBe("turn");
@@ -71,7 +71,7 @@ it("does not snap the last centimetre or jump after a delayed frame",()=>{
   const before=motion.x;
   const dt=i===400?3:1/120;
   motion.update(dt,-4.2,.26,1,1);
-  expect(Math.abs(motion.x-before)).toBeLessThanOrEqual(1.4*Math.min(dt,1/30)+1e-10);
+  expect(Math.abs(motion.x-before)).toBeLessThanOrEqual(1.75*Math.min(dt,1/30)+1e-10);
  }
  expect(motion.x).toBe(-4.2);
  expect(motion.phase).toBe("idle");

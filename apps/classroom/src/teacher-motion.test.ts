@@ -420,12 +420,14 @@ it("lowers a pointing arm gradually while turning to depart",()=>{
   const input={speed:0,moving:false,speaking:false,target:new THREE.Vector3(side==="left"?4:-4,2.5,-.5),side,reducedMotion:false,gesture:"idle" as const,actionId:"point"};
   for(let frame=0;frame<fps*1.8;frame++)controller.update(1/fps,input);
   const arm=nodes[`${side}UpperArm`]!,rest=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,(side==="left"?-1:1)*Math.PI/2));
+  const raisedAngle=arm.quaternion.angleTo(rest);
   let middle=0;
   for(let frame=0;frame<fps*2;frame++){
    controller.update(1/fps,{...input,target:null,moving:true,turning:true,turnSign:1,turnProgress:Math.min(.99,frame/fps/2),actionId:"depart"});
    if(frame===Math.round(fps*.6)-1)middle=arm.quaternion.angleTo(rest);
   }
-  expect(middle).toBeGreaterThan(1);
+  expect(middle).toBeGreaterThan(raisedAngle*.4);
+  expect(middle).toBeLessThan(raisedAngle);
   expect(arm.quaternion.angleTo(rest)).toBeLessThan(.02);
   controller.dispose();
  }
@@ -497,5 +499,23 @@ it("lets turn foot placement catch up promptly without snapping at entry",()=>{
    expect(leg.quaternion.angleTo(before)).toBeLessThanOrEqual(5/fps+1e-6);
   }
   expect(leg.rotation.x).toBeGreaterThan(.45);motion.dispose();
+ }
+});
+
+
+it("bounds the pointing wrist for either hand and extreme target heights",async()=>{
+ const {aimArm}=await import("./teacher-motion.ts");
+ for(const side of ["left","right"] as const)for(const height of [.5,1.4,2.8,8]){
+  const scene=new THREE.Group(),nodes:Record<string,THREE.Bone>={},sign=side==="left"?1:-1;
+  const bone=(part:string,parent:THREE.Object3D,x:number)=>{const node=new THREE.Bone();node.position.x=x;parent.add(node);nodes[side+part]=node;return node;};
+  const upper=bone("UpperArm",scene,sign*.2);upper.position.y=1.4;
+  const lower=bone("LowerArm",upper,sign*.4),hand=bone("Hand",lower,sign*.4);
+  const index=bone("IndexProximal",hand,sign*.06);bone("IndexDistal",index,sign*.06);
+  hand.rotation.set(.8,.4,.3);
+  const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
+  aimArm(vrm,side,new THREE.Vector3(sign*4,height,-.5),1);
+  expect(hand.quaternion.angleTo(new THREE.Quaternion())).toBeLessThanOrEqual(.700001);
+  expect(lower.position.length()).toBeCloseTo(.4);
+  expect(hand.position.length()).toBeCloseTo(.4);
  }
 });

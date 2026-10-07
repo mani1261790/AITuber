@@ -33,7 +33,7 @@ export class StageLocomotion {
       this.turnSign=Math.sign(angle)||1;this.duration=Math.max(.35,(angle>0?leftDuration:rightDuration)*Math.abs(this.turnAngle)/(Math.PI/2));
       this.afterTurn=after;this.phase=Math.abs(angle)<.035?after:"turn";this.speed=0;
     };
-    const deceleration=1.3;
+    const deceleration=1.8;
     const faceDestination=()=>{
       this.travelSign=Math.sign(this.goal-this.x)||this.travelSign;
       beginTurn(Math.abs(this.goal-this.x)<.001?standYaw:this.travelSign*Math.PI/2,Math.abs(this.goal-this.x)<.001?"idle":"walk");
@@ -68,7 +68,7 @@ export class StageLocomotion {
       // Reserve this frame's travel as well as the following stopping distance:
       // v * dt + v² / (2a) <= remaining. Rational form avoids cancellation near zero.
       const divisor=Math.sqrt((deceleration*dt)**2+2*deceleration*remaining)+deceleration*dt;
-      const wanted=Math.min(1.4,divisor>0?2*deceleration*remaining/divisor:0);
+      const wanted=Math.min(1.75,divisor>0?2*deceleration*remaining/divisor:0);
       // Smooth acceleration, but never lag behind the braking envelope.
       // Otherwise the root reaches its goal while the walk still has speed.
       this.speed=Math.min(wanted,MathUtils.damp(this.speed,wanted,6,dt));

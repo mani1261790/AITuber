@@ -57,6 +57,17 @@ export class TeacherMotion {
   private outputLimit: PoseTransition;
   private footContact: FootContact;
   private standingRecovery: StandingRecovery;
+  get settlingFeet(){return this.standingRecovery.active;}
+  gaitDiagnostics: Record<string,number[]> = {};
+  private sampleKnees(stage:string){
+    if(!import.meta.env.DEV)return;
+    this.vrm.scene.updateMatrixWorld(true);
+    this.gaitDiagnostics[stage]=(["left","right"] as const).map(side=>{
+      const positions=(["UpperLeg","LowerLeg","Foot"] as const).map(part=>this.vrm.humanoid.getNormalizedBoneNode(`${side}${part}`)?.getWorldPosition(new THREE.Vector3()));
+      const [hip,knee,foot]=positions;
+      return hip&&knee&&foot ? Math.PI-hip.sub(knee).angleTo(foot.sub(knee)) : 0;
+    });
+  }
   private pointCue = new PointingCue();
   private teachingFocus = new TeachingFocus();
   setSolePoints(points: THREE.Vector3[][]) { this.footContact.setSolePoints(points); }
@@ -64,7 +75,7 @@ export class TeacherMotion {
   get footSupportState() { return this.footContact.supportState.map((state,i)=>({...state,postBlendError:this.postIkError[i]??0})); }
   private mixerPositions = new Map<THREE.Object3D, THREE.Vector3>();
   turnRotationProgress = (progress:number,sign:number) => (sign < 0 ? this.turnTiming?.right : this.turnTiming?.left)?.(progress) ?? defaultTurnProgress(progress);
-  get turnDurations() { return [this.actions.turnLeft.getClip().duration*.75, this.actions.turnRight.getClip().duration*.75] as const; }
+  get turnDurations() { return [this.actions.turnLeft.getClip().duration*.6, this.actions.turnRight.getClip().duration*.6] as const; }
   private speakingHold = 0;
   private speechGesture = new SpeechGesture();
   private speechStrength = 0;
@@ -127,7 +138,6 @@ export class TeacherMotion {
   constructor(private vrm: VRM, idle: THREE.AnimationClip, talk: THREE.AnimationClip, walk: THREE.AnimationClip, distance: number, extra?: {listen:THREE.AnimationClip;turnLeft:THREE.AnimationClip;turnRight:THREE.AnimationClip}, private turnTiming?: {left:(progress:number)=>number;right:(progress:number)=>number}) {
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.footContact = new FootContact(vrm);
-    this.standingRecovery = new StandingRecovery(vrm);
     for (const name of Object.values(VRMHumanBoneName)) {
       const bone = vrm.humanoid.getNormalizedBoneNode(name);
       if (bone) {
@@ -159,6 +169,8 @@ export class TeacherMotion {
     for (const [key, action] of Object.entries(this.actions)) action.setEffectiveWeight(key === "idle" ? 1 : 0).play();
     // Establish the first standing pose while the avatar is still hidden.
     this.mixer.update(0);
+    // Capture the authored idle pose, including its foot width and toe-in.
+    this.standingRecovery = new StandingRecovery(vrm);
     this.overlayBases.forEach((base,bone)=>base.copy(bone.quaternion));
     this.mixerPositions.forEach((base,bone)=>base.copy(bone.position));
     const armBones = new Set((["leftUpperArm", "leftLowerArm", "rightUpperArm", "rightLowerArm"] as const)
@@ -176,7 +188,7 @@ export class TeacherMotion {
     this.vrm.humanoid.update();
   }
 
-  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined }) {
+  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
     const voiced = input.speaking && (input.speechLevel === undefined || input.speechLevel > .045);
     const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
@@ -229,6 +241,7 @@ export class TeacherMotion {
     this.mixer.update(delta);
     this.mixerPositions.forEach((base, bone) => base.copy(bone.position));
     this.overlayBases.forEach((base, bone) => base.copy(bone.quaternion));
+    this.sampleKnees("clip");
 
     const pointing = indicating && !input.moving;
     // Retract the old arm before switching sides, rather than snapping between arms.
@@ -248,6 +261,8 @@ export class TeacherMotion {
     const focusWeight = this.teachingFocus.update(delta, input.target?.toArray().map(n=>n.toFixed(2)).join(":"), input.speaking, input.pointActionId)
       * THREE.MathUtils.smootherstep(this.pointBlend,0,1);
     // Introduce the board detail, then address the audience without retracting the arm.
+    if (input.cameraPosition && !input.moving && !input.turning)
+      applyTeacherAttention(this.vrm,input.cameraPosition,.65*(1-focusWeight));
     if (focusWeight > .001) applyTeacherAttention(this.vrm,this.pointTarget,focusWeight);
     const key = `${input.actionId}:${input.gesture}`;
     if (key !== this.gestureKey) {
@@ -318,7 +333,7 @@ export class TeacherMotion {
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
     // Eyes share the rendered-pose interpolation, including releasing board focus.
-    const audience = teacherGazeTarget(this.vrm, input.moving || !!input.turning);
+    const audience = teacherGazeTarget(this.vrm, input.moving || !!input.turning, input.cameraPosition);
     const gazeTarget = audience.lerp(this.pointTarget, focusWeight);
     applyTeacherGaze(this.vrm, gazeTarget);
     // Pose continuity also covers clip changes and releasing a pointing gesture.
@@ -342,7 +357,9 @@ export class TeacherMotion {
     });
     this.poseOffsetAge+=delta;
     this.transition.apply(delta);
+    this.sampleKnees("blended");
     this.footContact.apply(delta,input.moving && !input.reducedMotion,input.turning);
+    this.sampleKnees("contact");
     this.standingRecovery.apply(delta);
     // IK may rewrite joints after blending. Bound the final rendered pose too,
     // without adding another low-pass delay to ordinary foot contact.
@@ -351,6 +368,7 @@ export class TeacherMotion {
       return bone ? {bone,position:bone.getWorldPosition(new THREE.Vector3())} : null;
     }) : [];
     this.outputLimit.apply(delta);
+    this.standingRecovery.confirmSettled();
     this.postIkError=solvedFeet.map(foot=>foot ? foot.bone.getWorldPosition(new THREE.Vector3()).distanceTo(foot.position) : 0);
     this.vrm.humanoid.update();
   }
@@ -397,13 +415,19 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   const indexBase = vrm.humanoid.getNormalizedBoneNode(`${side}IndexProximal`);
   const indexTip = vrm.humanoid.getNormalizedBoneNode(`${side}IndexDistal`);
   if (handPose === "point" && indexBase && indexTip) {
+    const originalHand=hand.quaternion.clone();
+    // Start from a neutral wrist. The arm solver carries the large directional
+    // change; never fold the cuff to force an otherwise unreachable pointing ray.
+    hand.quaternion.identity();
     vrm.scene.updateMatrixWorld(true);
     indexBase.getWorldPosition(origin); indexTip.getWorldPosition(endpoint);
     direction.copy(target).sub(origin).normalize();
     world.setFromUnitVectors(endpoint.sub(origin).normalize(), direction);
+    const correction=world.angleTo(new THREE.Quaternion());
+    if(correction>.7)world.slerpQuaternions(new THREE.Quaternion(),world.clone(),.7/correction);
     hand.parent?.getWorldQuaternion(parent);
     const aimed = hand.quaternion.clone().premultiply(parent.clone().invert().multiply(world).multiply(parent));
-    hand.quaternion.slerp(aimed, weight);
+    hand.quaternion.slerpQuaternions(originalHand,aimed,weight);
   }
 }
 

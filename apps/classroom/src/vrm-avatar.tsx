@@ -336,7 +336,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         if (teacherMotion && !stageRef.current.preview) {
           const target = region && activeGesture && !walking ? new THREE.Vector3(-3.85+(region.x+region.width/2)*4.76,targetY,-.06) : null;
           const speechLevel=speechLevelRef.current?.();
-          teacherMotion.update(delta, { speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
+          teacherMotion.update(delta, { cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
             target, side: avatar.scene.position.x < -1 ? "left" : "right", reducedMotion, gesture, actionId: direction?.actionId, pointActionId: direction?.phase === "pointing" ? direction.actionId : undefined, turning: locomotionState ? locomotionState.phase==="turn" : Math.abs(avatar.scene.rotation.y-facing)>.08, turnSign: locomotionState?.turnSign, turnProgress: locomotionState?.turnProgress });
           animateExpression(avatar, gestureMotion, time, delta, speechLevel, gesture, teacherMotion.acknowledgementStrength);
           renderer.domElement.dataset.motionClip = teacherMotion.state;
@@ -346,6 +346,8 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
             renderer.domElement.dataset.blinkLevel=String(avatar.expressionManager?.getValue("blink")??0);
             renderer.domElement.dataset.faceExpression=JSON.stringify({happy:avatar.expressionManager?.getValue("happy"),relaxed:avatar.expressionManager?.getValue("relaxed")});
             renderer.domElement.dataset.footSupport=JSON.stringify(teacherMotion.footSupportState);
+            renderer.domElement.dataset.settlingFeet=String(teacherMotion.settlingFeet);
+            renderer.domElement.dataset.gaitDiagnostics=JSON.stringify(teacherMotion.gaitDiagnostics);
             renderer.domElement.dataset.gaitCycleDistance=String(teacherMotion.gaitCycleDistance);
             renderer.domElement.dataset.speechGesture=String(teacherMotion.speechGestureStrength);
             renderer.domElement.dataset.speechOverlay=String(teacherMotion.speechOverlayWeight);
@@ -387,7 +389,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
           lastProgressReport=time;
           stageRef.current.onStageProgress?.(direction.actionId);
         }
-        if ((direction?.phase === "moving" || direction?.traveling) && !walking && Math.abs(distance)<.04 && Math.abs(avatar.scene.rotation.y-facing)<.08 && acknowledgedAction !== direction.actionId) {
+        if ((direction?.phase === "moving" || direction?.traveling) && !walking && !teacherMotion?.settlingFeet && Math.abs(distance)<.04 && Math.abs(avatar.scene.rotation.y-facing)<.08 && acknowledgedAction !== direction.actionId) {
           acknowledgedAction = direction.actionId;
           stageRef.current.onStageComplete?.(direction.actionId);
         }

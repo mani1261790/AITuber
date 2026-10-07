@@ -17,7 +17,7 @@ it("limits abrupt changes across head, trunk, limbs and translation, including i
 it("gives lower targets a visibly lower hand without straightening the elbow", () => {
   const shoulder = new THREE.Vector3(2.35,2.15,.6), reach=.8;
   const hands = [2.68,2.03,1.37].map(y=>pointingHandGoal(shoulder,new THREE.Vector3(-2,y,-.06),reach));
-  expect(hands[0]!.y-hands[1]!.y).toBeGreaterThan(.4);
+  expect(hands[0]!.y-hands[1]!.y).toBeGreaterThan(.3);
   expect(hands[1]!.y-hands[2]!.y).toBeGreaterThan(.35);
   for(const hand of hands) expect(hand.distanceTo(shoulder)).toBeCloseTo(reach);
 });
@@ -105,7 +105,7 @@ it("uses elbow swivel to relieve the wrist without moving the hand or stretching
     expect(elbow.distanceTo(shoulder)).toBeCloseTo(a,6);
     expect(elbow.distanceTo(hand)).toBeCloseTo(b,6);
     if(y>shoulder.y)expect(elbow.y).toBeLessThanOrEqual(shoulder.y+.08001);
-    expect(hand.clone().sub(elbow).angleTo(target.clone().sub(hand))).toBeLessThan(y>shoulder.y?.9:.651);
+    expect(hand.clone().sub(elbow).angleTo(target.clone().sub(hand))).toBeLessThan(.651);
   }
 });
 

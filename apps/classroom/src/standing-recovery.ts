@@ -10,6 +10,7 @@ export class StandingRecovery {
   private order:number[]=[];
   private age=0;
   private duration=.42;
+  get active(){return this.starts.length>0;}
   constructor(private vrm:VRM) {
     const root=vrm.scene;root.updateMatrixWorld(true);
     const inverse=root.getWorldQuaternion(new THREE.Quaternion()).invert();
@@ -17,7 +18,6 @@ export class StandingRecovery {
       const upper=vrm.humanoid.getNormalizedBoneNode(`${side}UpperLeg`),lower=vrm.humanoid.getNormalizedBoneNode(`${side}LowerLeg`),foot=vrm.humanoid.getNormalizedBoneNode(`${side}Foot`);
       return upper&&lower&&foot ? [{upper,lower,foot,goal:root.worldToLocal(foot.getWorldPosition(new THREE.Vector3())),rotation:inverse.clone().multiply(foot.getWorldQuaternion(new THREE.Quaternion()))}] : [];
     });
-    if(this.legs.length===2){const center=(this.legs[0]!.goal.x+this.legs[1]!.goal.x)/2;this.legs.forEach(leg=>leg.goal.x=center+(leg.goal.x-center)*.7);}
   }
   begin(){
     if(this.legs.length!==2)return;
@@ -44,6 +44,13 @@ export class StandingRecovery {
       const rotation=start.rotation.clone().slerp(leg.rotation,progress).premultiply(root.getWorldQuaternion(new THREE.Quaternion()));
       leg.foot.quaternion.copy(leg.foot.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation));
     });
-    if(this.age>=this.duration*2)this.cancel();
+  }
+  /** Check the rendered result, including the final angular-velocity limiter. */
+  confirmSettled(){
+    if(!this.active || this.age<this.duration*2)return;
+    const root=this.vrm.scene;root.updateMatrixWorld(true);
+    const inverse=root.getWorldQuaternion(new THREE.Quaternion()).invert();
+    if(this.legs.every(leg=>root.worldToLocal(leg.foot.getWorldPosition(new THREE.Vector3())).distanceTo(leg.goal)<.004
+      && inverse.clone().multiply(leg.foot.getWorldQuaternion(new THREE.Quaternion())).angleTo(leg.rotation)<.04))this.cancel();
   }
 }

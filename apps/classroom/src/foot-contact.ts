@@ -17,7 +17,7 @@ export class FootContact {
   private reachRatios = [0, 0];
   private pelvisDrop = 0;
   private wasTurning = false;
-  get supportState() { return this.contacts.map(({planted,weight,velocity,reason},i)=>({planted,weight,velocity,reason,reachRatio:this.reachRatios[i]})); }
+  get supportState() { return this.contacts.map(({planted,weight,velocity,reason,clearance},i)=>({planted,weight,velocity,reason,clearance,pelvisDrop:this.pelvisDrop,reachRatio:this.reachRatios[i]})); }
   apply(delta: number, moving: boolean, turning = false) {
     const dt=Math.min(Math.max(delta,0),1/30), root=this.vrm.scene;
     if(this.wasTurning && !turning) {
@@ -33,6 +33,9 @@ export class FootContact {
     if(legs.some(leg=>!leg.upper||!leg.lower||!leg.foot))return;
     const positions=legs.map(leg=>leg.foot!.getWorldPosition(new THREE.Vector3()));
     const floor=Math.min(...positions.map(p=>p.y));
+    const soleHeights=legs.map((leg,i)=>this.soles[i]?.length
+      ? Math.min(...this.soles[i]!.map(point=>leg.foot!.localToWorld(point.clone()).y)) : positions[i]!.y);
+    const soleFloor=Math.min(...soleHeights);
     const hipPositions=legs.map(leg=>leg.upper!.getWorldPosition(new THREE.Vector3()));
     const hipCenter=hipPositions[0]!.clone().add(hipPositions[1]!).multiplyScalar(.5);
     const lateral=new THREE.Vector3(1,0,0).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
@@ -98,7 +101,9 @@ export class FootContact {
       // fade out before stance instead of lifting a planted support foot.
       const swing = moving && !turning ? THREE.MathUtils.smoothstep(state.velocity, .08, .65) : 0;
       const releaseLift = releaseProgress < 1 && !state.planted && moving && !turning ? Math.sin(Math.PI*releaseProgress)**2 : 0;
-      const needed = Math.max(0, length * .065 - lift) * Math.max(swing,releaseLift);
+      // Measure the shoe rather than the ankle: heels otherwise trigger a large
+      // unnecessary lift on every stride and keep both knees visibly crouched.
+      const needed = Math.max(0, length * .025 - (soleHeights[i]!-soleFloor)) * Math.max(swing,releaseLift);
       state.clearance = THREE.MathUtils.damp(state.clearance, needed, 16, dt);
       if(state.weight<.001 && state.rotationWeight<.0001 && state.clearance<.0001 && this.pelvisDrop<.0001)return;
       const goal=p.clone().lerp(supportPosition(),state.weight);goal.y=p.y+state.clearance;
@@ -127,7 +132,9 @@ export class FootContact {
         if(this.contacts[index]!.weight<.001)continue;
         const hip=upper.getWorldPosition(new THREE.Vector3());
         const horizontal=Math.hypot(hip.x-goal.x,hip.z-goal.z);
-        const vertical=Math.sqrt(Math.max(0,(length*.99)**2-horizontal**2));
+        // A 1% reach reserve forces even a straight support leg into ~16 degrees
+        // of flexion. Keep a small non-locking reserve without adding a squat.
+        const vertical=Math.sqrt(Math.max(0,(length*.998)**2-horizontal**2));
         desired=Math.max(desired,Math.min(length*.08,Math.max(0,hip.y-goal.y-vertical)));
       }
       // Reach support responds promptly; standing back up should not pop the torso.
