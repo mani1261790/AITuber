@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
 import { ResourceBudgetStore } from "@aituber/storage";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("LlmSettingsStore", () => {
   it("returns only connection status and keeps a submitted key when later left blank", () => {
@@ -45,4 +45,20 @@ describe("LlmSettingsStore", () => {
     await expect(store.createProvider("runtime").createContext({ purpose: "review", systemInstruction: "Review." }).generate({ prompt: "value", schemaName: "value", schema: { type: "object" }, maxOutputTokens: 10 })).rejects.toThrow(/単価/);
     expect(fetch).not.toHaveBeenCalled(); budget.close();
   });
+});
+
+it("allows authoring responses beyond five minutes while retaining a bounded local runtime deadline", async () => {
+ vi.useFakeTimers();
+ vi.stubGlobal("fetch", (_url: unknown, init: RequestInit) => new Promise<Response>((resolve, reject) => {
+  const timer = setTimeout(() => resolve(new Response(JSON.stringify({ choices: [{message:{content:'{"ok":true}'}}] }))), 311_000);
+  init.signal!.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal!.reason); }, {once:true});
+ }));
+ const store = new LlmSettingsStore(join(mkdtempSync(join(tmpdir(), "aituber-timeout-")), "settings.json"), {AITUBER_LLM_MODEL:"local",AITUBER_LLM_BASE_URL:"http://localhost:11434/v1"});
+ const request = {prompt:"test",schemaName:"result",schema:{type:"object"}};
+ const long = store.createProvider("authoring").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
+ const short = store.createProvider("runtime").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
+ const failure = expect(short).rejects.toThrow("timed out after 90000ms");
+ await vi.advanceTimersByTimeAsync(311_000);
+ await failure;
+ expect((await long).value).toEqual({ok:true});
 });

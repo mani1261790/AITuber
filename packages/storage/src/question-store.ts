@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
 export interface StoredQuestionThread {
+  readonly triage?: undefined | "pending" | "immediate" | "later" | "comment" | "ignore";
   readonly id: string;
   readonly sessionId: string;
   readonly coursePackageId: string;
@@ -24,6 +25,7 @@ export interface StoredQuestionThread {
 }
 
 interface QuestionRow {
+  triage: StoredQuestionThread["triage"];
   id: string; session_id: string; course_package_id: string; course_package_version: number; scene_id: string; semantic_target_id: string;
   last_completed_unit_id: string | null; text: string; normalized_intent: string; submitted_at: string; updated_at: string;
   status: StoredQuestionThread["status"]; resolution: StoredQuestionThread["resolution"]; disposition: StoredQuestionThread["disposition"]; reason: string; priority_score: number;
@@ -45,6 +47,8 @@ export class QuestionStore {
     })();
     return this.get(id);
   }
+
+  setTriage(id: string, triage: NonNullable<StoredQuestionThread["triage"]>) { this.#database.prepare("UPDATE question_threads SET triage = ? WHERE id = ?").run(triage, id); }
 
   support(questionId: string, participantId: string, text: string, submittedAt: string): StoredQuestionThread {
     this.#database.transaction(() => { this.#insertSubmission(questionId, participantId, text, submittedAt); this.#database.prepare("UPDATE question_threads SET updated_at = ? WHERE id = ?").run(submittedAt, questionId); })();
@@ -95,11 +99,12 @@ export class QuestionStore {
     );
     CREATE INDEX IF NOT EXISTS question_submissions_question ON question_submissions(question_id, participant_id);
   `); const columns = this.#database.prepare("PRAGMA table_info(question_threads)").all() as { name: string }[];
+    if (!columns.some((column) => column.name === "triage")) this.#database.exec("ALTER TABLE question_threads ADD COLUMN triage TEXT");
     if (!columns.some((column) => column.name === "resolution")) this.#database.exec("ALTER TABLE question_threads ADD COLUMN resolution TEXT NOT NULL DEFAULT 'pending' CHECK(resolution IN ('pending','answered','deferred'))");
     if (!columns.some((column) => column.name === "origin")) this.#database.exec("ALTER TABLE question_threads ADD COLUMN origin TEXT NOT NULL DEFAULT 'learner-question' CHECK(origin IN ('learner-question','pedagogy-trigger'))"); }
 }
 
 function mapQuestion(row: QuestionRow): StoredQuestionThread {
   const participantIds = row.participant_ids ? row.participant_ids.split(",") : [];
-  return { id: row.id, sessionId: row.session_id, coursePackageId: row.course_package_id, coursePackageVersion: row.course_package_version, sceneId: row.scene_id, semanticTargetId: row.semantic_target_id, lastCompletedUnitId: row.last_completed_unit_id, text: row.text, normalizedIntent: row.normalized_intent, submittedAt: row.submitted_at, updatedAt: row.updated_at, supporterCount: row.supporter_count, participantIds, status: row.status, resolution: row.resolution, disposition: row.disposition, reason: row.reason, priority: { score: row.priority_score, currentGoalRelated: Boolean(row.current_goal_related), prerequisiteForNext: Boolean(row.prerequisite_for_next), supporterCount: row.supporter_count, waitedMs: row.waited_ms, remainingMs: row.remaining_ms }, origin: row.origin };
+  return { triage: row.triage ?? undefined, id: row.id, sessionId: row.session_id, coursePackageId: row.course_package_id, coursePackageVersion: row.course_package_version, sceneId: row.scene_id, semanticTargetId: row.semantic_target_id, lastCompletedUnitId: row.last_completed_unit_id, text: row.text, normalizedIntent: row.normalized_intent, submittedAt: row.submitted_at, updatedAt: row.updated_at, supporterCount: row.supporter_count, participantIds, status: row.status, resolution: row.resolution, disposition: row.disposition, reason: row.reason, priority: { score: row.priority_score, currentGoalRelated: Boolean(row.current_goal_related), prerequisiteForNext: Boolean(row.prerequisite_for_next), supporterCount: row.supporter_count, waitedMs: row.waited_ms, remainingMs: row.remaining_ms }, origin: row.origin };
 }

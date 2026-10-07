@@ -122,7 +122,22 @@ describe("server boundary", () => {
     const audio = await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { headers: { "x-aituber-surface": "classroom" } });
     expect(audio.headers.get("content-type")).toBe("audio/wav");
     expect(audio.headers.get("cache-control")).toBe("no-store");
-    expect((await audio.arrayBuffer()).byteLength).toBeGreaterThan(44);
+    const fullAudio = new Uint8Array(await audio.arrayBuffer());
+    expect(fullAudio.byteLength).toBeGreaterThan(44);
+    expect(audio.headers.get("content-length")).toBe(String(fullAudio.byteLength));
+    expect(audio.headers.get("accept-ranges")).toBe("bytes");
+    for (const [range, start, end] of [["bytes=4-15",4,15],["bytes=44-",44,fullAudio.length-1],["bytes=-12",fullAudio.length-12,fullAudio.length-1]] as const) {
+      const part = await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { headers: { ...operatorHeaders, range } });
+      expect(part.status).toBe(206);
+      expect(part.headers.get("content-range")).toBe(`bytes ${start}-${end}/${fullAudio.length}`);
+      expect(new Uint8Array(await part.arrayBuffer())).toEqual(fullAudio.subarray(start,end+1));
+    }
+    const invalid = await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { headers: { ...operatorHeaders, range: `bytes=${fullAudio.length}-` } });
+    expect(invalid.status).toBe(416);
+    expect(invalid.headers.get("content-range")).toBe(`bytes */${fullAudio.length}`);
+    const head = await fetch(`${origin}${liveResult.session.speech.audioUrl}`, { method: "HEAD", headers: operatorHeaders });
+    expect(head.headers.get("content-length")).toBe(String(fullAudio.length));
+    expect((await head.arrayBuffer()).byteLength).toBe(0);
 
     const paused = await fetch(`${origin}/api/sessions/${startedResult.session.id}/commands`, {
       method: "POST", headers: { "content-type": "application/json", ...operatorHeaders }, body: JSON.stringify({ command: "pause" }),

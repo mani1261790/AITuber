@@ -1,0 +1,116 @@
+import {expect,it} from "vitest";
+import {StageLocomotion,stageStandingPose} from "./stage-locomotion.ts";
+it("uses two foot-placement cycles for a half turn without translating or jumping in yaw",()=>{
+ for(const fps of [30,60,120]) for(const sign of [-1,1]){
+  const motion=new StageLocomotion(0,-sign*Math.PI/2);
+  let cycles=0,previousProgress=0;
+  for(let i=0;i<fps*5;i++){
+   const yaw=motion.yaw;
+   motion.update(1/fps,sign*3,0,2,2);
+   if(motion.turnProgress<previousProgress)cycles++;
+   previousProgress=motion.turnProgress;
+   expect(Math.abs(motion.yaw-yaw)).toBeLessThan(.06);
+   expect(motion.x).toBe(0);
+   if(motion.phase==="walk")break;
+  }
+  expect(cycles).toBe(1);
+  expect(motion.phase).toBe("walk");
+  expect(Math.sin(motion.yaw)).toBeCloseTo(sign);
+ }
+});
+it("pivots before translating and faces the audience only after arriving",()=>{
+ const motion=new StageLocomotion(2.35,0);let sawWalk=false,sawArrivalTurn=false;
+ for(let i=0;i<1200;i++){
+  const oldX=motion.x,oldPhase=motion.phase;
+  motion.update(1/60,-.65,0,1.4,1.2);
+  if(oldPhase==="turn")expect(motion.x).toBe(oldX);
+  expect(Math.abs(motion.x-oldX)).toBeLessThanOrEqual(1.4/60+1e-9);
+  if(motion.phase==="walk")sawWalk=true;
+  if(sawWalk&&motion.phase==="turn")sawArrivalTurn=true;
+ }
+ expect(sawWalk).toBe(true);expect(sawArrivalTurn).toBe(true);
+ expect(motion.x).toBe(-.65);expect(motion.yaw).toBeCloseTo(0);expect(motion.phase).toBe("idle");
+});
+it("can redirect an interrupted journey without teleporting",()=>{
+ const motion=new StageLocomotion(2.35,0);
+ for(let i=0;i<160;i++)motion.update(1/60,-4.2,.26,1,1);
+ const before=motion.x,speed=motion.speed;
+ motion.update(1/60,2.35,-.26,1,1);
+ expect(motion.phase).toBe("brake");
+ expect(motion.x).toBeLessThan(before);
+ expect(speed-motion.speed).toBeCloseTo(1.3/60);
+ for(let i=0;i<900;i++)motion.update(1/60,2.35,-.26,1,1);
+ expect(motion.x).toBe(2.35);expect(motion.yaw).toBeCloseTo(-.26);expect(motion.phase).toBe("idle");
+});
+it("keeps momentum for an extension and brakes before an interrupted pivot at different frame rates",()=>{
+ for(const fps of [30,60,120]){
+  const motion=new StageLocomotion(2.35,0),dt=1/fps;
+  while(motion.speed<.8)motion.update(dt,-.65,0,1,1);
+  const speed=motion.speed;
+  motion.update(dt,-4.2,.26,1,1);
+  expect(motion.phase).toBe("walk");expect(motion.speed).toBeGreaterThanOrEqual(speed);
+  const yaw=motion.yaw;
+  let sawBrake=false;
+  for(let i=0;i<fps;i++){
+   const phase=motion.phase,before=motion.speed;
+   motion.update(dt,2.35,-.26,1,1);
+   if(motion.phase==="brake"){
+    sawBrake=true;expect(motion.yaw).toBe(yaw);
+    expect(before-motion.speed).toBeLessThanOrEqual(1.3*dt+1e-9);
+   }
+   if(phase==="brake"&&motion.phase==="turn"){
+    expect(before).toBeLessThanOrEqual(1.3*dt+1e-9);break;
+   }
+  }
+  expect(sawBrake).toBe(true);expect(motion.phase).toBe("turn");
+ }
+});
+it("does not snap the last centimetre or jump after a delayed frame",()=>{
+ const motion=new StageLocomotion(2.35,0);
+ for(let i=0;i<1600;i++){
+  const before=motion.x;
+  const dt=i===400?3:1/120;
+  motion.update(dt,-4.2,.26,1,1);
+  expect(Math.abs(motion.x-before)).toBeLessThanOrEqual(1.4*Math.min(dt,1/30)+1e-10);
+ }
+ expect(motion.x).toBe(-4.2);
+ expect(motion.phase).toBe("idle");
+});
+it("brakes almost to rest before starting the arrival pivot",()=>{
+ for(const fps of [30,60,120]) for(const goal of [2.05,-.65,-4.2]){
+  const motion=new StageLocomotion(2.35,0);let arrivalSpeed:number|undefined;
+  for(let i=0;i<3600;i++){
+   const phase=motion.phase,speed=motion.speed;
+   motion.update(1/fps,goal,0,1,1);
+   if(phase==="walk"&&motion.phase!=="walk"){arrivalSpeed=speed;break;}
+  }
+  expect(arrivalSpeed).toBeDefined();
+  expect(arrivalSpeed!).toBeLessThan(.1);
+ }
+});
+
+it("starts a joined central explanation already facing the audience without an entrance walk",()=>{
+ const pose=stageStandingPose("center"),motion=new StageLocomotion(pose.x,pose.yaw);
+ for(let i=0;i<120;i++){
+  motion.update(1/60,stageStandingPose("center").x,0,1.5,1.5);
+  expect(motion.phase).toBe("idle");expect(motion.x).toBe(-.65);expect(motion.yaw).toBe(0);
+ }
+ // A central cue with a pointing target still uses the side reserved for clear projection.
+ expect(stageStandingPose("center",true)).toEqual(stageStandingPose("right"));
+});
+
+
+it("uses the matching authored rotation clock without translating during a pivot", () => {
+ for(const sign of [-1,1]) {
+  const motion=new StageLocomotion(0,0);
+  const observed: number[]=[];
+  const timing=(progress:number,direction:number)=>{observed.push(direction);return progress*progress;};
+  for(let i=0;i<30;i++) {
+   motion.update(1/60,sign*3,0,1,1,timing);
+   expect(motion.phase).toBe("turn");
+   expect(motion.x).toBe(0);
+   expect(motion.yaw).toBeCloseTo(sign*Math.PI/2*motion.turnProgress**2);
+  }
+  expect(observed.every(direction=>direction===sign)).toBe(true);
+ }
+});

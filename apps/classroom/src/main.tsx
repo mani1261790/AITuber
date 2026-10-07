@@ -1,3 +1,6 @@
+import { useSpeechEnvelope } from "./use-speech-envelope.ts";
+import { startSpeechAudio } from "./speech-audio.ts";
+import { trackSpeechPlayback } from "./speech-playback.ts";
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
@@ -8,9 +11,10 @@ import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "katex/dist/katex.min.css";
-import { MascotView } from "./mascot-view.tsx";
+import { LessonStage } from "./lesson-texture.tsx";
 import { RichText } from "./rich-text.tsx";
-import { TargetView } from "./target-view.tsx";
+import { QuestionInput } from "./question-input.tsx";
+
 import "./styles.css";
 
 const statusLabels: Record<FixedSessionView["status"], string> = {
@@ -27,21 +31,25 @@ function ClassroomApp() {
   const [audioFloorMs, setAudioFloorMs] = useState(0);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [captions, setCaptions] = useState(false);
-  const [projecting, setProjecting] = useState(false);
+  const [projecting, setProjecting] = useState(true);
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
   const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
   const [questionText, setQuestionText] = useState("");
   const [questioning, setQuestioning] = useState(false);
-  const [evidenceSubmitting, setEvidenceSubmitting] = useState(false);
+  const [, setEvidenceSubmitting] = useState(false);
   const [surveyAnswers, setSurveyAnswers] = useState({ questionHelpfulness: 0, rejoinNaturalness: 0, comment: "" });
   const [surveySubmitting, setSurveySubmitting] = useState(false);
   const [surveySubmitted, setSurveySubmitted] = useState(false);
+  const surveyDialog = useRef<HTMLDialogElement>(null);
   const [speechElapsedMs, setSpeechElapsedMs] = useState(0);
   const [audioPlaybackActive, setAudioPlaybackActive] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [reactionActive, setReactionActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const retrySpeechRef = useRef<(() => void) | null>(null);
+  const readSpeechLevel = useSpeechEnvelope(audioRef,session?.speech.audioUrl);
   const previousStatusRef = useRef<FixedSessionView["status"] | null>(null);
   const latestSeqRef = useRef(0);
 
@@ -99,6 +107,12 @@ function ClassroomApp() {
   }, [session?.speech.playing, session?.speech.audioUrl]);
 
   useEffect(() => {
+    // The replacement audio element has not started yet, even when the server
+    // still marks the next utterance as playing. Wait for its own playing event.
+    setAudioPlaybackActive(false);
+  }, [session?.speech.audioUrl]);
+
+  useEffect(() => {
     const nextStatus = session?.status ?? null;
     const previousStatus = previousStatusRef.current;
     previousStatusRef.current = nextStatus;
@@ -112,16 +126,23 @@ function ClassroomApp() {
     const audio = audioRef.current;
     const startedAt = session?.speech.startedAt;
     if (!audio || !startedAt || !session.speech.audioUrl) return;
-    const synchronize = () => {
-      audio.volume = 0.8;
-      const targetMs = Math.max(audioFloorMs, Math.max(0, Date.now() - Date.parse(startedAt)));
-      audio.currentTime = Math.min(audio.duration || Number.POSITIVE_INFINITY, targetMs / 1_000);
-      void audio.play().catch(() => { /* The visible controls let the viewer start audio when autoplay is blocked. */ });
+    if (audio.getAttribute("src") !== session.speech.audioUrl) audio.setAttribute("src", session.speech.audioUrl);
+    const report = (remainingMs: number) => {
+      if (!participant || !room) return;
+      void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/playback`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, epoch: session.speech.epoch, audioUrl: session.speech.audioUrl, remainingMs }) }).catch(() => {});
     };
-    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) synchronize();
-    else audio.addEventListener("loadedmetadata", synchronize, { once: true });
-    return () => audio.removeEventListener("loadedmetadata", synchronize);
-  }, [session?.speech.audioUrl, session?.speech.startedAt, audioFloorMs]);
+    const stopReporting = trackSpeechPlayback(audio,session.speech.durationMs,audioFloorMs,report);
+    const playback=startSpeechAudio(audio,audioFloorMs,setAudioBlocked);
+    retrySpeechRef.current=playback.retry;
+    return () => {
+      retrySpeechRef.current=null;
+      playback.dispose();
+      stopReporting();
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    };
+  }, [session?.speech.audioUrl, session?.speech.startedAt, participant?.accessToken, room?.code]);
 
   async function joinClassroom(event: FormEvent) {
     event.preventDefault();
@@ -153,6 +174,15 @@ function ClassroomApp() {
     return resolveStageScene(session.course, sceneId, board);
   }, [session, displayUnit, supplementCandidate, selectedTargetId, activeSpeechSegment]);
   const evidenceTargetId = selectedTargetId ?? displayUnit?.focusTargetIds[0] ?? null;
+  const slideScene = useMemo(() => {
+    if (!session || !displayUnit) return null;
+    return resolveStageScene(session.course, displayUnit.sceneId, applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches));
+  }, [session?.course, displayUnit]);
+  const noteTargetIds = new Set([
+    ...(supplementCandidate?.boardPatches.map(patch => patch.targetId) ?? []),
+    ...(session?.boardCorrections.filter(patch => patch.sceneId === scene?.id).map(patch => patch.targetId) ?? []),
+  ]);
+  const boardNotes = scene?.targets.filter(target => noteTargetIds.has(target.id)) ?? [];
   const focusedTarget = scene?.targets.find((target) => target.visible && target.id === (selectedTargetId ?? scene.focusedTargetId)) ?? null;
   const mascotPresentation = resolveMascotPresentation({
     audiblePlayback: audioPlaybackActive && session?.speech.mode !== "caption-fallback",
@@ -165,8 +195,8 @@ function ClassroomApp() {
 
   useEffect(() => { setSelectedTargetId(null); }, [scene?.id, displayUnit?.id]);
   useEffect(() => {
-    setProjecting(Boolean(scene?.targets.some((target) => target.visible && (target.kind === "image" || target.kind === "diagram"))));
-  }, [scene?.id, displayUnit?.id, supplementCandidate?.sceneId]);
+    setProjecting(session?.direction?.surface ? session.direction.surface === "slides" : !supplementCandidate);
+  }, [displayUnit?.id, Boolean(supplementCandidate), session?.direction?.surface]);
 
   async function submitAnswer(event: FormEvent) {
     event.preventDefault();
@@ -182,10 +212,10 @@ function ClassroomApp() {
 
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
-    if (!session || !participant || !room || !scene || !(selectedTargetId ?? focusedTarget?.id) || !questionText.trim()) return;
+    if (!session || !participant || !room || !scene || !questionText.trim()) return;
     setQuestioning(true); setError(null);
     try {
-      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, semanticTargetId: selectedTargetId ?? focusedTarget?.id }) });
+      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, ...(selectedTargetId ? { semanticTargetId: selectedTargetId } : {}) }) });
       setQuestions(result.questions); setSession(result.snapshot.session); setQuestionText("");
     } catch (reason) { setError(errorMessage(reason)); } finally { setQuestioning(false); }
   }
@@ -233,22 +263,13 @@ function ClassroomApp() {
           {session.status !== "FINISHED" && session.liveSupplement?.status === "deferred" && <p className="notice" role="status">この質問は授業後の回答へ保留しました。未完了の本編を続けます。</p>}
           {session.lastAssessmentEvaluation?.outcome === "incorrect" && session.liveSupplement && !new Set(["completed", "deferred"]).has(session.liveSupplement.status) && <p className="notice notice--learning" role="status">確認問題の回答から、もう一度確かめる箇所が見つかりました。短い補足のあと同じ問いで確認します。</p>}
           {session.speech.playing && <div className="playback" role="status"><span className="playback-dot" aria-hidden="true" />{session.speech.mode === "fish-audio" ? (session.speech.provider === "fish-audio" ? "Fish Audioで読み上げ中" : "音声同期をテスト中") : session.speech.mode === "caption-fallback" ? "音声を使わず字幕で進行中" : session.speech.mode === "preparing" ? "音声を準備中" : "固定テスト音声を再生中"}</div>}
-          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={`${session.speech.epoch}:${session.speech.unitId}`} src={session.speech.audioUrl} autoPlay controls preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
+          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} hidden preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onWaiting={() => setAudioPlaybackActive(false)} onSeeking={() => setAudioPlaybackActive(false)} onEmptied={() => setAudioPlaybackActive(false)} onError={() => setAudioPlaybackActive(false)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <MascotView presentation={mascotPresentation} />
-            <div className="blackboard" aria-hidden="true"><span>AITuber Classroom</span></div>
-            <div className={`projection ${projecting ? "projection--open" : ""}`} aria-hidden={!projecting} inert={!projecting}>
-            <div key={`${scene.id}:${displayUnit?.id}`} className="slide-content">
-            <div className="scene-heading"><div><span>{supplementCandidate ? "LIVE SUPPLEMENT" : "NOW EXPLAINING"}</span><h2 id="scene-title">{scene.title}</h2></div><p>{supplementCandidate ? "質問に関連する箇所を補足しています" : "選ぶと、この箇所について質問できます"}</p></div>
-            <div className={`scene-grid scene-grid--${scene.templateId}`}>
-              {scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={selectTarget} />)}
-            </div>
-            </div></div>
-            {!projecting && <div className="board-content"><h2>{scene.title}</h2><div className="scene-grid">{scene.targets.filter((target) => target.visible).map((target) => <TargetView key={target.id} target={target} onSelect={selectTarget} />)}</div></div>}
-            <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button></div>
-            {captions && displayUnit && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{supplementCandidate?.captionText ?? displayUnit.captionText ?? session.speech.text ?? displayUnit.speechText}</p></section>}
+            <LessonStage listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} direction={session.direction} onStageProgress={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
+            <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button>{audioBlocked && session.speech.audioUrl && <button onClick={() => retrySpeechRef.current?.()}>音声を再生</button>}</div>
+            {captions && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText}</p></section>}
           </section>}
 
           {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
@@ -261,28 +282,23 @@ function ClassroomApp() {
             </form>
           </section>}
 
-          {session.status === "FINISHED" && <section className="finish-result" aria-labelledby="result-title">
-            <p className="section-kicker">SESSION COMPLETE</p><h2 id="result-title">講義結果</h2>
-            <p>{session.unfinishedUnitIds.length === 0 ? "予定していた説明をすべて完了しました。" : "途中で終了しました。未完了の説明は次回へ残ります。"}</p>
-            <dl><div><dt>説明完了</dt><dd>{session.completedUnitIds.length} 件</dd></div><div><dt>未完了</dt><dd>{session.unfinishedUnitIds.length} 件</dd></div></dl>
-            <h3>学習の確認状況</h3><ul className="evidence-summary">{session.learningEvidence.map((item) => <li key={item.scopeId}><span>{item.label}</span><strong>{evidenceLabels[item.state]}</strong></li>)}</ul>
-            <h3>質問と訂正</h3><div className="result-counts"><span>回答済み <strong>{questions.filter((item) => item.resolution === "answered").length}</strong></span><span>保留・未回答 <strong>{questions.filter((item) => item.resolution !== "answered").length}</strong></span><span>訂正 <strong>{session.boardCorrections.length}</strong></span></div>
-            {session.afterClassAnswers.length > 0 && <div className="after-class-answers" aria-live="polite">{session.afterClassAnswers.map((item) => <article key={item.id}><strong>{item.status === "preparing" ? "回答を自動生成・審査中" : item.status === "available" ? "授業後の回答" : "未回答"}</strong><h4>{item.questionText}</h4>{item.answerText && <p>{item.answerText}</p>}{item.status === "unanswered" && <p>{item.failure}</p>}</article>)}</div>}
-            {session.boardCorrections.length > 0 && <ul className="correction-summary">{session.boardCorrections.map((item) => <li key={`${item.sceneId}:${item.targetId}`}>{item.targetId}: {item.content}</li>)}</ul>}
+          {session.status === "FINISHED" && <section className="lesson-ended"><p>授業が終了しました。引き続きコメント・質問を受け付けています。</p><button onClick={() => surveyDialog.current?.showModal()}>退出する</button></section>}
+          <dialog ref={surveyDialog} className="exit-survey" aria-label="退出前の任意アンケート"><div className="exit-survey-content">
             <h3>任意アンケート</h3>{surveySubmitted ? <p className="survey-complete" role="status">回答を保存しました。学習の証拠とは別に扱われます。</p> : <form className="after-class-survey" onSubmit={(event) => void submitSurvey(event)}><RatingField legend="質問した箇所を理解しやすくなりましたか" value={surveyAnswers.questionHelpfulness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, questionHelpfulness: value }))} /><RatingField legend="補足後、本編へ自然に戻れましたか" value={surveyAnswers.rejoinNaturalness} onChange={(value) => setSurveyAnswers((current) => ({ ...current, rejoinNaturalness: value }))} /><label>自由記述<textarea maxLength={2000} value={surveyAnswers.comment} onChange={(event) => setSurveyAnswers((current) => ({ ...current, comment: event.target.value }))} /></label><button disabled={surveySubmitting || !surveyAnswers.questionHelpfulness || !surveyAnswers.rejoinNaturalness}>{surveySubmitting ? "保存中…" : "任意アンケートを送る"}</button></form>}
-          </section>}
+            <div className="exit-actions"><button onClick={() => surveyDialog.current?.close()}>教室に戻る</button><button onClick={() => { window.sessionStorage.removeItem("aituber.classroom.participant"); window.location.assign("/"); }}>{surveySubmitted ? "退出する" : "回答せずに退出する"}</button></div>
+          </div></dialog>
         </div>
         <aside className="lecture-rail">
           {scene && <section className="chat-panel" aria-label="コメントと質問">
             <h2>コメント <small>{room?.participantCount ?? 0}人</small></h2>
             <div className="chat-messages" role="log" aria-label="質問の受付状況">
               {questions.length === 0 && <p className="chat-empty">気になる箇所をクリックして質問できます。</p>}
-              {questions.map((question) => <article className="chat-message" key={question.id}><strong>{question.origin === "learner-question" ? "質問" : "先生"} <small>{question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.text} /></article>)}
+              {[...questions].sort((a,b)=>a.submittedAt.localeCompare(b.submittedAt)).map((question) => <article className="chat-message" key={question.id}><strong>{question.origin !== "learner-question" ? "先生" : question.triage === "comment" || question.triage === "ignore" || question.triage === "pending" ? "コメント" : "質問"} <small>{question.triage === "ignore" ? "" : question.triage === "pending" ? "受付済み" : question.triage === "comment" ? "授業後にお返事" : question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.text} /></article>)}
+              {session.afterClassAnswers.map(item => <article className="chat-message" key={item.id}><strong>先生 <small>{item.status === "preparing" ? "回答を準備中" : item.status === "unanswered" ? "回答できませんでした" : "授業後の回答"}</small></strong><blockquote>{item.questionText}</blockquote>{item.answerText && <RichText text={item.answerText} />}{item.failure && <p>{item.failure}</p>}</article>)}
             </div>
-            {session.status !== "FINISHED" && <form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
-              <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? focusedTarget?.id ?? ""} onChange={(event) => selectTarget(event.target.value)}>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
-              <div className="chat-input"><input aria-label="質問" placeholder="質問を入力…" maxLength={1000} value={questionText} onChange={(event) => setQuestionText(event.target.value)} /><button aria-label="質問を送る" disabled={questioning || !(selectedTargetId ?? focusedTarget?.id) || !questionText.trim()}><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg></button></div>
-              <div className="quick-feedback"><button type="button" disabled={evidenceSubmitting} onClick={() => void submitEvidence("self-report", "understood")}>わかった</button><button type="button" disabled={evidenceSubmitting} onClick={() => void submitEvidence("self-report", "recheck")}>もう一度</button></div>
+            {<form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
+              <label className="chat-target">質問先<select aria-label="質問する箇所" value={selectedTargetId ?? ""} onChange={(event) => event.target.value ? selectTarget(event.target.value) : setSelectedTargetId(null)}><option value="">指定なし</option>{scene.targets.filter((target) => target.visible).map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label>
+              <QuestionInput value={questionText} onChange={setQuestionText} sending={questioning} />
             </form>}
           </section>}
         </aside>
@@ -291,7 +307,6 @@ function ClassroomApp() {
   );
 }
 
-const evidenceLabels: Record<FixedSessionView["learningEvidence"][number]["state"], string> = { unconfirmed: "未確認", "support-requested": "支援希望", "struggle-evidence": "つまずきあり", "confirmed-for-item": "この問いで確認", conflicting: "追加確認が必要" };
 
 function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
   return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div><p className="section-kicker">CLASSROOM</p><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;
@@ -309,4 +324,6 @@ function readSavedParticipant(): { code: string; participant: ClassroomParticipa
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Classroom root element was not found");
-createRoot(root).render(<StrictMode><ClassroomApp /></StrictMode>);
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("motion-lab")) {
+  void import("./motion-lab.tsx").then(({mountMotionLab})=>mountMotionLab(root));
+} else createRoot(root).render(<StrictMode><ClassroomApp /></StrictMode>);

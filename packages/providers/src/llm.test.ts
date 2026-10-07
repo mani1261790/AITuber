@@ -54,6 +54,15 @@ describe("OpenAiCompatibleLlmProvider", () => {
     expect(body.reasoning_effort).toBe("none");
   });
 
+  it("avoids Ollama grammar expansion while enforcing the original length limit", async () => {
+    let body = "";
+    const provider = new OpenAiCompatibleLlmProvider({ model:"qwen3:8b",baseUrl:"http://localhost:11434/v1",fetch:async (_input,init)=>{
+      body=String(init?.body); return Response.json({choices:[{message:{content:JSON.stringify({text:"too long"})}}]});
+    }});
+    await expect(provider.createContext({purpose:"review",systemInstruction:"Review"}).generate({prompt:"value",schemaName:"bounded",schema:{type:"object",properties:{text:{type:"string",maxLength:3}},required:["text"],additionalProperties:false}})).rejects.toMatchObject({code:"schema_mismatch"});
+    expect(body).not.toContain("maxLength");
+  });
+
   it("retries one transient provider failure inside the same timeout boundary", async () => {
     let calls = 0;
     const provider = new OpenAiCompatibleLlmProvider({ apiKey: "key", model: "model", fetch: async () => {
@@ -119,4 +128,42 @@ describe("FixedResponseLlmProvider", () => {
       expect((error as LlmProviderError).options.schemaIssues?.length).toBeLessThanOrEqual(20);
     }
   });
+});
+
+it("assembles streamed Ollama JSON across UTF-8 chunks and retains usage", async () => {
+ const events = [
+  {model:"qwen3:8b",choices:[{delta:{content:'{"decision":"accept","reasons":["'}}]},
+  {choices:[{delta:{content:'正しいです"]}'}}]},
+ ];
+ const bytes = new TextEncoder().encode(events.map(e=>`data: ${JSON.stringify(e)}\r\n\r\n`).join("")+`data: ${JSON.stringify({choices:[],usage:{prompt_tokens:10,completion_tokens:20,total_tokens:30}})}\n\ndata: [DONE]\n\n`);
+ let body: Record<string,unknown> = {};
+ const provider = new OpenAiCompatibleLlmProvider({model:"qwen3:8b",baseUrl:"http://localhost:11434/v1",fetch:async (_url,init)=>{
+  body=JSON.parse(String(init?.body));
+  return new Response(new ReadableStream({start(controller){for(let i=0;i<bytes.length;i+=3)controller.enqueue(bytes.slice(i,i+3));controller.close();}}),{headers:{"content-type":"text/event-stream"}});
+ }});
+ const result=await provider.createContext({purpose:"generation",systemInstruction:"Generate"}).generate({prompt:"test",schemaName:"result",schema});
+ expect(body).toMatchObject({stream:true,stream_options:{include_usage:true}});
+ expect(result.value).toEqual({decision:"accept",reasons:["正しいです"]});
+ expect(result.usage.totalTokens).toBe(30);
+});
+
+it.each(["truncated","too-large"])("rejects %s streamed output", async mode => {
+ const content=JSON.stringify({decision:"accept",reasons:[]});
+ const stream=`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\n`+(mode==="too-large"?"data: [DONE]\n\n":"");
+ const provider=new OpenAiCompatibleLlmProvider({model:"local",baseUrl:"http://localhost:11434/v1",fetch:async()=>new Response(stream,{headers:{"content-type":"text/event-stream"}})});
+ await expect(provider.createContext({purpose:"generation",systemInstruction:"Generate"}).generate({prompt:"test",schemaName:"result",schema,maxOutputBytes:mode==="too-large"?10:1000})).rejects.toMatchObject({code:mode==="too-large"?"response_too_large":"invalid_response"});
+});
+
+
+describe("OpenAI Luna compatibility",()=>{
+ it.each(["gpt-5.6-luna","gpt-6-luna"])("uses bounded completion tokens and validates %s output",async model=>{
+  let body:Record<string,unknown>={};
+  const provider=new OpenAiCompatibleLlmProvider({apiKey:"test",model,fetch:async(_url,init)=>{
+   body=JSON.parse(String(init?.body));
+   return Response.json({choices:[{message:{content:JSON.stringify({decision:"invalid",reasons:[]})}}]});
+  }});
+  await expect(provider.createContext({purpose:"review",systemInstruction:"Review"}).generate({prompt:"value",schemaName:"review",schema,maxOutputTokens:512})).rejects.toMatchObject({code:"schema_mismatch"});
+  expect(body.max_completion_tokens).toBe(512);expect(body).not.toHaveProperty("max_tokens");expect(body.reasoning_effort).toBe("none");
+  expect(body.response_format).toMatchObject({type:"json_schema",json_schema:{strict:false,schema}});
+ });
 });

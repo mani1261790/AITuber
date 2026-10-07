@@ -9,6 +9,7 @@ export interface CourseSummary {
 }
 
 export interface FixedSessionView {
+  readonly direction?: LessonDirectionView | null;
   readonly id: string;
   readonly course: ReadonlyCoursePackage;
   readonly configuredDurationMinutes: number;
@@ -26,6 +27,35 @@ export interface FixedSessionView {
   readonly learningEvidence: readonly LearningEvidenceSummaryView[];
   readonly lastAssessmentEvaluation: AssessmentEvaluationView | null;
   readonly afterClassAnswers: readonly AfterClassAnswerView[];
+}
+
+export type TeachingGesture = "idle" | "listen" | "explain" | "emphasize" | "nod";
+
+export type StagePosition = "left" | "center" | "right";
+export type StageCamera = "lecture" | "material" | "board";
+export interface BlackboardDrawing { readonly id: string; readonly svg: string; readonly purpose: string }
+
+export type LessonAction =
+  | { type: "show_blackboard"; drawing: BlackboardDrawing }
+  | { type: "show_slides" }
+  | { type: "move_to"; position: StagePosition }
+  | { type: "point_at"; targetId: string }
+  | { type: "speak"; text: string; gesture?: TeachingGesture; position?: StagePosition }
+  | { type: "release_point" }
+  | { type: "pause"; durationMs: number }
+  | { type: "camera"; view: StageCamera };
+export interface LessonDirectionView {
+  readonly gesture?: TeachingGesture;
+  readonly traveling?: boolean;
+  readonly drawing?: BlackboardDrawing | null;
+  readonly surface?: "board" | "slides";
+  readonly actionId: string;
+  readonly phase: "planning" | "drawing" | "moving" | "pointing" | "speaking" | "resting" | "complete";
+  readonly position: StagePosition;
+  readonly targetId: string | null;
+  readonly camera: StageCamera;
+  readonly source: "generated" | "reference";
+  readonly reason: string | null;
 }
 
 export type LearningEvidenceState = "unconfirmed" | "support-requested" | "struggle-evidence" | "confirmed-for-item" | "conflicting";
@@ -74,6 +104,7 @@ export interface SupplementOriginView {
 }
 
 export interface LiveSupplementCandidateView {
+  readonly drawing?: BlackboardDrawing;
   readonly speechText: string;
   readonly captionText: string;
   readonly sceneId: string;
@@ -182,6 +213,7 @@ export interface QuestionPrioritySignals {
   readonly remainingMs: number;
 }
 export interface ClassroomQuestionView {
+  readonly triage?: undefined | "pending" | "immediate" | "later" | "comment" | "ignore";
   readonly id: string;
   readonly text: string;
   readonly coursePackageId: string;
@@ -203,7 +235,7 @@ export interface SubmitQuestionRequest {
   readonly accessToken: string;
   readonly text: string;
   readonly sceneId: string;
-  readonly semanticTargetId: string;
+  readonly semanticTargetId?: string;
 }
 export interface SubmitQuestionResponse {
   readonly question: ClassroomQuestionView;

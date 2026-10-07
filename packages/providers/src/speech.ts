@@ -79,7 +79,7 @@ export class CachedSpeechProvider implements TextToSpeechProvider {
         readFile(join(this.#directory, `${key}.audio`)),
       ]);
       const parsed = JSON.parse(metadata) as Omit<SpeechArtifact, "audio"> & { synthesisMs?: number };
-      return { ...parsed, synthesisMs: parsed.synthesisMs ?? parsed.firstAudioMs, audio };
+      return { ...parsed, durationMs: Math.max(parsed.durationMs, opusDurationMs(audio) ?? 0), synthesisMs: parsed.synthesisMs ?? parsed.firstAudioMs, audio };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -93,6 +93,29 @@ interface FishSseEvent {
   chunk_seq: number;
   chunk_audio_offset_sec: number;
   alignment: { audio_duration: number; segments: { text: string; start: number; end: number }[] } | null;
+}
+
+// RFC 7845 section 4.3: Opus granule positions count 48 kHz samples.
+export function opusDurationMs(audio: Uint8Array): number | null {
+  const bytes = Buffer.from(audio);
+  const streams = new Map<number, { skip: number; end: bigint }>();
+  for (let offset = 0; offset + 27 <= bytes.length;) {
+    if (bytes.toString("ascii", offset, offset + 4) !== "OggS") return null;
+    const count = bytes[offset + 26]!;
+    const body = offset + 27 + count;
+    if (body > bytes.length) return null;
+    let length = 0;
+    for (let i = offset + 27; i < body; i++) length += bytes[i]!;
+    if (body + length > bytes.length) return null;
+    const serial = bytes.readUInt32LE(offset + 14);
+    if (length >= 19 && bytes.toString("ascii", body, body + 8) === "OpusHead") streams.set(serial, { skip: bytes.readUInt16LE(body + 10), end: 0n });
+    const stream = streams.get(serial);
+    const granule = bytes.readBigInt64LE(offset + 6);
+    if (stream && granule >= 0n && granule > stream.end) stream.end = granule;
+    offset = body + length;
+  }
+  if (!streams.size) return null;
+  return Math.ceil([...streams.values()].reduce((total, stream) => total + Math.max(0, Number(stream.end) - stream.skip) / 48, 0));
 }
 
 export class FishAudioTtsProvider implements TextToSpeechProvider {
@@ -149,9 +172,10 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
       })),
     );
     const alignmentDuration = [...alignments.values()].reduce((total, event) => Math.max(total, event.chunk_audio_offset_sec + (event.alignment?.audio_duration ?? 0)), 0);
-    const durationMs = segments.at(-1)?.endMs ?? Math.max(250, Math.round(alignmentDuration * 1_000));
+    const audio = concatBytes(audioChunks);
+    const durationMs = Math.max(250, ...segments.map(segment => segment.endMs), Math.round(alignmentDuration * 1_000), opusDurationMs(audio) ?? 0);
     const synthesisMs = Math.max(firstAudioMs, performance.now() - requestedAt);
-    return { cacheKey, provider: this.provider, model: this.model, voiceId: request.voiceId, mimeType: "audio/ogg; codecs=opus", audio: concatBytes(audioChunks), segments, durationMs, firstAudioMs, synthesisMs };
+    return { cacheKey, provider: this.provider, model: this.model, voiceId: request.voiceId, mimeType: "audio/ogg; codecs=opus", audio, segments, durationMs, firstAudioMs, synthesisMs };
   }
 }
 

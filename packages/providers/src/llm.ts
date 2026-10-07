@@ -84,25 +84,31 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
     const startedAt = performance.now();
     const { signal, dispose } = withTimeout(request.signal, this.#options.timeoutMs);
     try {
+      signal.throwIfAborted();
       const response = await fetchWithRetry(this.#options.fetch ?? globalThis.fetch, `${this.#options.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", ...(this.#options.apiKey ? { authorization: `Bearer ${this.#options.apiKey}` } : {}) },
         body: JSON.stringify({
           model: this.#options.model,
           messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.images?.length ? [{ type: "text", text: request.prompt }, ...request.images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.dataBase64}` } }))] : request.prompt }],
-          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
-          ...(isOllamaBaseUrl(this.#options.baseUrl) ? { reasoning_effort: "none" } : {}),
+          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: !isOpenAiLuna(this.#options.baseUrl, this.#options.model), schema: isOllamaBaseUrl(this.#options.baseUrl) ? ollamaGrammarSchema(request.schema) : request.schema } },
+          ...((isOllamaBaseUrl(this.#options.baseUrl) || isOpenAiLuna(this.#options.baseUrl, this.#options.model)) ? { reasoning_effort: "none" } : {}),
           temperature: request.temperature ?? 0,
-          max_tokens: request.maxOutputTokens ?? 4_096,
-          stream: false,
+          ...(isOpenAiLuna(this.#options.baseUrl, this.#options.model) ? { max_completion_tokens: request.maxOutputTokens ?? 4_096 } : { max_tokens: request.maxOutputTokens ?? 4_096 }),
+          ...(isOllamaBaseUrl(this.#options.baseUrl) ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
         }),
         signal,
       }, signal);
       if (!response.ok) throw new LlmProviderError("provider_error", `LLM provider returned HTTP ${response.status}`, { retryable: response.status === 429 || response.status >= 500 });
-      const bytes = new Uint8Array(await response.arrayBuffer());
       const maxBytes = request.maxOutputBytes ?? this.#options.maxOutputBytes;
-      if (bytes.byteLength > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
-      const envelope = parseEnvelope(new TextDecoder().decode(bytes));
+      let envelope: Envelope;
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
+        envelope = await readChatStream(response, maxBytes);
+      } else {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
+        envelope = parseEnvelope(new TextDecoder().decode(bytes));
+      }
       const value = parseAndValidate<T>(envelope.content, request.schema, request.validate);
       return { value, model: envelope.model || this.#options.model, provider: "openai-compatible", usage: usage(envelope.usage, this.#options), latencyMs: performance.now() - startedAt };
     } catch (error) {
@@ -144,6 +150,52 @@ export class LlmProviderError extends Error {
 }
 
 interface Envelope { content: string; model: string; usage: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } }
+async function readChatStream(response: Response, maxBytes: number): Promise<Envelope> {
+  if (!response.body) throw new LlmProviderError("invalid_response", "LLM stream was empty");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const result: Envelope = { content: "", model: "", usage: {} };
+  let pending = "", contentBytes = 0, wireBytes = 0, complete = false;
+  const line = (raw: string) => {
+    if (!raw.startsWith("data:")) return;
+    const data = raw.slice(5).trim();
+    if (data === "[DONE]") { complete = true; return; }
+    if (!data) return;
+    let parsed: unknown;
+    try { parsed = JSON.parse(data); } catch { throw new LlmProviderError("invalid_response", "LLM stream contained invalid JSON"); }
+    const event = asRecord(parsed);
+    if (event.error) throw new LlmProviderError("provider_error", "LLM stream returned an error");
+    const choices = Array.isArray(event.choices) ? event.choices : [];
+    const choice = asRecord(choices[0]);
+    const content = asRecord(choice.delta).content;
+    if (typeof content === "string") {
+      contentBytes += new TextEncoder().encode(content).byteLength;
+      if (contentBytes > maxBytes) throw new LlmProviderError("response_too_large", `LLM response exceeded ${maxBytes} bytes`);
+      result.content += content;
+    }
+    if (typeof event.model === "string") result.model = event.model;
+    if (event.usage) result.usage = asRecord(event.usage);
+  };
+  try {
+    while (!complete) {
+      const chunk = await reader.read();
+      if (chunk.done) { pending += decoder.decode(); break; }
+      wireBytes += chunk.value.byteLength;
+      if (wireBytes > maxBytes * 256 + 65536) throw new LlmProviderError("response_too_large", "LLM stream exceeded its transport limit");
+      pending += decoder.decode(chunk.value, { stream: true });
+      let end: number;
+      while ((end = pending.indexOf("\n")) !== -1) {
+        line(pending.slice(0,end).replace(/\r$/, "")); pending = pending.slice(end+1);
+        if (complete) break;
+      }
+      if (pending.length > Math.max(maxBytes,65536)) throw new LlmProviderError("response_too_large", "LLM stream event was too large");
+    }
+    if (!complete && pending.trim()) line(pending);
+    if (!complete) throw new LlmProviderError("invalid_response", "LLM stream ended before completion");
+    return result;
+  } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+}
+
 function parseEnvelope(text: string): Envelope {
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new LlmProviderError("invalid_response", "LLM provider returned invalid JSON"); }
@@ -193,9 +245,9 @@ function naturalNumber(value: unknown): number | null { return typeof value === 
 function optionalNonNegativeNumber(value: string | undefined, name: string): number | undefined { if (!value?.trim()) return undefined; const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new TypeError(`${name} must be a non-negative number`); return parsed; }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function withTimeout(parent: AbortSignal | undefined, timeoutMs: number) {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw new TypeError("timeoutMs must be between 1 and 300000");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) throw new TypeError("timeoutMs must be between 1 and 3600000");
   const controller = new AbortController(); const abort = () => controller.abort(parent?.reason);
-  parent?.addEventListener("abort", abort, { once: true });
+  if (parent?.aborted) abort(); else parent?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), timeoutMs);
   return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener("abort", abort); } };
 }
@@ -222,4 +274,18 @@ function retryDelay(signal: AbortSignal): Promise<void> {
     const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 50);
     signal.addEventListener("abort", abort, { once: true });
   });
+}
+
+// Large bounded string repetitions can exceed llama.cpp's grammar expansion limit,
+// especially in nested review arrays. The original schema still validates the response.
+function ollamaGrammarSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(ollamaGrammarSchema);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "maxLength").map(([key,item]) => [key,ollamaGrammarSchema(item)]));
+}
+
+// Course schemas contain genuinely optional fields. OpenAI non-strict schema mode
+// preserves that contract; AJV below still validates every returned value.
+function isOpenAiLuna(baseUrl: string, model: string): boolean {
+  return new URL(baseUrl).hostname === "api.openai.com" && /^gpt-(?:5\.6|6)-luna(?:$|-)/.test(model);
 }

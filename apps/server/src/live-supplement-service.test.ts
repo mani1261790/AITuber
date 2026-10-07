@@ -1,3 +1,7 @@
+import {mkdtempSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {BlackboardTools} from "./blackboard-tools.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { quadraticFunctionsFixture } from "@aituber/content";
 import type { LiveSupplementCandidateView } from "@aituber/contracts";
@@ -91,6 +95,31 @@ describe("LiveSupplementService", () => {
     vi.advanceTimersByTime(20_001); await supplements.drain(session.id);
     expect(supplementStore.list(session.id)[0]).toMatchObject({ status: "deferred", failure: expect.stringContaining("20秒") });
     expect(questions.list(session.id)[0]).toMatchObject({ resolution: "deferred" });
+  });
+
+  it("prepares specialist SVG, waits for drawing and walking, then rejoins", async()=>{
+    const directory=mkdtempSync(join(tmpdir(),"aituber-live-svg-"));
+    try {
+      const provider=new FixedResponseLlmProvider([{...candidate(),boardPatches:[],toolCall:{name:"draw_blackboard",arguments:{purpose:"符号",requirements:"日本語の式",mode:"replace"}}},passReview]);
+      const generate=vi.fn(async()=>'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><text x="200" y="200" fill="white" font-size="64">x − h = 0</text></svg>');
+      supplements.close();
+      supplements=new LiveSupplementService({store:supplementStore,questions,lecture,llm:()=>provider,blackboardTools:new BlackboardTools({generate},directory)});
+      const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+      vi.advanceTimersByTime(100);
+      questions.submit(questionInput(session.id,"なぜ括弧の符号を反対に読むのですか。"));
+      await supplements.drain(session.id);
+      expect(generate).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1000);
+      let current=lecture.getSession(session.id);
+      expect(current.direction?.phase).toBe("drawing");
+      lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
+      current=lecture.getSession(session.id); expect(current.direction?.phase).toBe("moving");
+      lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
+      expect(lecture.getSession(session.id).speech.text).toBe(candidate().speechText);
+      vi.advanceTimersByTime(100);
+      expect(lecture.getSession(session.id).liveSupplement?.status).toBe("completed");
+      expect(questions.list(session.id)[0]?.resolution).toBe("answered");
+    } finally {rmSync(directory,{recursive:true,force:true});}
   });
 
   function replaceSupplements(provider: LlmProvider) { supplements.close(); supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => provider }); }

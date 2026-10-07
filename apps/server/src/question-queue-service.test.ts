@@ -13,6 +13,26 @@ describe("question intent", () => {
 });
 
 describe("QuestionQueueService", () => {
+  it("keeps background classification out of the live queue and ignores acknowledgments", async () => {
+    const store = new QuestionStore(":memory:");
+    let resolve!: (kind: "immediate" | "ignore") => void;
+    const service = new QuestionQueueService({store,context:()=>({session:sessionView(),remainingMs:180_000}),classifier:()=>new Promise(done=>{resolve=done;})});
+    const first=service.submit(input("one","target.math.h-term","scene.math.form","わかった！","2026-09-14T00:00:00.000Z"));
+    expect(first.question).toMatchObject({triage:"pending",disposition:"after-class"});
+    resolve("ignore"); await Promise.resolve(); await Promise.resolve();
+    expect(service.list("session.questions")[0]).toMatchObject({triage:"ignore",disposition:"after-class"});
+    service.submit(input("two","target.math.h-term","scene.math.form","符号が逆なのはなぜ？","2026-09-14T00:00:01.000Z"));
+    resolve("immediate"); await Promise.resolve(); await Promise.resolve();
+    expect(service.list("session.questions").find(q=>q.triage==="immediate")?.disposition).toBe("answer-now");
+    store.close();
+  });
+  it("accepts a question without an explicit target in the displayed scene", () => {
+    const { service, store } = setup(180_000);
+    const result = service.submit({ sessionId: "session.questions", participantId: "learner.one", submittedAt: "2026-09-14T00:00:00.000Z", request: { accessToken: "ignored-at-domain-boundary", text: "もう一度説明して", sceneId: "scene.math.form" } });
+    expect(result.question.sceneId).toBe("scene.math.form");
+    expect(result.question.semanticTargetId).toBe(quadraticFunctionsFixture.scenes.find(scene => scene.id === "scene.math.form")?.targetIds[0]);
+    store.close();
+  });
   it("freezes context, merges the same intent, and classifies multiple questions from all priority signals", () => {
     const { service, store } = setup(180_000);
     const first = service.submit(input("learner.one", "target.math.h-term", "scene.math.form", "括弧の符号が反対なのはなぜ？", "2026-09-14T00:00:00.000Z"));
