@@ -23,7 +23,7 @@ export function applyTeacherAttention(vrm: VRM, target: THREE.Vector3, weight: n
 }
 
 /** Eye aim is relative to the already posed head, avoiding double head turns.
- * A fixed audience position prevents eye jumps when the broadcast camera cuts.
+ * The caller supplies the active camera or the explanation target.
  * The caller blends the resulting pose together with every other bone.
  */
 export function applyTeacherGaze(vrm: VRM, target: THREE.Vector3) {
@@ -44,8 +44,8 @@ export function applyTeacherGaze(vrm: VRM, target: THREE.Vector3) {
 /** Fixate ahead during locomotion instead of straining sideways towards the audience.
  * The rendered pose transition handles both departure and return to audience gaze.
  */
-export function teacherGazeTarget(vrm: VRM, moving: boolean) {
-  if (!moving) return new THREE.Vector3(-.9, 2.4, 8);
+export function teacherGazeTarget(vrm: VRM, moving: boolean, cameraPosition?: THREE.Vector3) {
+  if (!moving) return cameraPosition?.clone() ?? new THREE.Vector3(-.9, 2.4, 8);
   vrm.scene.updateMatrixWorld(true);
   const head = vrm.humanoid.getNormalizedBoneNode("head");
   const origin = (head ?? vrm.scene).getWorldPosition(new THREE.Vector3());

@@ -28,6 +28,15 @@ export function withTeacherStance(vrm: VRM, source: THREE.AnimationClip) {
     const localFeet = legs.map(leg=>vrm.scene.worldToLocal(leg.foot!.getWorldPosition(new THREE.Vector3())));
     const center = (localFeet[0]!.x+localFeet[1]!.x)/2;
     const goals = localFeet.map(point => vrm.scene.localToWorld(new THREE.Vector3(center+(point.x-center)*.7,point.y,point.z)));
+    // A small toe-in, without crossing ankles or forcing the knees together.
+    // Resolve the sign from the rest-pose forward direction for both VRM versions.
+    const footRotations = legs.map((leg,index) => {
+      const rotation=leg.foot!.getWorldQuaternion(new THREE.Quaternion());
+      const forward=new THREE.Vector3(0,0,1).applyQuaternion(rotation)
+        .applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion()).invert());
+      const angle=-Math.sign(localFeet[index]!.x-center)*Math.sign(forward.z || 1)*THREE.MathUtils.degToRad(7);
+      return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0).applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion())),angle).multiply(rotation);
+    });
     for(let i=0;i<count;i++) {
       restore();
       const phase=2*Math.PI*i/(count-1);
@@ -36,6 +45,7 @@ export function withTeacherStance(vrm: VRM, source: THREE.AnimationClip) {
       hips.position.y -= .004+.001*(1-Math.cos(phase));
       vrm.scene.updateMatrixWorld(true);
       legs.forEach((leg,index)=>solveLeg(vrm.scene,leg.upper!,leg.lower!,leg.foot!,goals[index]!,0));
+      legs.forEach((leg,index)=>leg.foot!.quaternion.copy(leg.foot!.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(footRotations[index]!)));
       rotations.forEach((values,node)=>node.quaternion.toArray(values,i*4));
       hips.position.toArray(positions,i*3);
     }

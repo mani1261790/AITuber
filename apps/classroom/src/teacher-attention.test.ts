@@ -73,5 +73,10 @@ it("looks ahead at head height during either walking direction, and returns to t
   expect(Math.abs(leftEye.rotation.y)).toBeLessThan(.01);
   expect(Math.abs(rightEye.rotation.y)).toBeLessThan(.01);
   expect(teacherGazeTarget(vrm,false).toArray()).toEqual([-.9,2.4,8]);
+  const camera=new THREE.Vector3(3,3,7);
+  const cameraTarget=teacherGazeTarget(vrm,false,camera);
+  expect(cameraTarget.toArray()).toEqual(camera.toArray());
+  cameraTarget.set(0,0,0);expect(camera.toArray()).toEqual([3,3,7]);
+  expect(teacherGazeTarget(vrm,true,camera).toArray()).toEqual(target.toArray());
  }
 });

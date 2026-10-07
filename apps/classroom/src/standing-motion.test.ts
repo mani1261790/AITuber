@@ -34,6 +34,12 @@ it("keeps feet planted through a loop and narrows the stance without changing bo
       previous=knees;
       expect(feet[0]!.distanceTo(feet[1]!)).toBeCloseTo(.15*.7*1.8,3);
       expect(nodes.leftLowerLeg!.position.length()).toBeCloseTo(.4);
+      const rootInverse=scene.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const forward=nodes.leftFoot!.getWorldQuaternion(new THREE.Quaternion()).premultiply(rootInverse);
+      const toeDirection=new THREE.Vector3(0,0,1).applyQuaternion(forward);
+      const footLocal=scene.worldToLocal(feet[0]!.clone());
+      expect(toeDirection.x*footLocal.x).toBeLessThan(0);
+      expect(Math.abs(toeDirection.x)).toBeCloseTo(Math.sin(THREE.MathUtils.degToRad(7)),4);
     }
   }
 });
