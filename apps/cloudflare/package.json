@@ -1,0 +1,13 @@
+{
+  "name": "@aituber/cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "deploy": "node ../../scripts/deploy-cloudflare.mjs",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  }
+}

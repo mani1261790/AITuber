@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitAfterClassSurveyRequest, SubmitLearningEvidenceRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
+import { sendAudio } from "./audio-response.ts";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
@@ -20,6 +21,7 @@ export interface LectureApi {
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
   reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number): void;
   completeStageAction?(sessionId: string, epoch: number, actionId: string): void;
+  reportStageProgress?(sessionId: string, epoch: number, actionId: string): void;
 }
 
 const unavailableApi: LectureApi = {
@@ -71,12 +73,13 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
       }
       const playbackMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/playback$/);
-      const stageMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/stage-complete$/);
+      const stageMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/stage-(complete|progress)$/);
       if (request.method === "POST" && stageMatch) {
         requireSurface(request,"classroom");
         const body = await readJson<{accessToken:string;epoch:number;actionId:string}>(request);
         const access = classrooms.authenticate(stageMatch[1]!,body.accessToken);
-        api.completeStageAction?.(access.sessionId,body.epoch,body.actionId);
+        if (stageMatch[2] === "progress") api.reportStageProgress?.(access.sessionId,body.epoch,body.actionId);
+        else api.completeStageAction?.(access.sessionId,body.epoch,body.actionId);
         return json(response,200,{ok:true});
       }
       if (request.method === "POST" && playbackMatch) {
@@ -121,12 +124,12 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         return json(response, 200, { session, classroom: session ? classrooms.create(session.id) : null });
       }
       const audioMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/speech\/([a-f0-9]{64})$/);
-      if (request.method === "GET" && audioMatch) {
+      if ((request.method === "GET" || request.method === "HEAD") && audioMatch) {
         requireAnySurface(request);
         const epoch = Number.parseInt(url.searchParams.get("epoch") ?? "", 10);
         if (!Number.isSafeInteger(epoch) || epoch < 1) throw new TypeError("A valid speech epoch is required");
         const artifact = api.getSpeechAudio(decodeURIComponent(audioMatch[1]!), epoch, audioMatch[2]!);
-        response.writeHead(200, { "content-type": artifact.mimeType, "cache-control": "no-store" }); response.end(Buffer.from(artifact.audio)); return;
+        sendAudio(request,response,artifact.audio,artifact.mimeType); return;
       }
       requireSurface(request, "operator");
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);

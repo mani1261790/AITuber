@@ -153,3 +153,17 @@ it.each(["truncated","too-large"])("rejects %s streamed output", async mode => {
  const provider=new OpenAiCompatibleLlmProvider({model:"local",baseUrl:"http://localhost:11434/v1",fetch:async()=>new Response(stream,{headers:{"content-type":"text/event-stream"}})});
  await expect(provider.createContext({purpose:"generation",systemInstruction:"Generate"}).generate({prompt:"test",schemaName:"result",schema,maxOutputBytes:mode==="too-large"?10:1000})).rejects.toMatchObject({code:mode==="too-large"?"response_too_large":"invalid_response"});
 });
+
+
+describe("OpenAI Luna compatibility",()=>{
+ it.each(["gpt-5.6-luna","gpt-6-luna"])("uses bounded completion tokens and validates %s output",async model=>{
+  let body:Record<string,unknown>={};
+  const provider=new OpenAiCompatibleLlmProvider({apiKey:"test",model,fetch:async(_url,init)=>{
+   body=JSON.parse(String(init?.body));
+   return Response.json({choices:[{message:{content:JSON.stringify({decision:"invalid",reasons:[]})}}]});
+  }});
+  await expect(provider.createContext({purpose:"review",systemInstruction:"Review"}).generate({prompt:"value",schemaName:"review",schema,maxOutputTokens:512})).rejects.toMatchObject({code:"schema_mismatch"});
+  expect(body.max_completion_tokens).toBe(512);expect(body).not.toHaveProperty("max_tokens");expect(body.reasoning_effort).toBe("none");
+  expect(body.response_format).toMatchObject({type:"json_schema",json_schema:{strict:false,schema}});
+ });
+});

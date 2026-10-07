@@ -1,7 +1,9 @@
+import { BlackboardTools } from "./blackboard-tools.ts";
+import { OmniSvgProvider, QuiverSvgProvider } from "@aituber/providers";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { AfterClassStore, DataRetentionStore, LearningEvidenceStore, LectureEventStore, LiveSupplementStore, QuestionStore, ResourceBudgetStore } from "@aituber/storage";
-import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
+import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, IrodoriTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
@@ -54,19 +56,26 @@ if (ttsTestMode === "tone") {
 } else if (ttsTestMode === "failure") {
   speechProvider = { provider: "failure-fixture", model: "failure-v1", synthesize: async () => { throw new Error("Injected TTS failure"); } };
   voiceId = "voice.failure-fixture";
+} else if (process.env.AITUBER_TTS_PROVIDER === "irodori") {
+  voiceId = "teacher";
+  speechProvider = new CachedSpeechProvider(new BudgetedSpeechProvider({ backing: new IrodoriTtsProvider({
+    ...(process.env.AITUBER_IRODORI_ENDPOINT ? { endpoint: process.env.AITUBER_IRODORI_ENDPOINT } : {}),
+    ...(process.env.AITUBER_IRODORI_VOICE_REVISION ? { voiceRevision: process.env.AITUBER_IRODORI_VOICE_REVISION } : {}),
+  }), budget: resourceBudgetStore, scope: "runtime", usdPerMillionCharacters: 0 }), ttsCachePath);
 } else if (fishApiKey && fishVoiceId) {
   const model = process.env.AITUBER_FISH_AUDIO_MODEL ?? "s2.1-pro-free";
   const price = model === "s2.1-pro-free" ? 0 : optionalNonNegativeNumber(process.env.AITUBER_TTS_USD_PER_MILLION_CHARACTERS, "AITUBER_TTS_USD_PER_MILLION_CHARACTERS");
   speechProvider = new CachedSpeechProvider(new BudgetedSpeechProvider({ backing: new FishAudioTtsProvider({ apiKey: fishApiKey, model }), budget: resourceBudgetStore, scope: "runtime", ...(price !== undefined ? { usdPerMillionCharacters: price } : {}) }), ttsCachePath);
 }
 const llmSettings = new LlmSettingsStore(llmSettingsPath, process.env, resourceBudgetStore);
-const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }) }) });
+const blackboardTools = process.env.AITUBER_SVG_PROVIDER === "omnisvg" ? new BlackboardTools(new OmniSvgProvider({...(process.env.AITUBER_OMNISVG_ENDPOINT ? {endpoint:process.env.AITUBER_OMNISVG_ENDPOINT} : {})}),join(dataDirectory,"blackboard-svg")) : process.env.AITUBER_SVG_PROVIDER === "quiver" && process.env.AITUBER_SVG_API_KEY?.trim() ? new BlackboardTools(new QuiverSvgProvider({apiKey:process.env.AITUBER_SVG_API_KEY, model:process.env.AITUBER_SVG_MODEL || "arrow-2"}), join(dataDirectory,"blackboard-svg")) : undefined;
+const lecture = new FixedLectureService({ store, playbackUnitMs, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }, blackboardTools) }) });
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;
 const questions = new QuestionQueueService({ classifier: createCommentClassifier(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }), store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
 pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions });
-const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
+const supplements = new LiveSupplementService({ ...(blackboardTools ? {blackboardTools} : {}), store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const server = createApp(lecture, llmSettings, authoring, questions, pedagogy, afterClass);
 

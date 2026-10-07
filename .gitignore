@@ -13,3 +13,16 @@ coverage/
 .data/
 tmp/
 *.tsbuildinfo
+
+# Local browser verification artifacts
+.playwright-cli/
+output/playwright/
+
+# Python runtime cache
+__pycache__/
+
+# Cloud deployment state and generated bindings
+.wrangler/
+.dev.vars
+apps/cloudflare/worker-configuration.d.ts
+output/video-share/

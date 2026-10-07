@@ -91,10 +91,10 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
         body: JSON.stringify({
           model: this.#options.model,
           messages: [{ role: "system", content: systemInstruction }, { role: "user", content: request.images?.length ? [{ type: "text", text: request.prompt }, ...request.images.map((image) => ({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.dataBase64}` } }))] : request.prompt }],
-          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: isOllamaBaseUrl(this.#options.baseUrl) ? ollamaGrammarSchema(request.schema) : request.schema } },
-          ...(isOllamaBaseUrl(this.#options.baseUrl) ? { reasoning_effort: "none" } : {}),
+          response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: !isOpenAiLuna(this.#options.baseUrl, this.#options.model), schema: isOllamaBaseUrl(this.#options.baseUrl) ? ollamaGrammarSchema(request.schema) : request.schema } },
+          ...((isOllamaBaseUrl(this.#options.baseUrl) || isOpenAiLuna(this.#options.baseUrl, this.#options.model)) ? { reasoning_effort: "none" } : {}),
           temperature: request.temperature ?? 0,
-          max_tokens: request.maxOutputTokens ?? 4_096,
+          ...(isOpenAiLuna(this.#options.baseUrl, this.#options.model) ? { max_completion_tokens: request.maxOutputTokens ?? 4_096 } : { max_tokens: request.maxOutputTokens ?? 4_096 }),
           ...(isOllamaBaseUrl(this.#options.baseUrl) ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
         }),
         signal,
@@ -282,4 +282,10 @@ function ollamaGrammarSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(ollamaGrammarSchema);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "maxLength").map(([key,item]) => [key,ollamaGrammarSchema(item)]));
+}
+
+// Course schemas contain genuinely optional fields. OpenAI non-strict schema mode
+// preserves that contract; AJV below still validates every returned value.
+function isOpenAiLuna(baseUrl: string, model: string): boolean {
+  return new URL(baseUrl).hostname === "api.openai.com" && /^gpt-(?:5\.6|6)-luna(?:$|-)/.test(model);
 }

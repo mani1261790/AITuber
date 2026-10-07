@@ -1,0 +1,23 @@
+-------------------------------------------------------
+License:
+CC0 1.0 Universal (CC0 1.0)
+Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+
+------------------------------------------------------
+Models by @Quaternius
+Consider supporting me on Patreon!
+
+https://www.patreon.com/quaternius
+
+
+Source: https://quaternius.itch.io/universal-animation-library
+Selected Standard Root Motion clips: A_TPose, Idle_Talking_Loop. Unused tracks removed.
+
+Idle_Subtle: Mesh2Motion human-addon-animations, revision 79f3f61a9852ef70234a5a4a7c13ed87f7a71833
+https://github.com/Mesh2Motion/mesh2motion-app
+All 3d models, blend files, rigs, animations
+
+CC0 1.0 Universal
+By marking the work with a CC0 public domain dedication, the creator is giving up their copyright and allowing reusers to distribute, remix, adapt, and build upon the material in any medium or format, even for commercial purposes.
+Additional Mesh2Motion CC0 clips: Walk_Female, Idle Listening, Turn_Left_90, Turn_Right_90. Same revision and license as above.

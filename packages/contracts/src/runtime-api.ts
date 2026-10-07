@@ -29,18 +29,28 @@ export interface FixedSessionView {
   readonly afterClassAnswers: readonly AfterClassAnswerView[];
 }
 
+export type TeachingGesture = "idle" | "listen" | "explain" | "emphasize" | "nod";
+
 export type StagePosition = "left" | "center" | "right";
 export type StageCamera = "lecture" | "material" | "board";
+export interface BlackboardDrawing { readonly id: string; readonly svg: string; readonly purpose: string }
+
 export type LessonAction =
+  | { type: "show_blackboard"; drawing: BlackboardDrawing }
+  | { type: "show_slides" }
   | { type: "move_to"; position: StagePosition }
   | { type: "point_at"; targetId: string }
-  | { type: "speak"; text: string }
+  | { type: "speak"; text: string; gesture?: TeachingGesture; position?: StagePosition }
   | { type: "release_point" }
   | { type: "pause"; durationMs: number }
   | { type: "camera"; view: StageCamera };
 export interface LessonDirectionView {
+  readonly gesture?: TeachingGesture;
+  readonly traveling?: boolean;
+  readonly drawing?: BlackboardDrawing | null;
+  readonly surface?: "board" | "slides";
   readonly actionId: string;
-  readonly phase: "planning" | "moving" | "pointing" | "speaking" | "resting" | "complete";
+  readonly phase: "planning" | "drawing" | "moving" | "pointing" | "speaking" | "resting" | "complete";
   readonly position: StagePosition;
   readonly targetId: string | null;
   readonly camera: StageCamera;
@@ -94,6 +104,7 @@ export interface SupplementOriginView {
 }
 
 export interface LiveSupplementCandidateView {
+  readonly drawing?: BlackboardDrawing;
   readonly speechText: string;
   readonly captionText: string;
   readonly sceneId: string;

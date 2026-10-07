@@ -9,6 +9,8 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
+    "tts:irodori": "zsh scripts/start-irodori.zsh",
+    "preview:irodori": "pnpm --filter @aituber/providers build && node --experimental-strip-types scripts/preview-irodori.ts",
     "dev": "pnpm --filter './packages/**' build && pnpm --parallel --filter @aituber/server --filter @aituber/classroom --filter @aituber/operator dev",
     "start": "node --env-file-if-exists=.env --experimental-strip-types scripts/start-self-host.ts",
     "build": "pnpm -r --if-present build",
@@ -34,9 +36,18 @@
     "study:delete-raw": "node --env-file-if-exists=.env --experimental-strip-types scripts/usability-study.ts delete-raw",
     "verify:client-boundaries": "node --env-file-if-exists=.env --experimental-strip-types scripts/verify-client-boundaries.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:client-boundaries && pnpm verify:self-host",
-    "preview:voices": "pnpm build:provider-tools && node --env-file-if-exists=.env --experimental-strip-types scripts/preview-voices.ts"
+    "preview:voices": "pnpm build:provider-tools && node --env-file-if-exists=.env --experimental-strip-types scripts/preview-voices.ts",
+    "configure:svg": "zsh scripts/configure-svg.zsh",
+    "svg:omnisvg": "zsh scripts/start-omnisvg.zsh",
+    "check:omnisvg": "python3 scripts/omnisvg-server.py --check",
+    "preview:svg": "pnpm --filter @aituber/providers build && node --experimental-strip-types scripts/preview-svg.ts",
+    "build:cloudflare": "node --experimental-strip-types scripts/build-cloudflare.ts",
+    "deploy:cloudflare": "node scripts/deploy-cloudflare.mjs",
+    "verify:cloud-persistence": "pnpm --filter @aituber/server... build && node scripts/verify-cloud-persistence.mjs",
+    "verify:cloud-account": "node scripts/deploy-cloudflare.mjs --check"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@eslint/js": "10.0.1",
     "@types/node": "26.5.1",
     "@types/react": "19.3.0",
@@ -47,6 +58,7 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
     "vite": "8.3.0",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "wrangler": "^4.148.0"
   }
 }

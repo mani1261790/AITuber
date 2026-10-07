@@ -47,7 +47,7 @@ describe("LlmSettingsStore", () => {
   });
 });
 
-it("allows authoring responses beyond five minutes while retaining the runtime deadline", async () => {
+it("allows authoring responses beyond five minutes while retaining a bounded local runtime deadline", async () => {
  vi.useFakeTimers();
  vi.stubGlobal("fetch", (_url: unknown, init: RequestInit) => new Promise<Response>((resolve, reject) => {
   const timer = setTimeout(() => resolve(new Response(JSON.stringify({ choices: [{message:{content:'{"ok":true}'}}] }))), 311_000);
@@ -57,7 +57,7 @@ it("allows authoring responses beyond five minutes while retaining the runtime d
  const request = {prompt:"test",schemaName:"result",schema:{type:"object"}};
  const long = store.createProvider("authoring").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
  const short = store.createProvider("runtime").createContext({purpose:"generation",systemInstruction:"Generate"}).generate(request);
- const failure = expect(short).rejects.toThrow("timed out after 30000ms");
+ const failure = expect(short).rejects.toThrow("timed out after 90000ms");
  await vi.advanceTimersByTimeAsync(311_000);
  await failure;
  expect((await long).value).toEqual({ok:true});

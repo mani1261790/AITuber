@@ -49,6 +49,7 @@ interface PendingSupplement {
   readonly view: LiveSupplementView;
   readonly onPlaybackStarted: (occurredAt: string, audible: boolean) => void;
   readonly onCompleted: () => void;
+  readonly onFailure?: (reason: string) => void;
 }
 
 type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
@@ -56,18 +57,20 @@ type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
 export class FixedLectureService {
   readonly #planner: LessonPlanner | null;
   readonly #directions = new WeakMap<RuntimeSession, LessonDirectionView>();
+  readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
   readonly #speechNext = new WeakMap<RuntimeSession, () => void>();
+  readonly #travelArrived = new WeakSet<RuntimeSession>();
   readonly #stageNext = new WeakMap<RuntimeSession, () => void>();
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan> }>();
-  readonly #playbackDeadlines = new WeakMap<RuntimeSession, { deadline: number; complete: () => void; audioUrl: string | null; epoch: number }>();
+  readonly #playbackDeadlines = new WeakMap<RuntimeSession, { deadline: number; maxDeadline: number; complete: () => void; audioUrl: string | null; epoch: number }>();
 
   reportPlayback(sessionId: string, epoch: number, audioUrl: string, remainingMs: number) {
     const runtime = this.#requireSession(sessionId);
     const pending = this.#playbackDeadlines.get(runtime);
     if (!pending || runtime.state.epoch !== epoch || pending.epoch !== epoch || pending.audioUrl !== audioUrl || !runtime.timer || !runtime.speech.playing) return;
     if (!Number.isFinite(remainingMs) || remainingMs < 0 || remainingMs > runtime.speech.durationMs + 30_000) return;
-    const deadline = Date.now() + remainingMs + 850;
+    const deadline = Math.min(pending.maxDeadline, Date.now() + remainingMs + 850);
     if (deadline <= pending.deadline) return;
     pending.deadline = deadline;
     clearTimeout(runtime.timer);
@@ -76,7 +79,7 @@ export class FixedLectureService {
 
   #waitForSpeech(runtime: RuntimeSession, speech: FixedSessionView["speech"], complete: () => void) {
     const delay = Math.max(1,speech.durationMs)+(speech.provider === "fish-audio" ? 850 : 0);
-    this.#playbackDeadlines.set(runtime,{deadline: Date.now()+delay,complete,audioUrl:speech.audioUrl,epoch:speech.epoch});
+    this.#playbackDeadlines.set(runtime,{deadline: Date.now()+delay,maxDeadline:Date.now()+delay+30_000,complete,audioUrl:speech.audioUrl,epoch:speech.epoch});
     runtime.timer = setTimeout(complete,delay);
   }
   readonly #courses: Map<string, ReadonlyCoursePackage>;
@@ -231,7 +234,7 @@ export class FixedLectureService {
     this.#publish(runtime);
   }
 
-  queueSupplement(sessionId: string, view: LiveSupplementView, callbacks: Pick<PendingSupplement, "onPlaybackStarted" | "onCompleted">): void {
+  queueSupplement(sessionId: string, view: LiveSupplementView, callbacks: Pick<PendingSupplement, "onPlaybackStarted" | "onCompleted" | "onFailure">): void {
     const runtime = this.#requireSession(sessionId);
     if (!runtime.liveSupplement || runtime.liveSupplement.id !== view.id) throw new TypeError("Unknown active live supplement");
     runtime.liveSupplement = { ...view, firstAudioAt: runtime.liveSupplement.firstAudioAt ?? view.firstAudioAt, status: runtime.liveSupplement.status === "bridging" ? "bridging" : "ready" };
@@ -245,6 +248,7 @@ export class FixedLectureService {
     const runtime = this.#requireSession(sessionId);
     runtime.pendingSupplement = null;
     runtime.liveSupplement = { ...view, status: "deferred" };
+    this.#clearDirection(runtime);
     if (runtime.state.status === "BRANCHING") {
       if (runtime.timer || runtime.speech.playing) this.#cancelSpeech(runtime);
       this.#apply(runtime, { type: "QUESTION_DEFERRED", epoch: runtime.state.epoch });
@@ -336,7 +340,7 @@ export class FixedLectureService {
     const epoch = runtime.state.epoch;
     const controller = new AbortController(); runtime.speechAbort = controller;
     const previous = this.#directions.get(runtime);
-    this.#directions.set(runtime,{ actionId: randomUUID(), phase:"planning", position:previous?.position ?? "right", targetId:null, camera:previous?.camera ?? "lecture",source:"reference",reason:null });
+    this.#directions.set(runtime,{ actionId: randomUUID(), phase:"planning", position:previous?.position ?? this.#lastStagePosition.get(runtime) ?? "right", targetId:null, camera:previous?.camera ?? "lecture",source:"reference",reason:null });
     runtime.speech = { ...emptySpeech(epoch),unitId:unit.id }; this.#publish(runtime);
     const prefetched = this.#prefetch.get(runtime); this.#prefetch.delete(runtime);
     let plan: DirectedPlan;
@@ -360,15 +364,37 @@ export class FixedLectureService {
     const nextUnit = runtime.course.teachingUnits.find(candidate=>candidate.id === nextId);
     if (nextUnit && !runtime.course.assessments.some(assessment=>assessment.afterUnitId === unit.id)) {
       const nextController = new AbortController();
-      const promise = this.#planner!({session:this.getSession(runtime.id),unit:nextUnit,previousSpeech:spoken,remainingMs:this.getRemainingTimeMs(runtime.id)},nextController.signal).catch(()=>referencePlan(nextUnit,"先読みを再利用できませんでした"));
+      // Prefetch runs before this plan's moves. The next unit starts at the plan's
+      // ending position, not at the teacher's current position before execution.
+      let endingPosition = base.position;
+      for (const action of plan.actions) {
+        if (action.type === "move_to" || (action.type === "speak" && action.position)) endingPosition = action.position!;
+      }
+      const nextSession = this.getSession(runtime.id);
+      const projectedSession: FixedSessionView = {...nextSession, direction:{...nextSession.direction!,position:endingPosition,phase:"complete",traveling:false,targetId:null}};
+      const promise = this.#planner!({session:projectedSession,unit:nextUnit,previousSpeech:spoken,remainingMs:this.getRemainingTimeMs(runtime.id)},nextController.signal).catch(()=>referencePlan(nextUnit,"先読みを再利用できませんでした"));
       this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller:nextController,plan:promise});
     }
     this.#runAction(runtime,unit.id,epoch,plan.actions,0);
   }
 
+  reportStageProgress(sessionId: string, epoch: number, actionId: string) {
+    const runtime = this.#requireSession(sessionId);
+    const direction = this.#directions.get(runtime);
+    if (runtime.state.epoch !== epoch || direction?.actionId !== actionId) return;
+    if (direction.phase !== "moving" && !direction.traveling) return;
+    // A live stage may need more than twelve seconds on a slow renderer.
+    // Keep the disconnect fallback, but do not interrupt a reported active move.
+    if (this.#stageNext.has(runtime)) runtime.timer?.refresh();
+  }
+
   completeStageAction(sessionId: string, epoch: number, actionId: string) {
     const runtime = this.#requireSession(sessionId);
-    if (runtime.state.epoch !== epoch || this.#directions.get(runtime)?.actionId !== actionId || !runtime.timer) return;
+    if (runtime.state.epoch !== epoch || this.#directions.get(runtime)?.actionId !== actionId) return;
+    if (this.#directions.get(runtime)?.traveling && this.#speechNext.has(runtime)) {
+      this.#travelArrived.add(runtime); return;
+    }
+    if (!runtime.timer) return;
     const next = this.#stageNext.get(runtime); if (!next) return;
     clearTimeout(runtime.timer); runtime.timer = null; this.#stageNext.delete(runtime); next();
   }
@@ -378,14 +404,27 @@ export class FixedLectureService {
     const action = actions[index];
     if (!action) {
       const direction = this.#directions.get(runtime)!;
-      this.#directions.set(runtime,{...direction,phase:"complete",targetId:null});
+      this.#directions.set(runtime,{...direction,phase:"complete",targetId:null,surface:"slides"});
       this.#completeUnit(runtime.id,unitId,epoch); return;
     }
     const direction = this.#directions.get(runtime)!;
     const next = () => this.#runAction(runtime,unitId,epoch,actions,index+1);
-    const update = (changes: Partial<LessonDirectionView>) => { this.#directions.set(runtime,{...direction,actionId:randomUUID(),...changes}); this.#publish(runtime); };
+    const update = (changes: Partial<LessonDirectionView>) => { this.#directions.set(runtime,{...direction,actionId:randomUUID(),traveling:false,gesture:"idle",...changes}); this.#publish(runtime); };
     const wait = (ms: number) => { runtime.timer = setTimeout(()=>{runtime.timer=null;this.#stageNext.delete(runtime);next();},ms); };
     switch(action.type) {
+      case "show_slides": update({surface:"slides",targetId:null}); wait(700); return;
+      case "show_blackboard": {
+        update({phase:"drawing",surface:"board",drawing:action.drawing,targetId:null});
+        this.#stageNext.set(runtime,next);
+        // Never speak about an illustration until a classroom has rendered it.
+        runtime.timer = setTimeout(() => {
+          runtime.timer = null; this.#stageNext.delete(runtime);
+          update({phase:"resting",surface:"slides",drawing:direction.drawing ?? null,reason:"黒板画像を表示できないため参考説明へ戻りました"});
+          const unit = runtime.course.teachingUnits.find(item=>item.id===unitId)!;
+          this.#runAction(runtime,unitId,epoch,referencePlan(unit).actions,0);
+        }, 12000);
+        return;
+      }
       case "move_to":
         // Projection stays unobstructed; semantic positions are resolved by the stage.
         update({phase:"moving",position:action.position,targetId:null});
@@ -395,8 +434,12 @@ export class FixedLectureService {
       case "release_point": update({targetId:null,phase:"resting"}); wait(350); return;
       case "pause": update({phase:"resting"}); wait(action.durationMs); return;
       case "speak":
-        update({phase:"speaking"}); this.#previousSpeech.set(runtime,((this.#previousSpeech.get(runtime) ?? "")+" "+action.text).slice(-2000));
-        this.#speechNext.set(runtime,next); this.#speakUnit(runtime,unitId,action.text); return;
+        this.#travelArrived.delete(runtime);
+        update({phase:"speaking",gesture:action.gesture ?? "explain",...(action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((this.#previousSpeech.get(runtime) ?? "")+" "+action.text).slice(-2000));
+        this.#speechNext.set(runtime, () => {
+          if (!action.position || this.#travelArrived.has(runtime)) { this.#travelArrived.delete(runtime); next(); }
+          else { this.#stageNext.set(runtime,next); wait(12000); }
+        }); this.#speakUnit(runtime,unitId,action.text); return;
     }
   }
 
@@ -482,12 +525,28 @@ export class FixedLectureService {
     if (!pending || !pending.view.candidate) return;
     if (runtime.state.status === "TEACHING") this.#apply(runtime, { type: "QUESTION_ACCEPTED", epoch: runtime.state.epoch });
     if (runtime.state.status !== "BRANCHING") return;
-    this.#directions.delete(runtime);
+    this.#clearDirection(runtime);
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
     const candidate = pending.view.candidate;
     runtime.liveSupplement = { ...pending.view, status: "playing" };
     this.#publish(runtime);
-    this.#playSupplementSpeech(runtime, candidate, pending);
+    if (candidate.drawing) {
+      const epoch = runtime.state.epoch;
+      const move = () => {
+        if (runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
+        this.#directions.set(runtime,{actionId:randomUUID(),phase:"moving",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
+        const speak = () => {
+          if (runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
+          this.#directions.set(runtime,{...this.#directions.get(runtime)!,phase:"speaking",targetId:candidate.drawing!.id});
+          this.#playSupplementSpeech(runtime,candidate,pending);
+        };
+        this.#stageNext.set(runtime,speak); runtime.timer=setTimeout(()=>{this.#stageNext.delete(runtime);speak();},12000); this.#publish(runtime);
+      };
+      this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
+      this.#stageNext.set(runtime,move);
+      runtime.timer=setTimeout(()=>{ this.#stageNext.delete(runtime); if (pending.onFailure) pending.onFailure("黒板画像を表示できませんでした"); else this.deferSupplement(runtime.id,{...pending.view,status:"deferred",failure:"黒板画像を表示できませんでした"}); },12000);
+      this.#publish(runtime);
+    } else this.#playSupplementSpeech(runtime, candidate, pending);
   }
 
   #playSupplementSpeech(runtime: RuntimeSession, candidate: LiveSupplementCandidateView, pending: PendingSupplement) {
@@ -521,7 +580,7 @@ export class FixedLectureService {
     this.#verifyRejoin(runtime, pending.view.origin);
     this.#apply(runtime, { type: "REJOIN_VERIFIED", epoch: runtime.state.epoch });
     runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, status: "completed" } : null;
-    runtime.pendingSupplement = null; this.#publish(runtime); pending.onCompleted();
+    runtime.pendingSupplement = null; this.#clearDirection(runtime); this.#publish(runtime); pending.onCompleted();
     if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch }); else this.#schedule(runtime);
   }
 
@@ -533,7 +592,7 @@ export class FixedLectureService {
   }
 
   #playTransient(runtime: RuntimeSession, text: string, targetIds: readonly string[], durationMs: number, started: (occurredAt: string, audible: boolean) => void, completed: () => void) {
-    this.#directions.delete(runtime);
+    this.#clearDirection(runtime);
     const epoch = runtime.state.epoch;
     const begin = (speech: FixedSessionView["speech"]) => { started(new Date().toISOString(), speech.mode !== "caption-fallback"); runtime.speech = speech; this.#publish(runtime); this.#waitForSpeech(runtime, speech, () => { runtime.timer = null; this.#discardSpeechArtifact(runtime); runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null }; completed(); }); };
     if (!this.#speechProvider || !this.#voiceId) { begin({ ...emptySpeech(epoch), mode: "test", playing: true, unitId: null, text, startedAt: new Date().toISOString(), durationMs, segments: [{ text, startMs: 0, endMs: durationMs, semanticTargetIds: targetIds }] }); return; }
@@ -590,10 +649,17 @@ export class FixedLectureService {
     });
   }
 
+  /** Discard executable cues without forgetting where the stage was directed to settle. */
+  #clearDirection(runtime: RuntimeSession) {
+    const direction = this.#directions.get(runtime);
+    if (direction) this.#lastStagePosition.set(runtime, direction.position);
+    this.#directions.delete(runtime);
+  }
+
   #cancelSpeech(runtime: RuntimeSession) {
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
-    this.#speechNext.delete(runtime); this.#stageNext.delete(runtime);
-    this.#directions.delete(runtime);
+    this.#speechNext.delete(runtime); this.#stageNext.delete(runtime); this.#travelArrived.delete(runtime);
+    this.#clearDirection(runtime);
     runtime.speechAbort?.abort(new DOMException("Lecture epoch changed", "AbortError"));
     runtime.speechAbort = null;
     if (runtime.timer) clearTimeout(runtime.timer);

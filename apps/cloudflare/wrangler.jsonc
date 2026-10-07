@@ -1,0 +1,17 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "aituber",
+  "account_id": "2ea670c2a6ff28e248ef084adf095e8b",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": true},
+  "assets": {"directory":"../../dist/cloudflare", "binding":"ASSETS", "run_worker_first":true},
+  "r2_buckets": [{"binding":"STATE","bucket_name":"aituber-state"}],
+  "durable_objects": {"bindings":[{"name":"BACKEND","class_name":"LectureBackend"}]},
+  "migrations": [{"tag":"v1","new_sqlite_classes":["LectureBackend"]}],
+  "containers": [{"class_name":"LectureBackend","image":"../../Dockerfile","instance_type":"basic","max_instances":1}],
+  "vars": {"LLM_MODEL":"gpt-6-luna","LLM_INPUT_PRICE":"0.10","LLM_OUTPUT_PRICE":"0.50"}
+}
