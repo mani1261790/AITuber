@@ -11,7 +11,7 @@ const id = randomUUID();
 const title = mode === "check" ? `AITuber account check ${id}` : `AITuber deploy ${id}`;
 function gh(args, inherited = false) {
   const result = spawnSync("gh", args, { encoding: "utf8", stdio: inherited ? "inherit" : "pipe" });
-  if (result.error || result.status !== 0) throw new Error("GitHub CLI command failed. Check GitHub authentication; no Cloudflare default login was used.");
+  if (result.error || result.status !== 0) throw new Error("GitHub Actions/CLI operation failed. Check the workflow result above or GitHub CLI authentication if dispatch failed; no Cloudflare default login was used.");
   return result.stdout;
 }
 try {

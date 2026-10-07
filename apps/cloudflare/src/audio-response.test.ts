@@ -10,5 +10,5 @@ it('rejects unsatisfiable ranges and preserves HEAD metadata',async()=>{
  const head=audioResponse(new Request('https://example.com',{method:'HEAD',headers:{range:'bytes=-2'}}),bytes,'audio/mpeg');expect(head.headers.get('content-length')).toBe('2');expect((await head.arrayBuffer()).byteLength).toBe(0);
 });
 it('ignores unsupported ranges and If-Range without a validator',()=>{
- for(const headers of [{range:'bytes=0-1,4-5'},{range:'bytes=1-2','if-range':'"unknown"'}])expect(audioResponse(new Request('https://example.com',{headers}),bytes,'audio/mpeg').status).toBe(200);
+ for(const headers of [{range:'bytes=0-1,4-5'},{range:'bytes=1-2','if-range':'"unknown"'}] as Record<string,string>[])expect(audioResponse(new Request('https://example.com',{headers}),bytes,'audio/mpeg').status).toBe(200);
 });
