@@ -10,10 +10,9 @@ await rm("dist/cloudflare",{recursive:true,force:true});
 await mkdir("dist/cloudflare/operator",{recursive:true});
 await cp("apps/classroom/dist","dist/cloudflare",{recursive:true});
 await cp("apps/operator/dist","dist/cloudflare/operator",{recursive:true});
-// Development-only comparison models and motion labs are not distribution assets.
+// Downloaded local candidate models are not distribution assets.
+// Keep the original/refined teacher models for the hosted motion lab.
 await rm("dist/cloudflare/models/candidates",{recursive:true,force:true});
-await rm("dist/cloudflare/models/tutor.vrm",{force:true});
-await rm("dist/cloudflare/models/tutor-refined.vrm",{force:true});
 
 // Japanese PDF extraction uses private binding requests to these static CMaps/fonts.
 const requireServer = createRequire(new URL("../apps/server/package.json", import.meta.url));

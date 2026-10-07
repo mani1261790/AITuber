@@ -324,6 +324,6 @@ function readSavedParticipant(): { code: string; participant: ClassroomParticipa
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Classroom root element was not found");
-if (import.meta.env.DEV && new URLSearchParams(location.search).has("motion-lab")) {
+if (new URLSearchParams(location.search).has("motion-lab")) {
   void import("./motion-lab.tsx").then(({mountMotionLab})=>mountMotionLab(root));
 } else createRoot(root).render(<StrictMode><ClassroomApp /></StrictMode>);
