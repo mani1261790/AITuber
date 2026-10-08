@@ -1,3 +1,4 @@
+import { lecturePixelRatio } from "./render-resolution.ts";
 import { teacherModelUrl } from "./teacher-model.ts";
 import { SpringSimulation } from "./spring-simulation.ts";
 import { updateLessonTexture, setLessonMap } from "./lesson-texture-resource.ts";
@@ -50,7 +51,6 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
     camera.lookAt(-.15, 2.05, 0);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setClearAlpha(0);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
@@ -158,12 +158,14 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
       const height = Math.max(1, host.clientHeight);
+      renderer.setPixelRatio(lecturePixelRatio(width, height, window.devicePixelRatio, renderer.capabilities.maxTextureSize));
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
+    window.addEventListener("resize", resize);
     resize();
 
     const loader = new GLTFLoader();
@@ -202,6 +204,19 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
       }
       const garmentCollisions=connectGarmentCollisions(avatar);
       if(import.meta.env.DEV)renderer.domElement.dataset.garmentCollisions=JSON.stringify(garmentCollisions);
+      // Preserve fine iris/eyelash texture detail at oblique lecture angles.
+      const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      avatar.scene.traverse(node => {
+        if (!(node instanceof THREE.Mesh)) return;
+        for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+          for (const value of Object.values(material)) {
+            if (value instanceof THREE.Texture && value.anisotropy !== maxAnisotropy) {
+              value.anisotropy = maxAnisotropy;
+              value.needsUpdate = true;
+            }
+          }
+        }
+      });
       animeLook.registerCharacter(avatar.scene); appliedLook = null;
       fitAvatarToStage(avatar);
       avatar.scene.scale.multiplyScalar(1.08);
@@ -428,6 +443,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
+      window.removeEventListener("resize", resize);
       teacherMotion?.dispose();
       contactShadows.forEach(mesh=>{mesh.geometry.dispose();mesh.material.dispose();});contactTexture.dispose();
       animeLook.dispose();
