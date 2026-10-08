@@ -75,14 +75,35 @@ export class TeacherGaze {
   }
 }
 
-/** Fixate ahead during locomotion instead of straining sideways towards the audience.
- * The rendered pose transition handles both departure and return to audience gaze.
- */
+/** A stable student-side target: camera cuts must not pull a walking teacher's face
+ * away from the class. Keep the vertical target level during sideways travel. */
 export function teacherGazeTarget(vrm: VRM, moving: boolean, cameraPosition?: THREE.Vector3) {
   if (!moving) return cameraPosition?.clone() ?? new THREE.Vector3(-.9, 2.4, 8);
   vrm.scene.updateMatrixWorld(true);
   const head = vrm.humanoid.getNormalizedBoneNode("head");
   const origin = (head ?? vrm.scene).getWorldPosition(new THREE.Vector3());
-  return new THREE.Vector3(0, 0, 8)
-    .applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion())).add(origin);
+  return new THREE.Vector3(-.9,origin.y,8);
+}
+
+/** Permit a small glance along the path, but do not turn the face broadside with
+ * the pelvis. Bound the correction and share it across the chest, neck and head;
+ * eye tracking remains independently limited to the visible-iris envelope. */
+export function applyTravelAttention(vrm: VRM, target: THREE.Vector3) {
+  const head=vrm.humanoid.getNormalizedBoneNode("head");
+  if(!head)return;
+  vrm.scene.updateMatrixWorld(true);
+  const forward=new THREE.Vector3(0,0,teacherForwardSign(vrm)).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
+  const toward=target.clone().sub(head.getWorldPosition(new THREE.Vector3()));
+  const error=THREE.MathUtils.euclideanModulo(Math.atan2(toward.x,toward.z)-Math.atan2(forward.x,forward.z)+Math.PI,Math.PI*2)-Math.PI;
+  const allowed=20*Math.PI/180;
+  const correction=THREE.MathUtils.clamp(error-THREE.MathUtils.clamp(error,-allowed,allowed),-1.15,1.15);
+  // Rotate around WORLD up: VRM0 wrappers and tilted authored bones must not
+  // invert the yaw or turn it into a roll. These are offsets, not rig limits.
+  for(const [name,share] of [["spine",.12],["chest",.23],["upperChest",.13],["neck",.16],["head",.36]] as const){
+    const bone=vrm.humanoid.getNormalizedBoneNode(name);if(!bone?.parent)continue;
+    vrm.scene.updateMatrixWorld(true);
+    const parent=bone.parent.getWorldQuaternion(new THREE.Quaternion());
+    const rotation=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),correction*share);
+    bone.quaternion.premultiply(parent.clone().invert().multiply(rotation).multiply(parent));
+  }
 }

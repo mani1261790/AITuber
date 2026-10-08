@@ -22,8 +22,8 @@ it("aims eyes relative to a turned head and bounds extreme board targets", async
  scene.updateMatrixWorld(true);
  const forward=new THREE.Vector3(0,0,10).applyQuaternion(head.quaternion).add(head.position);
  applyTeacherGaze(vrm,forward);
- expect(Math.abs(leftEye.rotation.y)).toBeLessThan(.01);
- expect(Math.abs(rightEye.rotation.y)).toBeLessThan(.01);
+ expect(Math.abs(leftEye.rotation.y)).toBeLessThanOrEqual(.090001);
+ expect(Math.abs(rightEye.rotation.y)).toBeLessThanOrEqual(.090001);
  applyTeacherGaze(vrm,new THREE.Vector3(-10,-4,-4));
  expect(leftEye.rotation.y).toBeCloseTo(0);
  expect(leftEye.rotation.x).toBeCloseTo(0);
@@ -57,7 +57,7 @@ it("does not add another turn when the authored head already faces the target",(
  Object.values(nodes).forEach((b,i)=>expect(b.quaternion.angleTo(before[i]!)).toBeLessThan(1e-7));
 });
 
-it("looks ahead at head height during either walking direction, and returns to the audience at rest",async()=>{
+it("keeps a stable student-side target at head height during either walking direction",async()=>{
  const {teacherGazeTarget,applyTeacherGaze}=await import("./teacher-attention.ts");
  for(const yaw of [-Math.PI/2,Math.PI/2]){
   const scene=new THREE.Group(),head=new THREE.Bone(),leftEye=new THREE.Bone(),rightEye=new THREE.Bone();
@@ -68,10 +68,10 @@ it("looks ahead at head height during either walking direction, and returns to t
   const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name as keyof typeof nodes]??null}} as unknown as VRM;
   const target=teacherGazeTarget(vrm,true),origin=head.getWorldPosition(new THREE.Vector3());
   expect(target.y).toBeCloseTo(origin.y);
-  expect(target.clone().sub(origin).normalize().x).toBeCloseTo(Math.sign(yaw));
+  expect(target.z).toBe(8);expect(target.x).toBe(-.9);
   applyTeacherGaze(vrm,target);
-  expect(Math.abs(leftEye.rotation.y)).toBeLessThan(.01);
-  expect(Math.abs(rightEye.rotation.y)).toBeLessThan(.01);
+  expect(Math.abs(leftEye.rotation.y)).toBeLessThanOrEqual(.090001);
+  expect(Math.abs(rightEye.rotation.y)).toBeLessThanOrEqual(.090001);
   expect(teacherGazeTarget(vrm,false).toArray()).toEqual([-.9,2.4,8]);
   const camera=new THREE.Vector3(3,3,7);
   const cameraTarget=teacherGazeTarget(vrm,false,camera);
@@ -149,4 +149,25 @@ it("returns to neutral without inertial overshoot when a target moves behind the
   expect(leftEye.rotation.y).toBeGreaterThanOrEqual(0);expect(leftEye.rotation.y).toBeLessThanOrEqual(previous);previous=leftEye.rotation.y;
  }
  expect(previous).toBeLessThan(1e-8);
+});
+
+it("keeps the traveling face within 30 degrees of the class without forcing the neck to turn 90 degrees",async()=>{
+ const {applyTravelAttention,teacherForwardSign}=await import("./teacher-attention.ts");
+ for(const version of ["0","1"] as const)for(const direction of [-1,1]){
+  const scene=new THREE.Group(),wrapper=new THREE.Group(),nodes:Record<string,THREE.Bone>={};
+  scene.add(wrapper);wrapper.rotation.y=version==="0"?Math.PI:0;
+  let parent:THREE.Object3D=wrapper;
+  for(const name of ["hips","spine","chest","upperChest","neck","head"]){const bone=new THREE.Bone();parent.add(bone);bone.position.y=.15;nodes[name]=bone;parent=bone;}
+  const vrm={scene,meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
+  for(let step=0;step<=90;step++){
+   Object.values(nodes).forEach(b=>b.quaternion.identity());scene.rotation.y=direction*step*Math.PI/180;
+   scene.updateMatrixWorld(true);
+   const head=nodes.head!,target=head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,0,8));
+   applyTravelAttention(vrm,target);scene.updateMatrixWorld(true);
+   const forward=new THREE.Vector3(0,0,teacherForwardSign(vrm)).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
+   expect(Math.abs(Math.atan2(forward.x,forward.z))).toBeLessThan(30*Math.PI/180);
+   expect(nodes.neck!.quaternion.angleTo(new THREE.Quaternion())+head.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(36*Math.PI/180);
+   expect(nodes.hips!.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-7);
+  }
+ }
 });

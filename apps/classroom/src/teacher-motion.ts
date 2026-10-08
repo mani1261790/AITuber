@@ -9,7 +9,7 @@ import { SpeechGesture } from "./speech-gesture.ts";
 import * as THREE from "three";
 import { PointingCue } from "./pointing-cue.ts";
 import { FootContact } from "./foot-contact.ts";
-import { applyTeacherAttention, TeacherGaze, teacherGazeTarget, teacherForwardSign } from "./teacher-attention.ts";
+import { applyTeacherAttention, applyTravelAttention, TeacherGaze, teacherGazeTarget, teacherForwardSign } from "./teacher-attention.ts";
 import { PoseTransition, pointingHandGoal, pointingElbowGoal } from "./pose-transition.ts";
 import type { VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -51,6 +51,8 @@ export class TeacherMotion {
   private turnPoseOffset = false;
   private lowerBodyBones = new Set<THREE.Object3D>();
   private lastTurnProgress = 0;
+  private quietArms = new Map<THREE.Object3D,THREE.Quaternion>();
+  private quietArmWeight = 0;
   private gaze: TeacherGaze;
   private mixer: THREE.AnimationMixer;
   private actions: Record<MotionState, THREE.AnimationAction>;
@@ -173,6 +175,10 @@ export class TeacherMotion {
     for (const [key, action] of Object.entries(this.actions)) action.setEffectiveWeight(key === "idle" ? 1 : 0).play();
     // Establish the first standing pose while the avatar is still hidden.
     this.mixer.update(0);
+    for(const side of ["left","right"] as const)for(const part of ["UpperArm","LowerArm","Hand"] as const){
+      const bone=vrm.humanoid.getNormalizedBoneNode(`${side}${part}`);
+      if(bone)this.quietArms.set(bone,bone.quaternion.clone());
+    }
     // Capture the authored idle pose, including its foot width and toe-in.
     this.standingRecovery = new StandingRecovery(vrm);
     this.overlayBases.forEach((base,bone)=>base.copy(bone.quaternion));
@@ -192,7 +198,7 @@ export class TeacherMotion {
     this.vrm.humanoid.update();
   }
 
-  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined }) {
+  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
     const voiced = input.speaking && (input.speechLevel === undefined || input.speechLevel > .045);
     const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
@@ -207,7 +213,7 @@ export class TeacherMotion {
     if(input.moving || input.turning || input.reducedMotion)this.standingRecovery.cancel();
     else if(["walk","turnLeft","turnRight"].includes(previousState))this.standingRecovery.begin();
     this.listeningAge = this.state === "listen" ? (previousState === "listen" ? this.listeningAge + delta : 0) : 0;
-    if(this.state === "walk" && previousState !== "walk") {
+    if((this.state === "walk" && previousState !== "walk" && this.actions.walk.getEffectiveWeight()<.01) || (input.turning && (input.departureWalkBlend??0)>0 && this.actions.walk.getEffectiveWeight()<.001)) {
       const bones=(["hips","leftUpperLeg","leftLowerLeg","leftFoot","rightUpperLeg","rightLowerLeg","rightFoot"] as const)
         .flatMap(name=>{const bone=this.vrm.humanoid.getNormalizedBoneNode(name);return bone?[bone]:[];});
       const feet = (["leftFoot", "rightFoot"] as const).flatMap(name => {
@@ -225,8 +231,9 @@ export class TeacherMotion {
     const entryPose = enteringTurn || enteringPoint || endingBeat ? new Map([...this.overlayBases.keys()].map(bone=>[bone,{rotation:bone.quaternion.clone(),position:bone.position.clone()}])) : null;
     this.speechStrength = this.speechGesture.update(delta, input.speaking, input.speechLevel);
     const speechWeight = this.state === "talk" ? .55 : this.state === "walk" && input.gesture !== "idle" ? .3 : 0;
+    const departureBlend=input.turning?THREE.MathUtils.clamp(input.departureWalkBlend??0,0,1):0;
     for (const key of ["idle", "talk", "walk", "listen", "turnLeft", "turnRight"] as const) {
-      const targetWeight = key === "idle" ? Number(this.state === "idle" || this.state === "talk" || this.state === "listen") : key === "talk" ? speechWeight * this.speechStrength : key === "listen" ? (this.state === "listen" ? .65 : 0) : Number(this.state === key);
+      const targetWeight = key === "idle" ? Number(this.state === "idle" || this.state === "talk" || this.state === "listen") : key === "talk" ? speechWeight * this.speechStrength : key === "listen" ? (this.state === "listen" ? .65 : 0) : key === "walk" && input.turning ? departureBlend : Number(this.state === key)*(key.startsWith("turn")?1-departureBlend:1);
       this.weights[key] = enteringTurn ? targetWeight : THREE.MathUtils.damp(this.weights[key], targetWeight, 7, delta);
       this.actions[key].setEffectiveWeight(this.weights[key]);
     }
@@ -246,6 +253,11 @@ export class TeacherMotion {
     this.mixerPositions.forEach((base, bone) => base.copy(bone.position));
     this.overlayBases.forEach((base, bone) => base.copy(bone.quaternion));
     this.sampleKnees("clip");
+    // Stage travel is incidental to the lesson: retain a small counter-swing,
+    // including during spoken travel and pivot clips, around the relaxed idle arms.
+    this.quietArmWeight=THREE.MathUtils.damp(this.quietArmWeight,input.moving||input.turning?1:0,7,delta);
+    this.quietArms.forEach((rest,bone)=>bone.quaternion.slerp(rest,this.quietArmWeight*.82));
+
 
     const pointing = indicating && !input.moving;
     // Retract the old arm before switching sides, rather than snapping between arms.
@@ -264,6 +276,8 @@ export class TeacherMotion {
     }
     const focusWeight = this.teachingFocus.update(delta, input.target?.toArray().map(n=>n.toFixed(2)).join(":"), input.speaking, input.pointActionId)
       * THREE.MathUtils.smootherstep(this.pointBlend,0,1);
+    if(input.moving || input.turning)
+      applyTravelAttention(this.vrm,teacherGazeTarget(this.vrm,true));
     // Introduce the board detail, then address the audience without retracting the arm.
     if (input.cameraPosition && !input.moving && !input.turning)
       applyTeacherAttention(this.vrm,input.cameraPosition,.65*(1-focusWeight));

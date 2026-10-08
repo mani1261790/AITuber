@@ -118,7 +118,8 @@ it("adds speech to walking arms without modifying the gait, then fades it for a 
   expect(voiced.hips.position.distanceTo(silent.hips.position)).toBeLessThan(1e-6);
  }
  expect(voiced.controller.state).toBe("walk");
- expect(voiced.arm.quaternion.angleTo(silent.arm.quaternion)).toBeGreaterThan(.15);
+ expect(voiced.arm.quaternion.angleTo(silent.arm.quaternion)).toBeGreaterThan(.02);
+ expect(voiced.arm.quaternion.angleTo(silent.arm.quaternion)).toBeLessThan(.08);
  expect(voiced.controller.speechOverlayWeight).toBeGreaterThan(.29);
  for(let i=0;i<90;i++)voiced.controller.update(1/60,{...input,speaking:true,turning:true,turnProgress:.5});
  expect(voiced.controller.speechOverlayWeight).toBeLessThan(.001);
@@ -240,13 +241,15 @@ it("retains the entry pose across turn changes and half-turn clip restarts",()=>
   const before=arm.quaternion.clone();controller.update(1/fps,input);
   expect(arm.quaternion.angleTo(before)).toBeLessThan(1e-7);
   for(let i=1;i<=fps;i++)controller.update(1/fps,{...input,turnProgress:i/fps*.9});
-  expect(arm.rotation.z).toBeGreaterThan(.95);
+  expect(arm.rotation.z).toBeGreaterThan(.16);
+  expect(arm.rotation.z).toBeLessThan(.22);
   for(const next of [{...input},{...input,turnSign:-1}]){
    const old=arm.quaternion.clone();controller.update(1/fps,next);
    expect(arm.quaternion.angleTo(old)).toBeLessThan(.02);
   }
   for(let i=0;i<fps*2;i++)controller.update(1/fps,{...input,turnSign:-1,turnProgress:.8});
-  expect(arm.rotation.z).toBeLessThan(-.95);
+  expect(arm.rotation.z).toBeLessThan(-.16);
+  expect(arm.rotation.z).toBeGreaterThan(-.22);
   controller.dispose();
  }
 });

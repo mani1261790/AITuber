@@ -381,7 +381,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
           const target = region && activeGesture && !walking ? new THREE.Vector3(-3.85+(region.x+region.width/2)*4.76,targetY,-.06) : null;
           const speechLevel=speechLevelRef.current?.();
           teacherMotion.update(delta, { cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
-            target, side: avatar.scene.position.x < -1 ? "left" : "right", reducedMotion, gesture, actionId: direction?.actionId, pointActionId: direction?.phase === "pointing" ? direction.actionId : undefined, turning: locomotionState ? locomotionState.phase==="turn" : Math.abs(avatar.scene.rotation.y-facing)>.08, turnSign: locomotionState?.turnSign, turnProgress: locomotionState?.turnProgress });
+            target, side: avatar.scene.position.x < -1 ? "left" : "right", reducedMotion, gesture, actionId: direction?.actionId, pointActionId: direction?.phase === "pointing" ? direction.actionId : undefined, turning: locomotionState ? locomotionState.phase==="turn" : Math.abs(avatar.scene.rotation.y-facing)>.08, departureWalkBlend: locomotionState?.walkBlend, turnSign: locomotionState?.turnSign, turnProgress: locomotionState?.turnProgress });
           animateExpression(avatar, gestureMotion, time, delta, speechLevel, gesture, teacherMotion.acknowledgementStrength);
           renderer.domElement.dataset.motionClip = teacherMotion.state;
           renderer.domElement.dataset.gesture = teacherMotion.category;

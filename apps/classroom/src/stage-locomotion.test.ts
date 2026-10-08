@@ -1,6 +1,6 @@
 import {expect,it} from "vitest";
 import {StageLocomotion,stageStandingPose} from "./stage-locomotion.ts";
-it("uses two foot-placement cycles for a half turn without translating or jumping in yaw",()=>{
+it("keeps the first half-turn step planted and merges the last step into travel without a yaw jump",()=>{
  for(const fps of [30,60,120]) for(const sign of [-1,1]){
   const motion=new StageLocomotion(0,-sign*Math.PI/2);
   let cycles=0,previousProgress=0;
@@ -10,7 +10,8 @@ it("uses two foot-placement cycles for a half turn without translating or jumpin
    if(motion.turnProgress<previousProgress)cycles++;
    previousProgress=motion.turnProgress;
    expect(Math.abs(motion.yaw-yaw)).toBeLessThan(.06);
-   expect(motion.x).toBe(0);
+   if(cycles===0)expect(motion.x).toBe(0);
+   else expect(Math.abs(motion.x)).toBeLessThan(.5);
    if(motion.phase==="walk")break;
   }
   expect(cycles).toBe(1);
@@ -18,12 +19,12 @@ it("uses two foot-placement cycles for a half turn without translating or jumpin
   expect(Math.sin(motion.yaw)).toBeCloseTo(sign);
  }
 });
-it("pivots before translating and faces the audience only after arriving",()=>{
+it("blends departure into translation and faces the audience after arriving",()=>{
  const motion=new StageLocomotion(2.35,0);let sawWalk=false,sawArrivalTurn=false;
  for(let i=0;i<1200;i++){
   const oldX=motion.x,oldPhase=motion.phase;
   motion.update(1/60,-.65,0,1.4,1.2);
-  if(oldPhase==="turn")expect(motion.x).toBe(oldX);
+  if(oldPhase==="turn" && motion.walkBlend===0)expect(motion.x).toBe(oldX);
   expect(Math.abs(motion.x-oldX)).toBeLessThanOrEqual(1.75/60+1e-9);
   if(motion.phase==="walk")sawWalk=true;
   if(sawWalk&&motion.phase==="turn")sawArrivalTurn=true;
@@ -100,7 +101,7 @@ it("starts a joined central explanation already facing the audience without an e
 });
 
 
-it("uses the matching authored rotation clock without translating during a pivot", () => {
+it("uses the matching authored rotation clock while the departure overlaps a first step", () => {
  for(const sign of [-1,1]) {
   const motion=new StageLocomotion(0,0);
   const observed: number[]=[];
@@ -108,9 +109,40 @@ it("uses the matching authored rotation clock without translating during a pivot
   for(let i=0;i<30;i++) {
    motion.update(1/60,sign*3,0,1,1,timing);
    expect(motion.phase).toBe("turn");
-   expect(motion.x).toBe(0);
+   if(motion.turnProgress<=.45)expect(motion.x).toBe(0);
    expect(motion.yaw).toBeCloseTo(sign*Math.PI/2*motion.turnProgress**2);
   }
   expect(observed.every(direction=>direction===sign)).toBe(true);
  }
+});
+
+it("takes a small continuous first step before finishing the departure rotation at 30, 60 and 120 fps",()=>{
+ for(const fps of [30,60,120])for(const sign of [-1,1]){
+  const motion=new StageLocomotion(0,0);let overlap=false,arrival=false;
+  for(let i=0;i<fps*12;i++){
+   const before=motion.x,oldSpeed=motion.speed,oldPhase=motion.phase;
+   motion.update(1/fps,sign*3,0,1.4,1.4);
+   if(motion.phase==="turn" && motion.turnProgress<.4)expect(motion.x).toBe(before);
+   if(motion.phase==="turn" && Math.abs(motion.x-before)>1e-6){
+    overlap ||= Math.abs(motion.yaw)<1.4;expect(motion.walkBlend).toBeGreaterThan(0);expect(motion.speed).toBeLessThan(.66);
+    expect(Math.abs(motion.yaw)).toBeLessThanOrEqual(Math.PI/2);
+   }
+   if(oldPhase==="turn" && motion.phase==="walk")expect(motion.speed).toBeGreaterThanOrEqual(oldSpeed);
+   if(motion.phase==="idle"){arrival=true;break;}
+  }
+  expect(overlap).toBe(true);expect(arrival).toBe(true);expect(motion.x).toBe(sign*3);
+ }
+});
+
+it("brakes continuously if a new command interrupts the overlapping departure step",()=>{
+ const motion=new StageLocomotion(0,0);
+ for(let i=0;i<100;i++){
+  motion.update(1/60,3,0,1.4,1.4);
+  if(motion.phase==="turn" && motion.speed>.15)break;
+ }
+ expect(motion.phase).toBe("turn");const before=motion.speed,x=motion.x;
+ motion.update(1/60,-3,0,1.4,1.4);
+ expect(motion.phase).toBe("brake");expect(motion.speed).toBeCloseTo(before-1.8/60);expect(motion.x).toBeGreaterThan(x);
+ for(let i=0;i<1200;i++)motion.update(1/60,-3,0,1.4,1.4);
+ expect(motion.phase).toBe("idle");expect(motion.x).toBe(-3);
 });
