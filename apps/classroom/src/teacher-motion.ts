@@ -1,3 +1,4 @@
+import { AudienceScan } from "./audience-scan.ts";
 import { withLightWalk } from "./light-walk.ts";
 import { StandingRecovery } from "./standing-recovery.ts";
 import { withTeacherStance } from "./standing-motion.ts";
@@ -51,6 +52,7 @@ export class TeacherMotion {
   private turnPoseOffset = false;
   private lowerBodyBones = new Set<THREE.Object3D>();
   private lastTurnProgress = 0;
+  private audienceScan = new AudienceScan();
   private quietArms = new Map<THREE.Object3D,THREE.Quaternion>();
   private quietArmWeight = 0;
   private gaze: TeacherGaze;
@@ -276,11 +278,22 @@ export class TeacherMotion {
     }
     const focusWeight = this.teachingFocus.update(delta, input.target?.toArray().map(n=>n.toFixed(2)).join(":"), input.speaking, input.pointActionId)
       * THREE.MathUtils.smootherstep(this.pointBlend,0,1);
+    const traveling=input.moving || !!input.turning;
+    const audience=teacherGazeTarget(this.vrm,traveling,input.cameraPosition);
+    const scan=this.audienceScan.update(delta,this.speakingHold>0 && !traveling && !input.reducedMotion && focusWeight<.05);
+    if(!traveling){
+      const head=this.vrm.humanoid.getNormalizedBoneNode("head");
+      if(head){
+        this.vrm.scene.updateMatrixWorld(true);
+        const origin=head.getWorldPosition(new THREE.Vector3());
+        audience.sub(origin).applyAxisAngle(new THREE.Vector3(0,1,0),scan).add(origin);
+      }
+    }
     if(input.moving || input.turning)
       applyTravelAttention(this.vrm,teacherGazeTarget(this.vrm,true));
     // Introduce the board detail, then address the audience without retracting the arm.
     if (input.cameraPosition && !input.moving && !input.turning)
-      applyTeacherAttention(this.vrm,input.cameraPosition,.65*(1-focusWeight));
+      applyTeacherAttention(this.vrm,audience,.65*(1-focusWeight));
     if (focusWeight > .001) applyTeacherAttention(this.vrm,this.pointTarget,focusWeight);
     const key = `${input.actionId}:${input.gesture}`;
     if (key !== this.gestureKey) {
@@ -347,7 +360,6 @@ export class TeacherMotion {
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
     // Keep the target; solve eyes only after the body reaches its final pose.
-    const audience = teacherGazeTarget(this.vrm, input.moving || !!input.turning, input.cameraPosition);
     const gazeTarget = audience.lerp(this.pointTarget, focusWeight);
     // Pose continuity also covers clip changes and releasing a pointing gesture.
     // Preserve turn/point entries and the release of spoken gestures after all procedural gestures, so offsets
