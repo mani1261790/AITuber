@@ -5,7 +5,7 @@
 Containersを廃止し、Workers・SQLite Durable Objects・R2へ移行した。
 
 - Workers Static Assets: `/` は講義画面、`/operator/` は管理画面。VRM・教室・モーションの3D描画は閲覧端末で行う。
-- モーション確認: `/?motion-lab&mode=current`。本編の歩行・指差し・仕草、先生モデルの比較、手元のVRMAファイルを再生できる。ラボはハーフアップ・靴調整版v7を初期表示し、講義中の先生とも比較できる。その他の未採用候補と素材ライブラリはローカル開発環境のみ。
+- モーション確認: `/?motion-lab&mode=current`。本編の歩行・指差し・仕草、先生モデルの比較、手元のVRMAファイルを再生できる。ラボは顔まわり・結び髪調整版v8を初期表示し、講義中の先生とも比較できる。その他の未採用候補と素材ライブラリはローカル開発環境のみ。
 - Worker: `/login`、管理APIの認証・同一Origin検査、静的配信。
 - SQLite Durable Object `LectureRoom`: 現在の授業、参加コード・参加トークン、質問、教材作成ジョブ、設定、利用量。MVPは単一教室・最大5人。
 - R2 `aituber-state`: 原本PDF・音声キャッシュ・黒板SVG。公開バケットにはしない。
