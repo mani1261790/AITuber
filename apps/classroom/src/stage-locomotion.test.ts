@@ -146,3 +146,12 @@ it("brakes continuously if a new command interrupts the overlapping departure st
  for(let i=0;i<1200;i++)motion.update(1/60,-3,0,1.4,1.4);
  expect(motion.phase).toBe("idle");expect(motion.x).toBe(-3);
 });
+
+it("turns toward the board and back without changing standing position",()=>{
+ const motion=new StageLocomotion(-.6,0);
+ for(const target of [Math.PI,0]){
+  for(let i=0;i<600;i++)motion.update(1/60,-.6,target,1.4,1.4);
+  expect(motion.x).toBe(-.6);expect(motion.phase).toBe("idle");
+  expect(Math.atan2(Math.sin(motion.yaw-target),Math.cos(motion.yaw-target))).toBeCloseTo(0);
+ }
+});

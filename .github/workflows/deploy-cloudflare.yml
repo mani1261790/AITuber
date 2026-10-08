@@ -34,7 +34,7 @@ jobs:
         run: pnpm verify:cloud-account
       - run: pnpm --filter @aituber/server... build
       - name: Verify authentication and providers
-        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts apps/cloudflare/src/audio-response.test.ts packages/providers/src/llm.test.ts apps/classroom/src/teacher-attention.test.ts apps/classroom/src/audience-scan.test.ts apps/classroom/src/teacher-motion.test.ts apps/classroom/src/light-walk.test.ts apps/classroom/src/foot-contact.test.ts apps/classroom/src/standing-motion.test.ts apps/classroom/src/stage-locomotion.test.ts apps/classroom/src/standing-recovery.test.ts apps/classroom/src/motion-retarget.test.ts apps/server/src/cloud-recovery.test.ts apps/server/src/course-authoring-service.test.ts apps/cloudflare/src/platform/ajv.test.ts
+        run: pnpm exec vitest run apps/cloudflare/src/auth.test.ts apps/cloudflare/src/audio-response.test.ts packages/providers/src/llm.test.ts apps/classroom/src/teacher-attention.test.ts apps/classroom/src/audience-scan.test.ts apps/classroom/src/teacher-motion.test.ts apps/classroom/src/light-walk.test.ts apps/classroom/src/foot-contact.test.ts apps/classroom/src/standing-motion.test.ts apps/classroom/src/stage-locomotion.test.ts apps/classroom/src/stage-prop-motion.test.ts apps/classroom/src/standing-recovery.test.ts apps/classroom/src/motion-retarget.test.ts apps/server/src/cloud-recovery.test.ts apps/server/src/course-authoring-service.test.ts apps/cloudflare/src/platform/ajv.test.ts
       - name: Generate Worker types
         run: pnpm exec wrangler types --config apps/cloudflare/wrangler.jsonc apps/cloudflare/worker-configuration.d.ts
       - run: pnpm --filter @aituber/cloudflare typecheck

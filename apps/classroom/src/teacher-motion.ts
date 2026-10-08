@@ -1,3 +1,4 @@
+import type { StagePropPose } from "./stage-prop-motion.ts";
 import { AudienceScan } from "./audience-scan.ts";
 import { withLightWalk } from "./light-walk.ts";
 import { StandingRecovery } from "./standing-recovery.ts";
@@ -200,7 +201,7 @@ export class TeacherMotion {
     this.vrm.humanoid.update();
   }
 
-  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined }) {
+  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
     const voiced = input.speaking && (input.speechLevel === undefined || input.speechLevel > .045);
     const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
@@ -293,7 +294,7 @@ export class TeacherMotion {
       applyTravelAttention(this.vrm,teacherGazeTarget(this.vrm,true));
     // Introduce the board detail, then address the audience without retracting the arm.
     if (input.cameraPosition && !input.moving && !input.turning)
-      applyTeacherAttention(this.vrm,audience,.65*(1-focusWeight));
+      applyTeacherAttention(this.vrm,audience,.65*(1-focusWeight)*(1-(input.propPose?.weight??0)));
     if (focusWeight > .001) applyTeacherAttention(this.vrm,this.pointTarget,focusWeight);
     const key = `${input.actionId}:${input.gesture}`;
     if (key !== this.gestureKey) {
@@ -359,8 +360,19 @@ export class TeacherMotion {
     }
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
+    if(input.propPose && input.propPose.weight>0){
+      const prop=input.propPose;
+      applyTeacherAttention(this.vrm,prop.target,prop.weight);
+      aimArm(this.vrm,prop.side,prop.target,prop.weight,prop.kind==="write"?"write":"open");
+      for(const finger of ["Index","Middle","Ring","Little"] as const)for(const part of ["Proximal","Intermediate","Distal"] as const){
+        const joint=this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}${finger}${part}`);
+        const angle=prop.kind==="write" && finger==="Index"?.25:.85;
+        joint?.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),(prop.side==="left"?1:-1)*angle),prop.weight);
+      }
+    }
     // Keep the target; solve eyes only after the body reaches its final pose.
     const gazeTarget = audience.lerp(this.pointTarget, focusWeight);
+    if(input.propPose)gazeTarget.lerp(input.propPose.target,input.propPose.weight);
     // Pose continuity also covers clip changes and releasing a pointing gesture.
     // Preserve turn/point entries and the release of spoken gestures after all procedural gestures, so offsets
     // never apply the outgoing gesture twice. Decay only the mismatch, not the clip.
@@ -431,7 +443,7 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
     .addScaledVector(forward,length*(emphasis?.42:.65));
 }
 
-export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" = "point") {
+export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" = "point") {
   const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
   const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
   const hand = vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
@@ -449,7 +461,7 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   const reach=handGoal.distanceTo(shoulder);
   const axis=handGoal.clone().sub(shoulder).normalize();
   const frame=presentingFrame(vrm);
-  const pole=handPose === "open"
+  const pole=handPose !== "point"
     ? frame.up.clone().negate().addScaledVector(frame.forward,-.25).addScaledVector(frame.lateral,side==="left"?.2:-.2)
     : new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
   pole.addScaledVector(axis,-pole.dot(axis)).normalize();
@@ -472,17 +484,17 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   joints.forEach((joint, i) => joint.quaternion.slerpQuaternions(original[i]!, joint.quaternion.clone(), weight));
   // The talk clip must not retain a bent wrist on top of the presenting pose.
   if(handPose === "open")hand.quaternion.slerp(new THREE.Quaternion(),weight);
-  applyHandPose(vrm, handPose, side, weight);
+  applyHandPose(vrm, handPose==="write"?"point":handPose, side, weight);
   const indexBase = vrm.humanoid.getNormalizedBoneNode(`${side}IndexProximal`);
   const indexTip = vrm.humanoid.getNormalizedBoneNode(`${side}IndexDistal`);
-  if (handPose === "point" && indexBase && indexTip) {
+  if (handPose !== "open" && indexBase && indexTip) {
     const originalHand=hand.quaternion.clone();
     // Start from a neutral wrist. The arm solver carries the large directional
     // change; never fold the cuff to force an otherwise unreachable pointing ray.
     hand.quaternion.identity();
     vrm.scene.updateMatrixWorld(true);
     indexBase.getWorldPosition(origin); indexTip.getWorldPosition(endpoint);
-    direction.copy(target).sub(origin).normalize();
+    direction.copy(target);if(handPose==="write")direction.z-=.25;direction.sub(origin).normalize();
     world.setFromUnitVectors(endpoint.sub(origin).normalize(), direction);
     const correction=world.angleTo(new THREE.Quaternion());
     if(correction>.7)world.slerpQuaternions(new THREE.Quaternion(),world.clone(),.7/correction);

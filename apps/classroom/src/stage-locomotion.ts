@@ -87,7 +87,10 @@ export class StageLocomotion {
       this.speed=Math.min(wanted,MathUtils.damp(this.speed,wanted,6,dt));
       const step=Math.min(Math.abs(distance),this.speed*dt);this.x+=Math.sign(distance)*step;
       if(step >= Math.abs(distance)){beginTurn(standYaw,"idle");}
-    }else{this.speed=0;}
+    }else{this.speed=0;
+      const angle=Math.atan2(Math.sin(standYaw-this.yaw),Math.cos(standYaw-this.yaw));
+      if(Math.abs(angle)>.035)beginTurn(standYaw,"idle");
+    }
     return this;
   }
 }

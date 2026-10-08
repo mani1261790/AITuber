@@ -1,3 +1,4 @@
+import {StagePropMotion, StagePropVisuals, type StagePropAction} from "./stage-prop-motion.ts";
 import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
 import { connectHairCollisions } from "./hair-collisions.ts";
 import { lecturePixelRatio } from "./render-resolution.ts";
@@ -26,7 +27,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -36,8 +37,8 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
   const lookRef = useRef(look);
   useEffect(() => { lookRef.current = look; }, [look]);
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
-  useEffect(() => { stageRef.current = { listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
+  const stageRef = useRef({ propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
+  useEffect(() => { stageRef.current = { propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
   const motionRef = useRef({ state, mouthOpen, speaking: speaking ?? mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -112,6 +113,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
     let texture: THREE.CanvasTexture | null = null;
     let boardTexture: THREE.CanvasTexture | null = null;
     let curtain = 0;
+    const propMotion=new StagePropMotion(),propVisuals=new StagePropVisuals(scene);
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const click = (event: PointerEvent) => {
@@ -316,7 +318,13 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         setLessonMap(boardMaterial, boardTexture);
         setLessonMap(screenMaterial, texture);
       }
-      curtain = reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
+      const propAction=stageRef.current.propAction;
+      const propX=propAction?.kind==="write"?-.6:1.65;
+      const propYaw=propAction?.kind==="write"?Math.PI:-.65;
+      const propReady=!!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-propX)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-propYaw),Math.cos(locomotion.yaw-propYaw)))<.05;
+      const propFrame=propMotion.update(propAction,propReady,delta);
+      propVisuals.update(propAction,propFrame);
+      curtain = propFrame ? (propFrame.kind==="screen"?propFrame.progress:0) : reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
       screen.scale.y=Math.max(.001,curtain)*.82;
       const screenUv = screen.geometry.attributes.uv!;
       screenUv.setY(2,1-curtain); screenUv.setY(3,1-curtain); screenUv.needsUpdate=true;
@@ -350,7 +358,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
           renderer.domElement.dataset.camera=currentCamera;
         }
         const startX=avatar.scene.position.x;
-        const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? locomotion.update(delta,destinationX,Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26,...teacherMotion.turnDurations,teacherMotion.turnRotationProgress):null;
+        const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? locomotion.update(delta,propFrame?.x ?? destinationX,propFrame?.yaw ?? (Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26),...teacherMotion.turnDurations,teacherMotion.turnRotationProgress):null;
         const distance = destinationX-avatar.scene.position.x;
         const travelling = Math.abs(distance) > .18;
         const travelFacing = Math.sign(distance)*Math.PI/2;
@@ -380,7 +388,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         if (teacherMotion && !stageRef.current.preview) {
           const target = region && activeGesture && !walking ? new THREE.Vector3(-3.85+(region.x+region.width/2)*4.76,targetY,-.06) : null;
           const speechLevel=speechLevelRef.current?.();
-          teacherMotion.update(delta, { cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
+          teacherMotion.update(delta, { propPose:propFrame?.pose, cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
             target, side: avatar.scene.position.x < -1 ? "left" : "right", reducedMotion, gesture, actionId: direction?.actionId, pointActionId: direction?.phase === "pointing" ? direction.actionId : undefined, turning: locomotionState ? locomotionState.phase==="turn" : Math.abs(avatar.scene.rotation.y-facing)>.08, departureWalkBlend: locomotionState?.walkBlend, turnSign: locomotionState?.turnSign, turnProgress: locomotionState?.turnProgress });
           animateExpression(avatar, gestureMotion, time, delta, speechLevel, gesture, teacherMotion.acknowledgementStrength);
           renderer.domElement.dataset.motionClip = teacherMotion.state;
@@ -456,6 +464,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
       if (environment) VRMUtils.deepDispose(environment);
       renderer.domElement.removeEventListener("pointerup",click);
       texture?.dispose();
+      propVisuals.dispose();
       boardTexture?.dispose();
       VRMUtils.deepDispose(room);
       renderer.dispose();
