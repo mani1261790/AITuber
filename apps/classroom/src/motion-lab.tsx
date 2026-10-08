@@ -14,7 +14,7 @@ function MotionLab(){
   useEffect(()=>{const previous=document.title;document.title="モーションラボ | AITuber";return()=>{document.title=previous;};},[]);
   const [showDiagnostics,setShowDiagnostics]=useState(false);
   const fileInput=useRef<HTMLInputElement>(null);
-  const [modelUrl,setModelUrl]=useState(teacherModelUrl);
+  const [modelUrl,setModelUrl]=useState("/models/teacher-floral-v4.vrm");
   const [look,setLook]=useState<"anime"|"original">("anime");
   const [speaking,setSpeaking]=useState(false);
   const [inspectFeet,setInspectFeet]=useState(false);
@@ -47,8 +47,9 @@ function MotionLab(){
     <aside className="lab-panel" aria-label="モーション操作">
       <LabGroup title="検証対象"><LabSelect label="比較対象" value={mode} onChange={value=>{setMode(value);samples.current=[];setPaused(false);}} options={[...(import.meta.env.DEV?[{value:"library",label:"無料モーションライブラリ"}]:[]),{value:"current",label:"講義での動き"},{value:"vrma",label:"VRMAファイル"}]}/>
       {mode==="current" && <LabSelect label="先生モデル" value={modelUrl} onChange={resetModel} options={[
-        {value:teacherModelUrl,label:"体型・袖口改訂（現在）"},{value:"/models/tutor-refined.vrm?v=proportions-1",label:"体型改訂・元の袖"},{value:"/models/tutor.vrm?v=aituber-teacher-v1",label:"元の先生（保存版）"},
-        ...(import.meta.env.DEV?[{value:"/models/candidates/AvatarSample_A.vrm",label:"VRoid公式 A"},{value:"/models/candidates/AvatarSample_B.vrm",label:"VRoid公式 B"}]:[])]}/>}
+        {value:"/models/teacher-floral-v4.vrm",label:"質感調整版 v4（最新）"},{value:teacherModelUrl,label:"講義中の先生"},{value:"/models/tutor-refined.vrm?v=proportions-1",label:"体型改訂・元の袖"},{value:"/models/tutor.vrm?v=aituber-teacher-v1",label:"元の先生（保存版）"},
+        ...(import.meta.env.DEV?[{value:"/models/candidates/teacher-floral-v3.vrm",label:"上着・髪・体型 調整版（ローカル）"},{value:"/models/candidates/teacher-floral-v2.vrm",label:"衣装リメイク版（ローカル）"},{value:"/models/candidates/cardigan-fitting.vrm",label:"カーディガン移植（試着）"},{value:"/models/candidates/clothing-donor.vrm",label:"衣装提供モデル（原本）"},{value:"/models/candidates/summer-oneesan-original.vrm",label:"夏向けおねえさん（受領原本）"},{value:"/models/candidates/AvatarSample_A.vrm",label:"VRoid公式 A"},{value:"/models/candidates/AvatarSample_B.vrm",label:"VRoid公式 B"}]:[])]}/>}
+      {mode==="current" && <p className="lab-help"><a href="/models/teacher-floral-v4-NOTICE.md" target="_blank" rel="noreferrer">モデル・衣装の出典</a></p>}
       {mode==="library" && <><LabSelect label="素材集" value={packId} options={motionPacks.map(p=>({value:p.id,label:p.label}))} onChange={id=>{setPackId(id);setClipName(recommendedMotions[id]![0]!);}}/><LabSelect label="モーション" value={clipName} options={recommendedMotions[packId]!.map(value=>({value,label:motionLabels[value]??value}))} onChange={setClipName}/></>}
       {mode==="vrma" && <><input ref={fileInput} className="lab-file-input" aria-label="VRMAファイルを選ぶ" type="file" accept=".vrma" multiple onChange={event=>{setFiles(Array.from(event.target.files??[]));setFileIndex(0);}}/><button className="lab-upload" onClick={()=>fileInput.current?.click()}><span aria-hidden="true">＋</span> VRMAファイルを選ぶ<small>複数選択可 · 端末内だけで再生</small></button>{files.length>0 && <LabSelect label="再生ファイル" value={String(fileIndex)} onChange={value=>setFileIndex(Number(value))} options={files.map((file,i)=>({value:String(i),label:file.name}))}/>}</>}
       </LabGroup>

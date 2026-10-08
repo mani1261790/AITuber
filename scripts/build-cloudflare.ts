@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -13,6 +13,10 @@ await cp("apps/operator/dist","dist/cloudflare/operator",{recursive:true});
 // Downloaded local candidate models are not distribution assets.
 // Keep the original/refined teacher models for the hosted motion lab.
 await rm("dist/cloudflare/models/candidates",{recursive:true,force:true});
+
+const hostedTeacher = await stat("dist/cloudflare/models/teacher-floral-v4.vrm");
+if(hostedTeacher.size > 25*1024*1024) throw new Error("Hosted teacher exceeds the static asset size limit");
+await stat("dist/cloudflare/models/teacher-floral-v4-NOTICE.md");
 
 // Japanese PDF extraction uses private binding requests to these static CMaps/fonts.
 const requireServer = createRequire(new URL("../apps/server/package.json", import.meta.url));
