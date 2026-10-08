@@ -13,3 +13,5 @@
 @media(max-aspect-ratio:1/1){.lab-workspace{grid-template-rows:minmax(0,min(43%,calc((100vw - 22px) * 9 / 16 + 69px))) minmax(0,1fr)}.lab-preview-footer{display:flex;min-height:32px;padding:6px 12px;justify-content:flex-end}.lab-preview-footer>span:first-child{display:none}.lab-preview-footer:not(:has(.lab-timing)){display:none}}
 .lab-brand{min-width:0}.lab-header h1,.lab-eyebrow{white-space:nowrap}
 @media(max-width:360px){.lab-header{gap:10px;padding:10px 12px}.lab-brand-mark{display:none}.lab-header h1{font-size:16px}.lab-eyebrow{font-size:8px}.motion-lab .lab-export{font-size:12px;padding:8px 10px;gap:6px}}
+
+.vrma-trial-viewer{display:flex;flex-direction:column}.vrma-trial-viewer p{position:static;flex:none;margin:12px}.vrma-canvas{flex:1;min-height:0;min-width:0;overflow:hidden}

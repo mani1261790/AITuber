@@ -98,5 +98,5 @@ export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-
     })().catch(error=>{if(!disposed)setStatus(error instanceof Error ? error.message : "読込失敗");});
     return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();controls.dispose();mixer?.stopAllAction();if(avatar){mixer?.uncacheRoot(avatar.scene);VRMUtils.deepDispose(avatar.scene);}VRMUtils.deepDispose(grid);renderer.dispose();renderer.domElement.remove();};
   },[file,modelUrl,trial,view,restart]);
-  return <div className="motion-viewer" ref={host}><p role="status">{status}</p></div>;
+  return <div className="motion-viewer vrma-trial-viewer"><p role="status">{status}</p><div className="vrma-canvas" ref={host}/></div>;
 }
