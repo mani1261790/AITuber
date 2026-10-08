@@ -1,3 +1,4 @@
+import { withLightWalk } from "./light-walk.ts";
 import { StandingRecovery } from "./standing-recovery.ts";
 import { withTeacherStance } from "./standing-motion.ts";
 import { createTurnProgress, defaultTurnProgress } from "./turn-timing.ts";
@@ -124,7 +125,7 @@ export class TeacherMotion {
         return retargetMotion(clone(source.scene), clip, vrm, reference);
       });
       const idle = withTeacherStance(vrm,retargetMotion(idleSource.scene, idleSource.animations[0]!, vrm).clip);
-      const walk=convert(addon,"Walk_Female");
+      const walk=withLightWalk(vrm,convert(addon,"Walk_Female"));
       const stride=estimateWalkDistance(vrm,walk);
       const turnLeft=convert(turns,"Turn_Left_90"),turnRight=convert(turns,"Turn_Right_90");
       const hipsName=vrm.humanoid.getNormalizedBoneNode("hips")?.name;
@@ -311,17 +312,12 @@ export class TeacherMotion {
           // Explain once at speech onset with a visible presenting hand above the waist.
           // Emphasis reaches higher and adds the supporting hand; neither repeats on a timer.
           if (!emphasis && !leading) continue;
-          const t=(this.gestureAge-(leading?0:.3))/(emphasis?2.6:3.4);
+          const t=this.gestureAge/(emphasis?2.6:3.4);
           const amount=t>0&&t<1?Math.sin(Math.PI*t)**2:0;
-          const shoulder=this.vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
-          if(shoulder&&amount>0){
-            const position=shoulder.getWorldPosition(new THREE.Vector3());
-            // Present the leading hand near chest height; keep the supporting hand lower.
-            const offset=new THREE.Vector3((side==="left"?1:-1)*(leading?.4:.18),leading?(emphasis?-.12:-.3):-.42,.8).applyQuaternion(this.vrm.scene.quaternion);
-            // While the other hand points, underline the detail with a smaller
-            // free-hand beat instead of opening both arms into a broad shrug.
+          const target = presentingHandTarget(this.vrm,side,emphasis);
+          if(target && amount>0){
             const accompaniment = emphasis ? 1-.35*THREE.MathUtils.smootherstep(this.pointBlend,0,1) : 1;
-            aimArm(this.vrm,side,position.add(offset),amount*(leading?(emphasis?.85:.8):.3)*availability*accompaniment,"open");
+            aimArm(this.vrm,side,target,amount*.96*availability*accompaniment,"open");
           }
         }
       }
@@ -380,7 +376,35 @@ export class TeacherMotion {
   dispose() { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.vrm.scene); }
 }
 
-/** Aim the arm in world space; a distant board point is a direction, not a reachable hand position. */
+/** Anatomical world frame: follows the torso, including VRM 0's corrected wrapper. */
+function presentingFrame(vrm: VRM) {
+  vrm.scene.updateMatrixWorld(true);
+  const left=vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
+  const right=vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
+  const up=new THREE.Vector3(0,1,0);
+  const lateral=left && right
+    ? left.getWorldPosition(new THREE.Vector3()).sub(right.getWorldPosition(new THREE.Vector3())).normalize()
+    : new THREE.Vector3(1,0,0).applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion()));
+  const forward=lateral.clone().cross(up).normalize();
+  up.crossVectors(forward,lateral).normalize();
+  return {lateral,up,forward};
+}
+
+export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: boolean) {
+  const upper=vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
+  const lower=vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
+  const hand=vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
+  if(!upper || !lower || !hand)return null;
+  const {lateral,up,forward}=presentingFrame(vrm);
+  const shoulder=upper.getWorldPosition(new THREE.Vector3());
+  const elbow=lower.getWorldPosition(new THREE.Vector3());
+  const length=shoulder.distanceTo(elbow)+elbow.distanceTo(hand.getWorldPosition(new THREE.Vector3()));
+  // Emphasis opens BOTH arms diagonally down/out; explanation offers a palm in front.
+  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.82:.30))
+    .addScaledVector(up,-length*(emphasis?.45:.42))
+    .addScaledVector(forward,length*(emphasis?.20:.65));
+}
+
 export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" = "point") {
   const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
   const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
@@ -393,10 +417,15 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   vrm.scene.updateMatrixWorld(true);
   const shoulder=upper.getWorldPosition(new THREE.Vector3()), elbow=lower.getWorldPosition(new THREE.Vector3()), wrist=hand.getWorldPosition(new THREE.Vector3());
   const a=shoulder.distanceTo(elbow),b=elbow.distanceTo(wrist),baseReach=(a+b)*.84;
-  const handGoal=pointingHandGoal(shoulder,target,baseReach,handPose === "point" ? (a+b)*.94 : baseReach);
+  const handGoal=handPose === "point"
+    ? pointingHandGoal(shoulder,target,baseReach,(a+b)*.94)
+    : target.clone().sub(shoulder).clampLength(Math.abs(a-b)+.0001,(a+b)*.94).add(shoulder);
   const reach=handGoal.distanceTo(shoulder);
   const axis=handGoal.clone().sub(shoulder).normalize();
-  const pole=new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
+  const frame=presentingFrame(vrm);
+  const pole=handPose === "open"
+    ? frame.up.clone().negate().addScaledVector(frame.forward,-.25).addScaledVector(frame.lateral,side==="left"?.2:-.2)
+    : new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
   pole.addScaledVector(axis,-pole.dot(axis)).normalize();
   const along=(a*a-b*b+reach*reach)/(2*reach);
   const bentElbow=handPose === "point"
@@ -413,8 +442,10 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   // Supinate the forearm, not the wrist: the sleeve follows the presenting palm.
   // Rotate around the actual forearm axis to preserve the solved hand position.
   if (handPose === "open" && hand.position.lengthSq() > 1e-8)
-    lower.rotateOnAxis(hand.position.clone().normalize(), side === "left" ? .6 : -.6);
+    lower.rotateOnAxis(hand.position.clone().normalize(), side === "left" ? .3 : -.3);
   joints.forEach((joint, i) => joint.quaternion.slerpQuaternions(original[i]!, joint.quaternion.clone(), weight));
+  // The talk clip must not retain a bent wrist on top of the presenting pose.
+  if(handPose === "open")hand.quaternion.slerp(new THREE.Quaternion(),weight);
   applyHandPose(vrm, handPose, side, weight);
   const indexBase = vrm.humanoid.getNormalizedBoneNode(`${side}IndexProximal`);
   const indexTip = vrm.humanoid.getNormalizedBoneNode(`${side}IndexDistal`);

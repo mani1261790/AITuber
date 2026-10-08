@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
-import { removeHorizontalTravel, TeacherMotion, walkPlaybackRate } from "./teacher-motion.ts";
+import { aimArm, presentingHandTarget, removeHorizontalTravel, TeacherMotion, walkPlaybackRate } from "./teacher-motion.ts";
 
 it("extracts net travel but retains lateral and forward weight shifts without mutating the source", () => {
   const original = new THREE.AnimationClip("walk", 1, [new THREE.VectorKeyframeTrack("hips.position", [0, .5, 1], [.1, 1, .2, .45, 1.1, .9, .5, 1, 1.4])]);
@@ -459,7 +459,6 @@ it("finishes a presenting gesture across short adjacent explanation beats",()=>{
 
 it("turns a presenting palm through the forearm without displacing the solved hand or bending the wrist",async()=>{
  const {aimArm}=await import("./teacher-motion.ts");
- const {pointingHandGoal}=await import("./pose-transition.ts");
  for(const side of ["left","right"] as const){
   const sign=side==="left"?1:-1,scene=new THREE.Group(),upper=new THREE.Bone(),lower=new THREE.Bone(),hand=new THREE.Bone();
   scene.add(upper);upper.add(lower);lower.add(hand);
@@ -469,7 +468,7 @@ it("turns a presenting palm through the forearm without displacing the solved ha
   const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
   scene.updateMatrixWorld(true);
   const shoulder=upper.getWorldPosition(new THREE.Vector3()),target=shoulder.clone().add(new THREE.Vector3(sign*.4,-.3,.8));
-  const expected=pointingHandGoal(shoulder,target,(lower.position.length()+hand.position.length())*.84);
+  const expected=target.clone().sub(shoulder).clampLength(0,(lower.position.length()+hand.position.length())*.94).add(shoulder);
   aimArm(vrm,side,target,1,"open");scene.updateMatrixWorld(true);
   expect(hand.getWorldPosition(new THREE.Vector3()).distanceTo(expected)).toBeLessThan(1e-6);
   expect(hand.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-6);
@@ -534,5 +533,36 @@ it("nods down and recovers in world space for both VRM versions and stage headin
   expect(forward.y).toBeLessThan(-.15);
   for(let i=0;i<150;i++)controller.update(1/60,input);
   expect(head.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(.001);controller.dispose();
+ }
+});
+
+it("presents in front of the torso with elbows below the hands for either VRM convention and stage heading",()=>{
+ for(const version of ["0","1"] as const)for(const yaw of [-1.1,0,.8]){
+  const scene=new THREE.Group(),wrapper=new THREE.Group(),nodes:Record<string,THREE.Bone>={};
+  scene.rotation.y=yaw;wrapper.rotation.y=version==="0"?Math.PI:0;scene.add(wrapper);
+  for(const side of ["left","right"] as const){
+   const sign=(side==="left"?1:-1)*(version==="0"?-1:1);
+   const upper=new THREE.Bone(),lower=new THREE.Bone(),hand=new THREE.Bone();
+   wrapper.add(upper);upper.add(lower);lower.add(hand);upper.position.set(sign*.2,1.4,0);lower.position.x=sign*.3;hand.position.x=sign*.27;
+   nodes[`${side}UpperArm`]=upper;nodes[`${side}LowerArm`]=lower;nodes[`${side}Hand`]=hand;
+  }
+  const vrm={scene,meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
+  const forward=new THREE.Vector3(0,0,1).applyQuaternion(scene.quaternion);
+  for(const side of ["left","right"] as const){
+   const target=presentingHandTarget(vrm,side,false)!;
+   const upper=nodes[`${side}UpperArm`]!,lower=nodes[`${side}LowerArm`]!,hand=nodes[`${side}Hand`]!;
+   const shoulder=upper.getWorldPosition(new THREE.Vector3());
+   expect(target.clone().sub(shoulder).dot(forward)).toBeGreaterThan(.3);
+   aimArm(vrm,side,target,1,"open");scene.updateMatrixWorld(true);
+   const elbow=lower.getWorldPosition(new THREE.Vector3()),wrist=hand.getWorldPosition(new THREE.Vector3());
+   expect(wrist.distanceTo(target)).toBeLessThan(.0001);
+   expect(elbow.y).toBeLessThan(wrist.y);
+   expect(elbow.distanceTo(shoulder)).toBeCloseTo(.3);
+   expect(wrist.distanceTo(elbow)).toBeCloseTo(.27);
+  }
+  const left=presentingHandTarget(vrm,"left",true)!,right=presentingHandTarget(vrm,"right",true)!;
+  expect(left.y).toBeCloseTo(right.y);
+  expect(left.distanceTo(right)).toBeGreaterThan(1.2);
+  expect(left.y).toBeGreaterThan(1.1);
  }
 });

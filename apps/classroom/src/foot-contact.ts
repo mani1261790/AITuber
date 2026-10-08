@@ -85,9 +85,9 @@ export class FootContact {
       state.releaseAge += dt;
       // A pivot unwinds an anchor displaced by body rotation; give that larger
       // correction time to unwind without accelerating the foot into a kick.
-      // Walking also needs a gradual toe-off; a short release can whip the
-      // ankle back into the swing even though the joint rotations are bounded.
-      const releaseDuration = turning ? .4 : .36;
+      // Walking toe-off must finish before mid-swing; retaining the anchor
+      // for most of a step drags the ankle back and forces a deep pelvis drop.
+      const releaseDuration = turning ? .4 : .16;
       const releaseProgress = Math.min(1,state.releaseAge/releaseDuration);
       state.weight = releaseProgress < 1 && !state.planted
         ? state.releaseWeight * Math.max(0,1-THREE.MathUtils.smootherstep(releaseProgress,0,1))
@@ -135,8 +135,11 @@ export class FootContact {
         // A 1% reach reserve forces even a straight support leg into ~16 degrees
         // of flexion. Keep a small non-locking reserve without adding a squat.
         const vertical=Math.sqrt(Math.max(0,(length*.998)**2-horizontal**2));
-        desired=Math.max(desired,Math.min(length*.08,Math.max(0,hip.y-goal.y-vertical)));
+        desired=Math.max(desired,Math.min(length*(turning?.08:.018),Math.max(0,hip.y-goal.y-vertical)));
       }
+      // Walking support must not pull the pelvis into a deep squat at every toe-off.
+      // A small reach allowance supports contact; the leg solver bounds excess reach.
+      // Pivot steps retain their larger support range.
       // Reach support responds promptly; standing back up should not pop the torso.
       const targetDrop=moving?desired:0;
       this.pelvisDrop=THREE.MathUtils.damp(this.pelvisDrop,targetDrop,targetDrop<this.pelvisDrop?8:18,dt);

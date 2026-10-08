@@ -183,7 +183,9 @@ it.each([false,true])("eases out of a planted foot when the authored swing lifts
  let previous=first.weight;
  for(let i=0;i<(turning?26:24);i++){
   const current=tick(true).weight;
-  expect(current).toBeGreaterThanOrEqual(0);expect(current).toBeLessThanOrEqual(previous);expect(previous-current).toBeLessThan(turning?.08:.095);previous=current;
+  // A walking foot must be free by mid-swing, rather than dragging its old anchor.
+  if(!turning && i===11)expect(current).toBeLessThan(.001);
+  expect(current).toBeGreaterThanOrEqual(0);expect(current).toBeLessThanOrEqual(previous);expect(previous-current).toBeLessThan(turning?.08:.20);previous=current;
  }
  expect(previous).toBeLessThan(.001);
 });
