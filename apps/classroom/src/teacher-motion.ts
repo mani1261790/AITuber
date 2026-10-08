@@ -326,7 +326,7 @@ export class TeacherMotion {
       const envelope = this.gestureAge < 1.2 ? Math.sin(Math.PI * this.gestureAge / 1.2) ** 2 : 0;
       if (input.gesture === "nod" && head) {
         this.acknowledgement = envelope;
-        head.rotateX(forward * .18 * envelope);
+        head.rotateX(forward * .38 * envelope);
       }
       // Pointing already supplies the explanatory gesture; avoid a two-arm shrug.
       if (input.gesture === "emphasize" || (input.gesture === "explain" && this.pointBlend <= .001)) {
@@ -341,8 +341,8 @@ export class TeacherMotion {
           // Emphasis reaches higher and adds the supporting hand; neither repeats on a timer.
           if (!emphasis && !leading) continue;
           const t=this.gestureAge/(emphasis?2.6:3.4);
-          const amount=t>0&&t<1?Math.sin(Math.PI*t)**2:0;
-          const target = presentingHandTarget(this.vrm,side,emphasis);
+          const amount=emphasis ? THREE.MathUtils.smootherstep(t,0,.24)*(1-THREE.MathUtils.smootherstep(t,.76,1)) : t>0&&t<1?Math.sin(Math.PI*t)**2:0;
+          const target = presentingHandTarget(this.vrm,side,emphasis,Math.sin(Math.PI*THREE.MathUtils.clamp((t-.24)/.52,0,1))**2);
           if(target && amount>0){
             const accompaniment = emphasis ? 1-.35*THREE.MathUtils.smootherstep(this.pointBlend,0,1) : 1;
             aimArm(this.vrm,side,target,amount*.96*availability*accompaniment,"open");
@@ -428,7 +428,7 @@ function presentingFrame(vrm: VRM) {
   return {lateral,up,forward};
 }
 
-export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: boolean) {
+export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: boolean, flex = 0) {
   const upper=vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
   const lower=vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
   const hand=vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
@@ -437,10 +437,11 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
   const shoulder=upper.getWorldPosition(new THREE.Vector3());
   const elbow=lower.getWorldPosition(new THREE.Vector3());
   const length=shoulder.distanceTo(elbow)+elbow.distanceTo(hand.getWorldPosition(new THREE.Vector3()));
-  // Emphasis presents both open hands at shoulder height with bent elbows.
-  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.54:.30))
-    .addScaledVector(up,length*(emphasis?.12:-.42))
-    .addScaledVector(forward,length*(emphasis?.42:.65));
+  // Keep the hands in front of the chest; flex the elbows during the held beat.
+  // A narrow lateral reach prevents the old wide shoulder sweep.
+  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.10:.30))
+    .addScaledVector(up,length*(emphasis?-.13+.15*flex:-.42))
+    .addScaledVector(forward,length*(emphasis?.70-.13*flex:.65));
 }
 
 export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" = "point") {

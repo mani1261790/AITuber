@@ -47,7 +47,7 @@ it("starts a nod with speech and performs it once instead of periodically", () =
   expect(head.rotation.x).toBeCloseTo(0);
   expect(controller.acknowledgementStrength).toBe(0);
   for(let i=0;i<36;i++)controller.update(1/60,{...input,speaking:true});
-  expect(head.rotation.x).toBeGreaterThan(.15);
+  expect(head.rotation.x).toBeGreaterThan(.32);
   expect(controller.acknowledgementStrength).toBeGreaterThan(.99);
   for(let i=0;i<180;i++)controller.update(1/60,{...input,speaking:true});
   expect(head.rotation.x).toBeCloseTo(0);
@@ -174,7 +174,7 @@ it("waits until arrival to start a spoken nod instead of consuming it during tra
  for(let i=0;i<60;i++)controller.update(1/60,{...input,moving:false,speed:0,speaking:false});
  expect(head.rotation.x).toBeCloseTo(0);
  for(let i=0;i<36;i++)controller.update(1/60,{...input,moving:false,speed:0});
- expect(head.rotation.x).toBeGreaterThan(.15);
+ expect(head.rotation.x).toBeGreaterThan(.32);
  for(let i=0;i<180;i++)controller.update(1/60,{...input,moving:false,speed:0});
  expect(head.rotation.x).toBeCloseTo(0);
  controller.dispose();
@@ -533,7 +533,7 @@ it("nods down and recovers in world space for both VRM versions and stage headin
   for(let i=0;i<36;i++)controller.update(1/60,input);
   scene.updateMatrixWorld(true);
   const forward=new THREE.Vector3(0,0,version==="0"?-1:1).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
-  expect(forward.y).toBeLessThan(-.15);
+  expect(forward.y).toBeLessThan(-.32);
   for(let i=0;i<150;i++)controller.update(1/60,input);
   expect(head.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(.001);controller.dispose();
  }
@@ -565,16 +565,21 @@ it("presents in front of the torso with elbows below the hands for either VRM co
   }
   const left=presentingHandTarget(vrm,"left",true)!,right=presentingHandTarget(vrm,"right",true)!;
   expect(left.y).toBeCloseTo(right.y);
-  expect(left.distanceTo(right)).toBeGreaterThan(.9);
-  expect(left.y).toBeGreaterThan(1.4);
+  expect(left.distanceTo(right)).toBeLessThan(.7);
+  expect(left.y).toBeGreaterThan(1.2);
   for(const side of ["left","right"] as const){
-   aimArm(vrm,side,presentingHandTarget(vrm,side,true)!,1,"open");scene.updateMatrixWorld(true);
+   const shoulderStart=nodes[`${side}UpperArm`]!.getWorldPosition(new THREE.Vector3());
+   const neutralTarget=presentingHandTarget(vrm,side,true,0)!;
+   const flexedTarget=presentingHandTarget(vrm,side,true,1)!;
+   expect(flexedTarget.y).toBeGreaterThan(neutralTarget.y+.07);
+   expect(flexedTarget.distanceTo(shoulderStart)).toBeLessThan(neutralTarget.distanceTo(shoulderStart)-.05);
+   aimArm(vrm,side,neutralTarget,1,"open");scene.updateMatrixWorld(true);
    const shoulder=nodes[`${side}UpperArm`]!.getWorldPosition(new THREE.Vector3());
    const elbow=nodes[`${side}LowerArm`]!.getWorldPosition(new THREE.Vector3());
    const wrist=nodes[`${side}Hand`]!.getWorldPosition(new THREE.Vector3());
    const bend=shoulder.clone().sub(elbow).angleTo(wrist.clone().sub(elbow))*180/Math.PI;
    expect(bend).toBeGreaterThan(70);expect(bend).toBeLessThan(110);
-   expect(wrist.y).toBeGreaterThan(shoulder.y);expect(elbow.y).toBeLessThan(wrist.y-.15);
+   expect(wrist.y).toBeGreaterThan(shoulder.y-.1);expect(elbow.y).toBeLessThan(wrist.y-.15);
   }
  }
 });
