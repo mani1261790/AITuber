@@ -37,7 +37,8 @@ export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-
     const container=host.current;const resize=()=>{renderer.setSize(container.clientWidth,container.clientHeight);camera.aspect=container.clientWidth/Math.max(1,container.clientHeight);camera.updateProjectionMatrix();};
     const observer=new ResizeObserver(resize);observer.observe(container);resize();
     const clock=new THREE.Clock();
-    const render=()=>{if(disposed)return;const delta=Math.min(clock.getDelta(),.05);if(mixer && !playback.current.paused){const dt=delta*playback.current.speed;mixer.update(dt);advance?.(dt);if(avatar)spring?.update(dt,d=>avatar?.update(d));}controls.update();renderer.render(scene,camera);frame=requestAnimationFrame(render);};render();
+    const handPosition=new THREE.Vector3(),cameraShift=new THREE.Vector3();
+    const render=()=>{if(disposed)return;const delta=Math.min(clock.getDelta(),.05);if(mixer && !playback.current.paused){const dt=delta*playback.current.speed;mixer.update(dt);advance?.(dt);if(avatar)spring?.update(dt,d=>avatar?.update(d));}if(view==="hand" && avatar){avatar.scene.updateMatrixWorld(true);const hand=avatar.humanoid.getRawBoneNode("rightHand");if(hand){hand.getWorldPosition(handPosition);cameraShift.copy(handPosition).sub(controls.target).multiplyScalar(1-Math.exp(-10*delta));controls.target.add(cameraShift);camera.position.add(cameraShift);}}controls.update();renderer.render(scene,camera);frame=requestAnimationFrame(render);};render();
     setStatus("モデルとモーションを読み込み中…");
     void (async()=>{
       const loader=new GLTFLoader();loader.register(parser=>new VRMLoaderPlugin(parser));
@@ -82,6 +83,8 @@ export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-
         setStatus(`${trial?.label??file?.name} · ${index+1}/${entries.length} · ${clip.duration.toFixed(2)}秒`);
       };
       begin();
+      mixer.update(0);avatar.humanoid.update();avatar.scene.updateMatrixWorld(true);
+      if(view==="hand"){const hand=avatar.humanoid.getRawBoneNode("rightHand");if(hand){hand.getWorldPosition(controls.target);camera.position.copy(controls.target).add(new THREE.Vector3(.35,.12,1.1));controls.update();}}
       advance=dt=>{
         renderer.domElement.dataset.animationTime=action.time.toFixed(3);
         renderer.domElement.dataset.sequenceComplete=String(done);
