@@ -1,0 +1,80 @@
+[
+  {
+    "position": "左",
+    "mode": "全身",
+    "headSideMean": -0.0038178771439727364,
+    "hipSideMean": -0.004091655614743885,
+    "eyeErrorMax": 2.766542808245417e-05,
+    "cameraErrorMax": 0,
+    "headYMin": -0.0007414161790902842,
+    "headYMax": -0.00045593869034760235
+  },
+  {
+    "position": "左",
+    "mode": "表情",
+    "headSideMean": 0.00448226616253139,
+    "hipSideMean": -0.004097401915361197,
+    "eyeErrorMax": 0.6577702437151977,
+    "cameraErrorMax": 0.0002983086766280868,
+    "headYMin": 0.030854282716962417,
+    "headYMax": 0.031160640411317064
+  },
+  {
+    "position": "中央",
+    "mode": "全身",
+    "headSideMean": 0.004251888408469908,
+    "hipSideMean": 0.0013641659847562278,
+    "eyeErrorMax": 4.978313060379714e-06,
+    "cameraErrorMax": 0,
+    "headYMin": 0.0004054186293259312,
+    "headYMax": 0.0006123736613456382
+  },
+  {
+    "position": "中央",
+    "mode": "表情",
+    "headSideMean": -0.0013304365030101847,
+    "hipSideMean": -0.0032701404287112518,
+    "eyeErrorMax": 0.055012501997048144,
+    "cameraErrorMax": 0.00030226274909434854,
+    "headYMin": 0.032834786862987596,
+    "headYMax": 0.033147164394187405
+  },
+  {
+    "position": "右",
+    "mode": "全身",
+    "headSideMean": 0.008802844735452536,
+    "hipSideMean": 0.004736930835036343,
+    "eyeErrorMax": 2.788848707709003e-05,
+    "cameraErrorMax": 0,
+    "headYMin": -0.0014248419296481127,
+    "headYMax": -0.0011123061714709084
+  },
+  {
+    "position": "右",
+    "mode": "表情",
+    "headSideMean": -0.002290275204279807,
+    "hipSideMean": 0.0024175059895190894,
+    "eyeErrorMax": 0.053306622770882287,
+    "cameraErrorMax": 0.0002948098764302558,
+    "headYMin": 0.03315990229607611,
+    "headYMax": 0.03355495217182449
+  },
+  {
+    "gesture": "nod",
+    "headSideMean": -0.007705141367275845,
+    "hipSideMean": -0.00296847811430209,
+    "eyeErrorMax": 1.962798987076624,
+    "cameraErrorMax": 0.00029315454614173037,
+    "headYMin": -0.14019864238229285,
+    "headYMax": 0.033167880301102036
+  },
+  {
+    "model": "lecture",
+    "headSideMean": 0.006345843533235303,
+    "hipSideMean": 0.004152271438338088,
+    "eyeErrorMax": 0.04886743801086486,
+    "cameraErrorMax": 0.0002718454975721871,
+    "headYMin": 0.03294256268339487,
+    "headYMax": 0.03318011856389094
+  }
+]

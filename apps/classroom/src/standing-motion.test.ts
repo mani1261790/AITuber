@@ -16,7 +16,7 @@ it("keeps feet planted through a loop and narrows the stance without changing bo
       lower.position.y=-.4;foot.position.y=-.4;
       for(const [part,node] of [["UpperLeg",upper],["LowerLeg",lower],["Foot",foot]] as const){node.name=side+part;nodes[node.name]=node;}
     }
-    const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
+    const vrm={scene,meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
     const source=new THREE.AnimationClip("idle",6,[new THREE.QuaternionKeyframeTrack("leftUpperLeg.quaternion",[0,6],[0,.3,0,.954,0,.3,0,.954])]);
     const original=Array.from(source.tracks[0]!.values);
     const clip=withTeacherStance(vrm,source);
@@ -36,10 +36,24 @@ it("keeps feet planted through a loop and narrows the stance without changing bo
       expect(nodes.leftLowerLeg!.position.length()).toBeCloseTo(.4);
       const rootInverse=scene.getWorldQuaternion(new THREE.Quaternion()).invert();
       const forward=nodes.leftFoot!.getWorldQuaternion(new THREE.Quaternion()).premultiply(rootInverse);
-      const toeDirection=new THREE.Vector3(0,0,1).applyQuaternion(forward);
+      const toeDirection=new THREE.Vector3(0,0,version==="0"?-1:1).applyQuaternion(forward);
       const footLocal=scene.worldToLocal(feet[0]!.clone());
       expect(toeDirection.x*footLocal.x).toBeLessThan(0);
       expect(Math.abs(toeDirection.x)).toBeCloseTo(Math.sin(THREE.MathUtils.degToRad(7)),4);
     }
   }
+});
+
+it("removes an idle spine's constant lateral bias without erasing its movement",async()=>{
+ const {centerStandingRoll}=await import("./standing-motion.ts");
+ const spine=new THREE.Bone();spine.name="spine";
+ const vrm={humanoid:{getNormalizedBoneNode:(name:string)=>name==="spine"?spine:null}} as unknown as VRM;
+ const values=[-.16,-.12,-.08,-.12,-.16].flatMap(z=>new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),z).toArray());
+ const source=new THREE.AnimationClip("idle",4,[new THREE.QuaternionKeyframeTrack("spine.quaternion",[0,1,2,3,4],values)]);
+ const corrected=centerStandingRoll(vrm,source).tracks[0]!;
+ const sample=new THREE.QuaternionLinearInterpolant(corrected.times,corrected.values,4);
+ const q=new THREE.Quaternion(),up=new THREE.Vector3();let sum=0,min=Infinity,max=-Infinity;
+ for(let i=0;i<120;i++){q.fromArray(sample.evaluate(4*i/120));up.set(0,1,0).applyQuaternion(q);const angle=Math.atan2(-up.x,up.y);sum+=angle;min=Math.min(min,angle);max=Math.max(max,angle);}
+ expect(Math.abs(sum/120)).toBeLessThan(1e-6);expect(max-min).toBeGreaterThan(.07);
+ expect(Array.from(source.tracks[0]!.values)).toEqual(Array.from(new Float32Array(values)));
 });

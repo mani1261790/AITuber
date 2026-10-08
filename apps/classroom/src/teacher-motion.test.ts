@@ -519,3 +519,20 @@ it("bounds the pointing wrist for either hand and extreme target heights",async(
   expect(hand.position.length()).toBeCloseTo(.4);
  }
 });
+
+it("nods down and recovers in world space for both VRM versions and stage headings",()=>{
+ for(const version of ["0","1"])for(const yaw of [-Math.PI/2,0,Math.PI/2]){
+  const scene=new THREE.Group(),orientation=new THREE.Group(),head=new THREE.Bone();
+  scene.rotation.y=yaw;scene.add(orientation);orientation.rotation.y=version==="0"?Math.PI:0;orientation.add(head);head.name="head";
+  const vrm={scene,meta:{metaVersion:version},humanoid:{update(){},getNormalizedBoneNode:(name:string)=>name==="head"?head:null}} as unknown as VRM;
+  const clip=()=>new THREE.AnimationClip("idle",2,[new THREE.QuaternionKeyframeTrack("head.quaternion",[0,2],[0,0,0,1,0,0,0,1])]);
+  const controller=new TeacherMotion(vrm,clip(),clip(),clip(),1);
+  const input={speed:0,moving:false,speaking:true,target:null,side:"right" as const,reducedMotion:false,gesture:"nod" as const,actionId:"nod"};
+  for(let i=0;i<36;i++)controller.update(1/60,input);
+  scene.updateMatrixWorld(true);
+  const forward=new THREE.Vector3(0,0,version==="0"?-1:1).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
+  expect(forward.y).toBeLessThan(-.15);
+  for(let i=0;i<150;i++)controller.update(1/60,input);
+  expect(head.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(.001);controller.dispose();
+ }
+});

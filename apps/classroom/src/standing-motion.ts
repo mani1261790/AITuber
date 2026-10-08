@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
+import { teacherForwardSign } from "./teacher-attention.ts";
 import { solveLeg } from "./foot-contact.ts";
 
 /** Author a quiet, narrow stance into the idle clip, before any runtime blending.
@@ -16,7 +17,7 @@ export function withTeacherStance(vrm: VRM, source: THREE.AnimationClip) {
   if (!hips || legs.some(leg => !leg.upper || !leg.lower || !leg.foot)) return source.clone();
   const saved = new Map([...nodes.values()].map(node => [node,{position:node.position.clone(),rotation:node.quaternion.clone()}]));
   const restore = () => { saved.forEach((pose,node) => { node.position.copy(pose.position);node.quaternion.copy(pose.rotation); });vrm.scene.updateMatrixWorld(true); };
-  const clip = source.clone();
+  const clip = centerStandingRoll(vrm, source);
   const lowerNames = new Set([...nodes.values()].map(node => node.name));
   clip.tracks = clip.tracks.filter(track => !lowerNames.has(track.name.split(".")[0]!));
   const count = Math.max(2,Math.ceil(source.duration*30)+1);
@@ -32,7 +33,7 @@ export function withTeacherStance(vrm: VRM, source: THREE.AnimationClip) {
     // Resolve the sign from the rest-pose forward direction for both VRM versions.
     const footRotations = legs.map((leg,index) => {
       const rotation=leg.foot!.getWorldQuaternion(new THREE.Quaternion());
-      const forward=new THREE.Vector3(0,0,1).applyQuaternion(rotation)
+      const forward=new THREE.Vector3(0,0,teacherForwardSign(vrm)).applyQuaternion(rotation)
         .applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion()).invert());
       const angle=-Math.sign(localFeet[index]!.x-center)*Math.sign(forward.z || 1)*THREE.MathUtils.degToRad(7);
       return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0).applyQuaternion(vrm.scene.getWorldQuaternion(new THREE.Quaternion())),angle).multiply(rotation);
@@ -53,4 +54,27 @@ export function withTeacherStance(vrm: VRM, source: THREE.AnimationClip) {
     clip.tracks.push(new THREE.VectorKeyframeTrack(`${hips.name}.position`,times,positions));
     return clip;
   } finally { restore(); }
+}
+
+/** Removing the captured hip lean while keeping its compensating spine roll
+ * leaves the torso permanently off balance. Recenter that idle-only bias,
+ * retaining the recorded breathing and small changes around the neutral pose. */
+export function centerStandingRoll(vrm: VRM, source: THREE.AnimationClip) {
+  const clip=source.clone();
+  const names=new Set((["spine","chest","upperChest","neck","head"] as const)
+    .map(name=>vrm.humanoid.getNormalizedBoneNode(name)?.name));
+  for(const track of clip.tracks){
+    if(!track.name.endsWith(".quaternion") || !names.has(track.name.split(".")[0]))continue;
+    const q=new THREE.Quaternion(),up=new THREE.Vector3();
+    const interpolate=new THREE.QuaternionLinearInterpolant(track.times,track.values,4);
+    let mean=0;
+    for(let i=0;i<120;i++){
+      q.fromArray(interpolate.evaluate(source.duration*i/120));
+      up.set(0,1,0).applyQuaternion(q);
+      mean+=Math.atan2(-up.x,up.y)/120;
+    }
+    const correction=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),-mean);
+    for(let i=0;i<track.values.length;i+=4)q.fromArray(track.values,i).premultiply(correction).normalize().toArray(track.values,i);
+  }
+  return clip;
 }

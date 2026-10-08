@@ -248,6 +248,28 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
       } });
     }).catch(() => { if (!disposed) setLoadState("error"); });
 
+    const updateCamera = (cameraDelta: number) => {
+      if (faceInspectRef.current && avatar) {
+        const head=avatar.humanoid.getRawBoneNode("head");
+        if(head){
+          const focus=head.getWorldPosition(new THREE.Vector3());
+          focus.y+=.12;
+          camera.position.copy(focus).add(new THREE.Vector3(0,.06,2));
+          camera.lookAt(focus);camera.updateMatrixWorld(true);
+          renderer.domElement.dataset.camera="inspection-face";
+        }
+      } else if (inspectRef.current) {
+        camera.position.set(-.9,2.8,10); camera.lookAt(-.9,1.3,0); camera.updateMatrixWorld(true);
+        renderer.domElement.dataset.camera="inspection-full-body";
+      } else {
+        applyClassroomCamera(camera,currentCamera);
+        if(avatar) camera.fov=classroomLens.update(camera,avatar.scene.position.x,destinationX,cameraDelta);
+      }
+      if(faceInspectRef.current || inspectRef.current)camera.fov=35;
+      camera.updateProjectionMatrix();
+      if(import.meta.env.DEV)renderer.domElement.dataset.cameraFov=String(camera.fov);
+    };
+
     const render = () => {
       if (disposed) return;
       // Root travel, gait speed and pose solvers must advance on the same timestep.
@@ -304,7 +326,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
           }
           teacherBounds.expandByScalar(.16);
           const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut,destinationX-avatar.scene.position.x);
-          if (next !== currentCamera) { currentCamera=next; lastCameraCut=time; applyClassroomCamera(camera,next); }
+          if (next !== currentCamera) { currentCamera=next; lastCameraCut=time; }
           renderer.domElement.dataset.camera=currentCamera;
         }
         const startX=avatar.scene.position.x;
@@ -333,6 +355,8 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         if (activeGesture !== gestureTarget) { gestureTarget=activeGesture; gestureStarted=time; }
         const gestureAge=time-gestureStarted;
         const pointWeight=activeGesture ? THREE.MathUtils.smoothstep(gestureAge,0,.5)*(1-.7*THREE.MathUtils.smoothstep(gestureAge,2.5,3.4)) : 0;
+        // Aim at the camera that will render this frame, including inspection views.
+        updateCamera(delta);
         if (teacherMotion && !stageRef.current.preview) {
           const target = region && activeGesture && !walking ? new THREE.Vector3(-3.85+(region.x+region.width/2)*4.76,targetY,-.06) : null;
           const speechLevel=speechLevelRef.current?.();
@@ -394,25 +418,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
           stageRef.current.onStageComplete?.(direction.actionId);
         }
       }
-      if (faceInspectRef.current && avatar) {
-        const head=avatar.humanoid.getRawBoneNode("head");
-        if(head){
-          const focus=head.getWorldPosition(new THREE.Vector3());
-          focus.y+=.12;
-          camera.position.copy(focus).add(new THREE.Vector3(0,.06,2));
-          camera.lookAt(focus);camera.updateMatrixWorld(true);
-          renderer.domElement.dataset.camera="inspection-face";
-        }
-      } else if (inspectRef.current) {
-        camera.position.set(-.9,2.8,10); camera.lookAt(-.9,1.3,0); camera.updateMatrixWorld(true);
-        renderer.domElement.dataset.camera="inspection-full-body";
-      } else {
-        applyClassroomCamera(camera,currentCamera);
-        if(avatar) camera.fov=classroomLens.update(camera,avatar.scene.position.x,destinationX,delta);
-      }
-      if(faceInspectRef.current || inspectRef.current)camera.fov=35;
-      camera.updateProjectionMatrix();
-      if(import.meta.env.DEV)renderer.domElement.dataset.cameraFov=String(camera.fov);
+      updateCamera(0);
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
     };

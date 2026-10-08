@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
 
+/** Normalized VRM0 bones face -Z; VRM1 bones face +Z. The stage wrapper
+ * corrects world heading, but does not change these local rotation signs. */
+export const teacherForwardSign = (vrm: VRM) => vrm.meta?.metaVersion === "0" ? -1 : 1;
+
 /** The teacher looks towards the explanation, with the torso following less than the head.
  * This is a pose contribution; PoseTransition supplies continuity when focus changes.
  */
@@ -11,7 +15,7 @@ export function applyTeacherAttention(vrm: VRM, target: THREE.Vector3, weight: n
   // Correct the remaining error after the authored clip has posed the head.
   const local = target.clone().sub(head.getWorldPosition(new THREE.Vector3()))
     .applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()).invert());
-  const forward = vrm.meta?.metaVersion === "0" ? -1 : 1;
+  const forward = teacherForwardSign(vrm);
   const yaw = THREE.MathUtils.clamp(Math.atan2(forward*local.x, forward*local.z), -1.15, 1.15) * weight;
   const pitch = THREE.MathUtils.clamp(-forward*Math.atan2(local.y, Math.hypot(local.x,local.z)), -.3, .3) * weight;
   // Share the turn down the spine so the shoulder approaches the board too.
@@ -36,7 +40,7 @@ export function applyTeacherGaze(vrm: VRM, target: THREE.Vector3) {
       .applyQuaternion(eye.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
     // Never roll the eyes around to a target behind the head. Let the head turn
     // handle distant targets while the eyes remain within their natural range.
-    const forward = vrm.meta?.metaVersion === "0" ? -1 : 1;
+    const forward = teacherForwardSign(vrm);
     const yaw = THREE.MathUtils.clamp(Math.atan2(forward*direction.x, forward*direction.z), -.18, .18);
     const pitch = THREE.MathUtils.clamp(-forward*Math.atan2(direction.y, Math.hypot(direction.x, direction.z)), -.14, .14);
     eye.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));

@@ -8,7 +8,7 @@ import { SpeechGesture } from "./speech-gesture.ts";
 import * as THREE from "three";
 import { PointingCue } from "./pointing-cue.ts";
 import { FootContact } from "./foot-contact.ts";
-import { applyTeacherAttention, applyTeacherGaze, teacherGazeTarget } from "./teacher-attention.ts";
+import { applyTeacherAttention, applyTeacherGaze, teacherGazeTarget, teacherForwardSign } from "./teacher-attention.ts";
 import { PoseTransition, pointingHandGoal, pointingElbowGoal } from "./pose-transition.ts";
 import type { VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -288,17 +288,18 @@ export class TeacherMotion {
     this.category = input.turning ? "turn" : input.moving ? (input.speed < .03 ? "turn" : "walk") : indicating ? "point" : input.gesture ?? this.state;
     this.acknowledgement = 0;
     if (!input.reducedMotion && !input.moving) {
+      const forward = teacherForwardSign(this.vrm);
       const head = this.vrm.humanoid.getNormalizedBoneNode("head");
       const chest = this.vrm.humanoid.getNormalizedBoneNode("chest");
       const envelope = this.gestureAge < 1.2 ? Math.sin(Math.PI * this.gestureAge / 1.2) ** 2 : 0;
       if (input.gesture === "nod" && head) {
         this.acknowledgement = envelope;
-        head.rotateX(.18 * envelope);
+        head.rotateX(forward * .18 * envelope);
       }
       // Pointing already supplies the explanatory gesture; avoid a two-arm shrug.
       if (input.gesture === "emphasize" || (input.gesture === "explain" && this.pointBlend <= .001)) {
         const emphasis = input.gesture === "emphasize";
-        if (emphasis) { head?.rotateX(.08 * envelope); chest?.rotateX(.07 * envelope); }
+        if (emphasis) { head?.rotateX(forward * .08 * envelope); chest?.rotateX(forward * .07 * envelope); }
         for(const side of ["right","left"] as const){
           // Pointing owns its arm; the free hand can still underline the explanation.
           const availability = side === this.pointSide ? 1-THREE.MathUtils.smootherstep(this.pointBlend,0,1) : 1;
@@ -326,8 +327,8 @@ export class TeacherMotion {
         // Acknowledge entering attentive listening once, then let the idle motion settle.
         const t=(this.listeningAge-.25)/1.25;
         const acknowledgement=t>0&&t<1 ? Math.sin(Math.PI*t)**2 : 0;
-        head.rotateX(.12*acknowledgement);
-        chest?.rotateX(.025*acknowledgement);
+        head.rotateX(forward * .12*acknowledgement);
+        chest?.rotateX(forward * .025*acknowledgement);
       }
     }
     // Solve after torso gestures so a small emphasis lean does not shift the aim.

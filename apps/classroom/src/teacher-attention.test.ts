@@ -97,3 +97,22 @@ it("faces the audience with a VRM0 orientation wrapper instead of turning away",
  expect(after).toBeLessThan(before);
  applyTeacherGaze(vrm,target);expect(leftEye.rotation.y).toBeLessThan(0);expect(leftEye.rotation.x).toBeGreaterThan(0);
 });
+
+it("aims towards both sides and heights in world space for VRM0 and VRM1",async()=>{
+ const {applyTeacherGaze}=await import("./teacher-attention.ts");
+ for(const version of ["0","1"])for(const heading of [-1,0,1])for(const x of [-.1,.1])for(const y of [-.08,.08]){
+  const scene=new THREE.Group(),orientation=new THREE.Group(),head=new THREE.Bone();
+  scene.rotation.y=heading;scene.add(orientation);orientation.rotation.y=version==="0"?Math.PI:0;orientation.add(head);
+  head.position.y=1.6;
+  const leftEye=new THREE.Bone(),rightEye=new THREE.Bone();head.add(leftEye,rightEye);leftEye.position.x=.03;rightEye.position.x=-.03;
+  const nodes={head,leftEye,rightEye};const vrm={scene,meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name as keyof typeof nodes]}} as unknown as VRM;
+  scene.updateMatrixWorld(true);
+  const target=new THREE.Vector3(x,y,1).multiplyScalar(10).applyQuaternion(scene.quaternion).add(head.getWorldPosition(new THREE.Vector3()));
+  applyTeacherGaze(vrm,target);scene.updateMatrixWorld(true);
+  for(const eye of [leftEye,rightEye]){
+   const forward=new THREE.Vector3(0,0,version==="0"?-1:1).applyQuaternion(eye.getWorldQuaternion(new THREE.Quaternion()));
+   const desired=target.clone().sub(eye.getWorldPosition(new THREE.Vector3())).normalize();
+   expect(forward.angleTo(desired)).toBeLessThan(1e-6);
+  }
+ }
+});
