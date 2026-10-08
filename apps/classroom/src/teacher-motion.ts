@@ -8,7 +8,7 @@ import { SpeechGesture } from "./speech-gesture.ts";
 import * as THREE from "three";
 import { PointingCue } from "./pointing-cue.ts";
 import { FootContact } from "./foot-contact.ts";
-import { applyTeacherAttention, applyTeacherGaze, teacherGazeTarget, teacherForwardSign } from "./teacher-attention.ts";
+import { applyTeacherAttention, TeacherGaze, teacherGazeTarget, teacherForwardSign } from "./teacher-attention.ts";
 import { PoseTransition, pointingHandGoal, pointingElbowGoal } from "./pose-transition.ts";
 import type { VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -50,6 +50,7 @@ export class TeacherMotion {
   private turnPoseOffset = false;
   private lowerBodyBones = new Set<THREE.Object3D>();
   private lastTurnProgress = 0;
+  private gaze: TeacherGaze;
   private mixer: THREE.AnimationMixer;
   private actions: Record<MotionState, THREE.AnimationAction>;
   private weights = { idle: 1, talk: 0, walk: 0, listen: 0, turnLeft: 0, turnRight: 0 };
@@ -136,9 +137,11 @@ export class TeacherMotion {
   }
 
   constructor(private vrm: VRM, idle: THREE.AnimationClip, talk: THREE.AnimationClip, walk: THREE.AnimationClip, distance: number, extra?: {listen:THREE.AnimationClip;turnLeft:THREE.AnimationClip;turnRight:THREE.AnimationClip}, private turnTiming?: {left:(progress:number)=>number;right:(progress:number)=>number}) {
+    this.gaze = new TeacherGaze(vrm);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.footContact = new FootContact(vrm);
     for (const name of Object.values(VRMHumanBoneName)) {
+      if(name === "leftEye" || name === "rightEye")continue;
       const bone = vrm.humanoid.getNormalizedBoneNode(name);
       if (bone) {
         this.overlayBases.set(bone, bone.quaternion.clone());
@@ -333,10 +336,9 @@ export class TeacherMotion {
     }
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
-    // Eyes share the rendered-pose interpolation, including releasing board focus.
+    // Keep the target; solve eyes only after the body reaches its final pose.
     const audience = teacherGazeTarget(this.vrm, input.moving || !!input.turning, input.cameraPosition);
     const gazeTarget = audience.lerp(this.pointTarget, focusWeight);
-    applyTeacherGaze(this.vrm, gazeTarget);
     // Pose continuity also covers clip changes and releasing a pointing gesture.
     // Preserve turn/point entries and the release of spoken gestures after all procedural gestures, so offsets
     // never apply the outgoing gesture twice. Decay only the mismatch, not the clip.
@@ -371,6 +373,7 @@ export class TeacherMotion {
     this.outputLimit.apply(delta);
     this.standingRecovery.confirmSettled();
     this.postIkError=solvedFeet.map(foot=>foot ? foot.bone.getWorldPosition(new THREE.Vector3()).distanceTo(foot.position) : 0);
+    this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();
   }
 

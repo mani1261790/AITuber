@@ -25,8 +25,8 @@ it("aims eyes relative to a turned head and bounds extreme board targets", async
  expect(Math.abs(leftEye.rotation.y)).toBeLessThan(.01);
  expect(Math.abs(rightEye.rotation.y)).toBeLessThan(.01);
  applyTeacherGaze(vrm,new THREE.Vector3(-10,-4,-4));
- expect(leftEye.rotation.y).toBeCloseTo(-.18);
- expect(leftEye.rotation.x).toBeCloseTo(.14);
+ expect(leftEye.rotation.y).toBeCloseTo(0);
+ expect(leftEye.rotation.x).toBeCloseTo(0);
 });
 
 it("turns the torso towards either board side while keeping the pelvis planted",()=>{
@@ -100,7 +100,7 @@ it("faces the audience with a VRM0 orientation wrapper instead of turning away",
 
 it("aims towards both sides and heights in world space for VRM0 and VRM1",async()=>{
  const {applyTeacherGaze}=await import("./teacher-attention.ts");
- for(const version of ["0","1"])for(const heading of [-1,0,1])for(const x of [-.1,.1])for(const y of [-.08,.08]){
+ for(const version of ["0","1"])for(const heading of [-1,0,1])for(const x of [-.025,.025])for(const y of [-.01,.01]){
   const scene=new THREE.Group(),orientation=new THREE.Group(),head=new THREE.Bone();
   scene.rotation.y=heading;scene.add(orientation);orientation.rotation.y=version==="0"?Math.PI:0;orientation.add(head);
   head.position.y=1.6;
@@ -115,4 +115,38 @@ it("aims towards both sides and heights in world space for VRM0 and VRM1",async(
    expect(forward.angleTo(desired)).toBeLessThan(1e-6);
   }
  }
+});
+
+it("keeps eyes inside the visible-iris envelope through rapid head and target reversals",async()=>{
+ const {TeacherGaze,eyeLimits}=await import("./teacher-attention.ts");
+ for(const version of ["0","1"]){
+  const scene=new THREE.Group(),orientation=new THREE.Group(),head=new THREE.Bone(),leftEye=new THREE.Bone(),rightEye=new THREE.Bone();
+  scene.add(orientation);orientation.rotation.y=version==="0"?Math.PI:0;orientation.add(head);head.add(leftEye,rightEye);
+  const nodes={head,leftEye,rightEye};const vrm={scene,meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name as keyof typeof nodes]}} as unknown as VRM;
+  const gaze=new TeacherGaze(vrm);
+  for(let i=0;i<360;i++){
+   head.rotation.set(Math.sin(i*.25)*.7,Math.cos(i*.18)*1.8,Math.sin(i*.12)*.3);
+   gaze.update(new THREE.Vector3(Math.sin(i*.3)*20,Math.cos(i*.4)*10,5),[1/120,1/60,1/30,.5][i%4]!);
+   for(const eye of [leftEye,rightEye]){
+    const rotation=new THREE.Euler().setFromQuaternion(eye.quaternion,"YXZ");
+    const elevation=-(version==="0"?-1:1)*rotation.x;
+    expect(Math.hypot(rotation.y/eyeLimits.yaw,elevation/(elevation>0?eyeLimits.up:eyeLimits.down))).toBeLessThanOrEqual(1+1e-8);
+    expect(Math.abs(rotation.z)).toBeLessThan(1e-8);
+   }
+  }
+ }
+});
+
+it("returns to neutral without inertial overshoot when a target moves behind the head",async()=>{
+ const {TeacherGaze}=await import("./teacher-attention.ts");
+ const scene=new THREE.Group(),head=new THREE.Bone(),leftEye=new THREE.Bone();scene.add(head);head.add(leftEye);
+ const nodes={head,leftEye};const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name as keyof typeof nodes]}} as unknown as VRM;
+ const gaze=new TeacherGaze(vrm);
+ for(let i=0;i<60;i++)gaze.update(new THREE.Vector3(10,0,1),1/60);
+ let previous=leftEye.rotation.y;expect(previous).toBeGreaterThan(.08);
+ for(let i=0;i<60;i++){
+  gaze.update(new THREE.Vector3(0,0,-10),1/60);
+  expect(leftEye.rotation.y).toBeGreaterThanOrEqual(0);expect(leftEye.rotation.y).toBeLessThanOrEqual(previous);previous=leftEye.rotation.y;
+ }
+ expect(previous).toBeLessThan(1e-8);
 });

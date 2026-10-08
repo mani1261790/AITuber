@@ -27,23 +27,51 @@ export function applyTeacherAttention(vrm: VRM, target: THREE.Vector3, weight: n
   head.rotateX(pitch * .65);
 }
 
-/** Eye aim is relative to the already posed head, avoiding double head turns.
- * The caller supplies the active camera or the explanation target.
- * The caller blends the resulting pose together with every other bone.
- */
+/** Conservative local eye limits. Keep iris visible even when the head turns.
+ * Upward travel is smaller because it disappears behind the upper eyelid first. */
+export const eyeLimits = { yaw: .09, up: .035, down: .055 } as const;
+
+function boundedEyeAngles(vrm: VRM, direction: THREE.Vector3) {
+  const forward=teacherForwardSign(vrm);
+  if(direction.lengthSq()<1e-10 || forward*direction.z<=0)return {yaw:0,pitch:0};
+  let yaw=THREE.MathUtils.clamp(Math.atan2(forward*direction.x,forward*direction.z),-eyeLimits.yaw,eyeLimits.yaw);
+  let elevation=THREE.MathUtils.clamp(Math.atan2(direction.y,Math.hypot(direction.x,direction.z)),-eyeLimits.down,eyeLimits.up);
+  // Elliptical envelope prevents extreme diagonal eye poses too.
+  const radius=Math.hypot(yaw/eyeLimits.yaw,elevation/(elevation>0?eyeLimits.up:eyeLimits.down));
+  if(radius>1){yaw/=radius;elevation/=radius;}
+  return {yaw,pitch:-forward*elevation};
+}
+
+/** Solve against the FINAL head pose, not the target pose of the body spring. */
 export function applyTeacherGaze(vrm: VRM, target: THREE.Vector3) {
   vrm.scene.updateMatrixWorld(true);
-  for (const name of ["leftEye", "rightEye"] as const) {
-    const eye = vrm.humanoid.getNormalizedBoneNode(name);
-    if (!eye?.parent) continue;
-    const direction = target.clone().sub(eye.getWorldPosition(new THREE.Vector3()))
+  for(const name of ["leftEye","rightEye"] as const){
+    const eye=vrm.humanoid.getNormalizedBoneNode(name);
+    if(!eye?.parent)continue;
+    const direction=target.clone().sub(eye.getWorldPosition(new THREE.Vector3()))
       .applyQuaternion(eye.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
-    // Never roll the eyes around to a target behind the head. Let the head turn
-    // handle distant targets while the eyes remain within their natural range.
-    const forward = teacherForwardSign(vrm);
-    const yaw = THREE.MathUtils.clamp(Math.atan2(forward*direction.x, forward*direction.z), -.18, .18);
-    const pitch = THREE.MathUtils.clamp(-forward*Math.atan2(direction.y, Math.hypot(direction.x, direction.z)), -.14, .14);
-    eye.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+    const {yaw,pitch}=boundedEyeAngles(vrm,direction);
+    eye.quaternion.setFromEuler(new THREE.Euler(pitch,yaw,0,"YXZ"));
+  }
+}
+
+/** Eyes have no angular momentum. Exponential interpolation is monotonic and
+ * stays within the bounded local envelope, independently of body inertia. */
+export class TeacherGaze {
+  private angles=new Map<THREE.Object3D,{yaw:number;pitch:number}>();
+  constructor(private vrm:VRM){}
+  update(target:THREE.Vector3,delta:number){
+    applyTeacherGaze(this.vrm,target);
+    const dt=THREE.MathUtils.clamp(delta,0,1/30);
+    for(const name of ["leftEye","rightEye"] as const){
+      const eye=this.vrm.humanoid.getNormalizedBoneNode(name);if(!eye)continue;
+      const goal=new THREE.Euler().setFromQuaternion(eye.quaternion,"YXZ");
+      const state=this.angles.get(eye)??{yaw:0,pitch:0};
+      state.yaw=THREE.MathUtils.damp(state.yaw,goal.y,28,dt);
+      state.pitch=THREE.MathUtils.damp(state.pitch,goal.x,28,dt);
+      eye.quaternion.setFromEuler(new THREE.Euler(state.pitch,state.yaw,0,"YXZ"));
+      this.angles.set(eye,state);
+    }
   }
 }
 
