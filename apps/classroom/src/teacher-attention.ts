@@ -11,8 +11,9 @@ export function applyTeacherAttention(vrm: VRM, target: THREE.Vector3, weight: n
   // Correct the remaining error after the authored clip has posed the head.
   const local = target.clone().sub(head.getWorldPosition(new THREE.Vector3()))
     .applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()).invert());
-  const yaw = THREE.MathUtils.clamp(Math.atan2(local.x, local.z), -1.15, 1.15) * weight;
-  const pitch = THREE.MathUtils.clamp(-Math.atan2(local.y, Math.hypot(local.x,local.z)), -.3, .3) * weight;
+  const forward = vrm.meta?.metaVersion === "0" ? -1 : 1;
+  const yaw = THREE.MathUtils.clamp(Math.atan2(forward*local.x, forward*local.z), -1.15, 1.15) * weight;
+  const pitch = THREE.MathUtils.clamp(-forward*Math.atan2(local.y, Math.hypot(local.x,local.z)), -.3, .3) * weight;
   // Share the turn down the spine so the shoulder approaches the board too.
   // The pelvis and feet stay planted; the head no longer supplies most of it.
   for (const [name, share] of [["spine", .12], ["chest", .23], ["upperChest", .13], ["neck", .16], ["head", .36]] as const) {
@@ -35,8 +36,9 @@ export function applyTeacherGaze(vrm: VRM, target: THREE.Vector3) {
       .applyQuaternion(eye.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
     // Never roll the eyes around to a target behind the head. Let the head turn
     // handle distant targets while the eyes remain within their natural range.
-    const yaw = THREE.MathUtils.clamp(Math.atan2(direction.x, direction.z), -.18, .18);
-    const pitch = THREE.MathUtils.clamp(-Math.atan2(direction.y, Math.hypot(direction.x, direction.z)), -.14, .14);
+    const forward = vrm.meta?.metaVersion === "0" ? -1 : 1;
+    const yaw = THREE.MathUtils.clamp(Math.atan2(forward*direction.x, forward*direction.z), -.18, .18);
+    const pitch = THREE.MathUtils.clamp(-forward*Math.atan2(direction.y, Math.hypot(direction.x, direction.z)), -.14, .14);
     eye.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
   }
 }

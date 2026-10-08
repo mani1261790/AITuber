@@ -80,3 +80,20 @@ it("looks ahead at head height during either walking direction, and returns to t
   expect(teacherGazeTarget(vrm,true,camera).toArray()).toEqual(target.toArray());
  }
 });
+
+it("faces the audience with a VRM0 orientation wrapper instead of turning away",async()=>{
+ const {applyTeacherGaze}=await import("./teacher-attention.ts");
+ const scene=new THREE.Group(),orientation=new THREE.Group();orientation.rotation.y=Math.PI;scene.add(orientation);
+ const head=new THREE.Bone(),leftEye=new THREE.Bone(),rightEye=new THREE.Bone();orientation.add(head);head.position.y=2;head.add(leftEye,rightEye);
+ const nodes={head,leftEye,rightEye};
+ const vrm={scene,meta:{metaVersion:"0"},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name as keyof typeof nodes]}} as unknown as VRM;
+ applyTeacherAttention(vrm,new THREE.Vector3(0,2,8),1);applyTeacherGaze(vrm,new THREE.Vector3(0,2,8));
+ expect(head.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-6);
+ expect(Math.abs(leftEye.rotation.y)).toBeLessThan(1e-6);
+ const target=new THREE.Vector3(-4,3,8);scene.updateMatrixWorld(true);
+ const before=new THREE.Vector3(0,0,-1).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion())).angleTo(target.clone().sub(head.getWorldPosition(new THREE.Vector3())));
+ applyTeacherAttention(vrm,target,1);scene.updateMatrixWorld(true);
+ const after=new THREE.Vector3(0,0,-1).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion())).angleTo(target.clone().sub(head.getWorldPosition(new THREE.Vector3())));
+ expect(after).toBeLessThan(before);
+ applyTeacherGaze(vrm,target);expect(leftEye.rotation.y).toBeLessThan(0);expect(leftEye.rotation.x).toBeGreaterThan(0);
+});

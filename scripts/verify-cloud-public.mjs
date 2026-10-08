@@ -9,11 +9,11 @@ for(const [path,expected] of [['/login',200],['/api/courses',401],['/_internal/s
  if(actual!==expected)throw new Error(`${path}: expected HTTP ${expected}, received ${actual}`);
  console.log(`PASS ${path}: HTTP ${actual}`);
 }
-const model=await fetch(base+'/models/teacher-floral-v5.vrm',{headers:{Range:'bytes=0-11'},signal:AbortSignal.timeout(30000)});
+const model=await fetch(base+'/models/teacher-floral-v6.vrm',{headers:{Range:'bytes=0-11'},signal:AbortSignal.timeout(30000)});
 if(!model.ok)throw new Error(`Hosted motion-lab model: HTTP ${model.status}`);
 const bytes=new Uint8Array(await model.arrayBuffer());
 if(String.fromCharCode(...bytes.slice(0,4))!=='glTF')throw new Error('Hosted model is not a GLB/VRM');
 console.log('PASS hosted motion-lab VRM');
-const credit=await fetch(base+'/models/teacher-floral-v5-NOTICE.md');
+const credit=await fetch(base+'/models/teacher-floral-v6-NOTICE.md');
 if(!credit.ok || !(await credit.text()).includes('5794724'))throw new Error('Hosted model attribution missing');
 console.log('PASS hosted model attribution');
