@@ -1,3 +1,4 @@
+import { connectHairCollisions } from "./hair-collisions.ts";
 import { lecturePixelRatio } from "./render-resolution.ts";
 import { teacherModelUrl } from "./teacher-model.ts";
 import { SpringSimulation } from "./spring-simulation.ts";
@@ -203,6 +204,8 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         avatar.scene.updateMatrixWorld(true);
       }
       const garmentCollisions=connectGarmentCollisions(avatar);
+      const hairCollisions=connectHairCollisions(avatar);
+      renderer.domElement.dataset.hairCollisions=JSON.stringify(hairCollisions);
       if(import.meta.env.DEV)renderer.domElement.dataset.garmentCollisions=JSON.stringify(garmentCollisions);
       // Preserve fine iris/eyelash texture detail at oblique lecture angles.
       const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
