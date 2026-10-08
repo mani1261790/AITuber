@@ -189,7 +189,7 @@ export class TeacherMotion {
       .map(name => vrm.humanoid.getNormalizedBoneNode(name)));
     // Keep a suddenly withdrawn gesture from whipping the elbow back to rest.
     // Fingers retain their quicker response, and gait timing is unchanged.
-    this.transition = new PoseTransition(this.overlayBases.keys(), 10, bone => armBones.has(bone) ? 3 : 5);
+    this.transition = new PoseTransition(this.overlayBases.keys(), 10, bone => armBones.has(bone) ? (["listen","idle"].includes(this.gestureKind??"")?2.4:3) : 5);
     const legBones = new Set((["leftUpperLeg","leftLowerLeg","leftFoot","rightUpperLeg","rightLowerLeg","rightFoot"] as const).map(name=>this.vrm.humanoid.getNormalizedBoneNode(name)));
     const legs = (["left", "right"] as const).map(side =>
       (["UpperLeg", "LowerLeg", "Foot"] as const).flatMap(part => {
@@ -425,10 +425,10 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
   const shoulder=upper.getWorldPosition(new THREE.Vector3());
   const elbow=lower.getWorldPosition(new THREE.Vector3());
   const length=shoulder.distanceTo(elbow)+elbow.distanceTo(hand.getWorldPosition(new THREE.Vector3()));
-  // Emphasis opens BOTH arms diagonally down/out; explanation offers a palm in front.
-  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.82:.30))
-    .addScaledVector(up,-length*(emphasis?.45:.42))
-    .addScaledVector(forward,length*(emphasis?.20:.65));
+  // Emphasis presents both open hands at shoulder height with bent elbows.
+  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.54:.30))
+    .addScaledVector(up,length*(emphasis?.12:-.42))
+    .addScaledVector(forward,length*(emphasis?.42:.65));
 }
 
 export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" = "point") {

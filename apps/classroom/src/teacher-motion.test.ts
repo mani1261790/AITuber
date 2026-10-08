@@ -565,7 +565,16 @@ it("presents in front of the torso with elbows below the hands for either VRM co
   }
   const left=presentingHandTarget(vrm,"left",true)!,right=presentingHandTarget(vrm,"right",true)!;
   expect(left.y).toBeCloseTo(right.y);
-  expect(left.distanceTo(right)).toBeGreaterThan(1.2);
-  expect(left.y).toBeGreaterThan(1.1);
+  expect(left.distanceTo(right)).toBeGreaterThan(.9);
+  expect(left.y).toBeGreaterThan(1.4);
+  for(const side of ["left","right"] as const){
+   aimArm(vrm,side,presentingHandTarget(vrm,side,true)!,1,"open");scene.updateMatrixWorld(true);
+   const shoulder=nodes[`${side}UpperArm`]!.getWorldPosition(new THREE.Vector3());
+   const elbow=nodes[`${side}LowerArm`]!.getWorldPosition(new THREE.Vector3());
+   const wrist=nodes[`${side}Hand`]!.getWorldPosition(new THREE.Vector3());
+   const bend=shoulder.clone().sub(elbow).angleTo(wrist.clone().sub(elbow))*180/Math.PI;
+   expect(bend).toBeGreaterThan(70);expect(bend).toBeLessThan(110);
+   expect(wrist.y).toBeGreaterThan(shoulder.y);expect(elbow.y).toBeLessThan(wrist.y-.15);
+  }
  }
 });
