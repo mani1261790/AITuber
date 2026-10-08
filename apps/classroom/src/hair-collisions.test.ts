@@ -49,3 +49,16 @@ it("keeps torso colliders attached through translation and rotation",()=>{
  expect(collider.getWorldPosition(new THREE.Vector3()).x-before.x).toBeCloseTo(.3);
  expect(collider.getWorldQuaternion(new THREE.Quaternion()).angleTo(spine.getWorldQuaternion(new THREE.Quaternion()))).toBeCloseTo(0);
 });
+it("attaches extra hair guards to articulated sleeves",()=>{
+ const f=fixture();
+ const upper=f.vrm.humanoid.getRawBoneNode("rightUpperArm")!;
+ const lower=new THREE.Bone(),hand=new THREE.Bone();lower.position.x=-.22;hand.position.x=-.20;upper.add(lower);lower.add(hand);
+ const original=f.vrm.humanoid.getRawBoneNode.bind(f.vrm.humanoid);
+ f.vrm.humanoid.getRawBoneNode=(name)=>name==="rightLowerArm"?lower:name==="rightHand"?hand:original(name);
+ f.vrm.scene.updateMatrixWorld(true);
+ expect(connectHairCollisions(f.vrm)).toEqual({joints:1,colliders:6});
+ const guards=f.joint.colliderGroups.at(-1)!.colliders.filter(c=>c.name.includes("sleeve"));
+ expect(guards.map(c=>c.parent)).toEqual([upper,lower]);
+ upper.rotation.z=Math.PI/2;f.vrm.scene.updateMatrixWorld(true);
+ expect(guards[1]!.getWorldPosition(new THREE.Vector3()).distanceTo(lower.getWorldPosition(new THREE.Vector3()))).toBeLessThan(1e-6);
+});

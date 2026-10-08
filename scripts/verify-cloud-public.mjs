@@ -19,11 +19,11 @@ async function fetchPublished(path,options={}){
   await new Promise(resolve=>setTimeout(resolve,5000));
  }
 }
-const model=await fetchPublished('/models/teacher-floral-v9.vrm',{headers:{Range:'bytes=0-11'},signal:AbortSignal.timeout(30000)});
+const model=await fetchPublished('/models/teacher-floral-v10.vrm',{headers:{Range:'bytes=0-11'},signal:AbortSignal.timeout(30000)});
 if(!model.ok)throw new Error(`Hosted motion-lab model: HTTP ${model.status}`);
 const bytes=new Uint8Array(await model.arrayBuffer());
 if(String.fromCharCode(...bytes.slice(0,4))!=='glTF')throw new Error('Hosted model is not a GLB/VRM');
 console.log('PASS hosted motion-lab VRM');
-const credit=await fetchPublished('/models/teacher-floral-v9-NOTICE.md');
+const credit=await fetchPublished('/models/teacher-floral-v10-NOTICE.md');
 if(!credit.ok || !(await credit.text()).includes('5794724'))throw new Error('Hosted model attribution missing');
 console.log('PASS hosted model attribution');

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { VRMSpringBoneCollider, VRMSpringBoneColliderShapeCapsule, type VRM } from "@pixiv/three-vrm";
 
 const connected = new WeakSet<VRM>();
-/** Four bone-local capsules supplement the donor's thin body spheres for long hair.
+/** A bounded set of bone-local capsules supplement the donor's thin body spheres for long hair.
  * No triangle collisions or per-frame mesh bounds; short fringe springs are untouched.
  */
 export function connectHairCollisions(vrm: VRM) {
@@ -31,9 +31,24 @@ export function connectHairCollisions(vrm: VRM) {
   // sphere that pushes hair unnaturally far away from the back.
   for (const side of [-1, 0, 1]) {
     const shift = lateral.clone().multiplyScalar(side * width * .19);
-    capsule(middle.clone().add(shift), top.clone().add(shift), width * .25);
+    capsule(middle.clone().add(shift), top.clone().add(shift), width * .34);
   }
-  capsule(bottom, middle, width * .32);
+  capsule(bottom, middle, width * .39);
+  // Follow both sleeve segments when the teacher raises an arm. Torso-only
+  // colliders cannot prevent long locks passing through a lifted sleeve.
+  for (const side of ["left", "right"] as const) {
+    const upper = vrm.humanoid.getRawBoneNode(`${side}UpperArm`);
+    const lower = vrm.humanoid.getRawBoneNode(`${side}LowerArm`);
+    const hand = vrm.humanoid.getRawBoneNode(`${side}Hand`);
+    for (const [start, end, radius] of [[upper, lower, width * .27], [lower, hand, width * .25]] as const) {
+      if (!start || !end) continue;
+      const tail = start.worldToLocal(end.getWorldPosition(new THREE.Vector3()));
+      if (tail.lengthSq() < 1e-6) continue;
+      const collider = new VRMSpringBoneCollider(new VRMSpringBoneColliderShapeCapsule({offset: new THREE.Vector3(), tail, radius}));
+      collider.name = "Teacher long-hair sleeve clearance";
+      start.add(collider); colliders.push(collider);
+    }
+  }
   const group = { colliders };
   for (const joint of joints) {
     manager.deleteJoint(joint);

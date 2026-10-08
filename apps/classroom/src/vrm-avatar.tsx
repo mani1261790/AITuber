@@ -1,3 +1,4 @@
+import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
 import { connectHairCollisions } from "./hair-collisions.ts";
 import { lecturePixelRatio } from "./render-resolution.ts";
 import { teacherModelUrl } from "./teacher-model.ts";
@@ -203,6 +204,7 @@ export function VrmAvatar({ modelUrl = teacherModelUrl, look = "anime", listenin
         avatar.scene.add(orientation);
         avatar.scene.updateMatrixWorld(true);
       }
+      applyAuthoredVertexColors(avatar);
       const garmentCollisions=connectGarmentCollisions(avatar);
       const hairCollisions=connectHairCollisions(avatar);
       renderer.domElement.dataset.hairCollisions=JSON.stringify(hairCollisions);

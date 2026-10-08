@@ -1,3 +1,4 @@
+import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
 import type {MotionTrial} from "./motion-trials.ts";
 import {connectHairCollisions} from "./hair-collisions.ts";
 import {SpringSimulation} from "./spring-simulation.ts";
@@ -19,7 +20,7 @@ export function validateVrmaBuffer(buffer:ArrayBuffer):void {
   if([...json.buffers ?? [],...json.images ?? []].some((item:{uri?:string})=>item.uri)) throw new Error("外部ファイル参照を含むVRMAは読み込めません");
 }
 
-export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-v9.vrm",trial,view="body",restart=0}:{file:File|null;speed:number;paused:boolean;modelUrl?:string;trial?:MotionTrial|undefined;view?:"body"|"hand";restart?:number}) {
+export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-v10.vrm",trial,view="body",restart=0}:{file:File|null;speed:number;paused:boolean;modelUrl?:string;trial?:MotionTrial|undefined;view?:"body"|"hand";restart?:number}) {
   const host=useRef<HTMLDivElement>(null);const playback=useRef({speed,paused});playback.current={speed,paused};
   const [status,setStatus]=useState("VRMAファイルを選んでください");
   useEffect(()=>{
@@ -45,6 +46,7 @@ export function VrmaPreview({file,speed,paused,modelUrl="/models/teacher-floral-
       const model=await loader.loadAsync(modelUrl);
       if(disposed){VRMUtils.deepDispose(model.scene);return;}
       avatar=model.userData.vrm as VRM;VRMUtils.rotateVRM0(avatar);scene.add(avatar.scene);
+      applyAuthoredVertexColors(avatar);
       connectHairCollisions(avatar);
       spring=new SpringSimulation([...(avatar.springBoneManager?.joints??[])].map(j=>j.bone));
       avatar.scene.updateMatrixWorld(true);

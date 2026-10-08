@@ -14,9 +14,9 @@ await cp("apps/operator/dist","dist/cloudflare/operator",{recursive:true});
 // Keep the original/refined teacher models for the hosted motion lab.
 await rm("dist/cloudflare/models/candidates",{recursive:true,force:true});
 
-const hostedTeacher = await stat("dist/cloudflare/models/teacher-floral-v9.vrm");
+const hostedTeacher = await stat("dist/cloudflare/models/teacher-floral-v10.vrm");
 if(hostedTeacher.size > 25*1024*1024) throw new Error("Hosted teacher exceeds the static asset size limit");
-await stat("dist/cloudflare/models/teacher-floral-v9-NOTICE.md");
+await stat("dist/cloudflare/models/teacher-floral-v10-NOTICE.md");
 
 // Japanese PDF extraction uses private binding requests to these static CMaps/fonts.
 const requireServer = createRequire(new URL("../apps/server/package.json", import.meta.url));
