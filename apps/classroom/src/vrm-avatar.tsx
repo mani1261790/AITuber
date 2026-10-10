@@ -446,13 +446,13 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         }
       }
       updateCamera(0);
-      let grip:THREE.Vector3|undefined;
-      if(avatar && propAction?.kind==="screen"){
-        const base=avatar.humanoid.getRawBoneNode("rightMiddleProximal");
-        const tip=avatar.humanoid.getRawBoneNode("rightMiddleDistal");
-        if(base && tip)grip=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5);
+      propVisuals.update(propAction,propFrame);
+      if(import.meta.env.DEV){
+        renderer.domElement.dataset.propPhase=propFrame?.phase??"none";
+        if(propFrame)renderer.domElement.dataset.propHandle=JSON.stringify(propFrame.handle.toArray());
+        const base=avatar?.humanoid.getRawBoneNode("rightMiddleProximal"),tip=avatar?.humanoid.getRawBoneNode("rightMiddleDistal");
+        if(base && tip)renderer.domElement.dataset.propGrip=JSON.stringify(base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).toArray());
       }
-      propVisuals.update(propAction,propFrame,grip);
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
     };

@@ -367,7 +367,14 @@ export class TeacherMotion {
       for(const finger of ["Index","Middle","Ring","Little"] as const)for(const part of ["Proximal","Intermediate","Distal"] as const){
         const joint=this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}${finger}${part}`);
         const angle=prop.kind==="write" && finger==="Index"?.25:.85;
-        joint?.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),(prop.side==="left"?1:-1)*angle),prop.weight);
+        joint?.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),(prop.side==="left"?1:-1)*angle),prop.grip);
+      }
+      if(prop.kind==="screen"){
+        // Solve the arm towards a fixed grip point, accounting for finger length.
+        // Do not move the ring to hide contact errors.
+        solveFixedGrip(this.vrm,prop.side,prop.target,prop.weight);
+      }else{
+        this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}Hand`)?.rotateX(prop.wristRoll*prop.weight);
       }
     }
     // Keep the target; solve eyes only after the body reaches its final pose.
@@ -407,6 +414,11 @@ export class TeacherMotion {
     this.outputLimit.apply(delta);
     this.standingRecovery.confirmSettled();
     this.postIkError=solvedFeet.map(foot=>foot ? foot.bone.getWorldPosition(new THREE.Vector3()).distanceTo(foot.position) : 0);
+    // A held rigid prop is a positional constraint, not another delayed pose.
+    // Re-solve the small contact residual after smoothing; acquisition/release
+    // ramps the constraint, while the ring always keeps its own trajectory.
+    if(input.propPose?.kind==="screen" && input.propPose.grip>0)
+      solveFixedGrip(this.vrm,input.propPose.side,input.propPose.target,input.propPose.weight*input.propPose.grip);
     this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();
   }
@@ -444,7 +456,7 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
     .addScaledVector(forward,length*(emphasis?.70-.13*flex:.65));
 }
 
-export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" = "point") {
+export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" | "grip" = "point") {
   const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
   const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
   const hand = vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
@@ -484,11 +496,11 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
     lower.rotateOnAxis(hand.position.clone().normalize(), side === "left" ? .3 : -.3);
   joints.forEach((joint, i) => joint.quaternion.slerpQuaternions(original[i]!, joint.quaternion.clone(), weight));
   // The talk clip must not retain a bent wrist on top of the presenting pose.
-  if(handPose === "open")hand.quaternion.slerp(new THREE.Quaternion(),weight);
-  applyHandPose(vrm, handPose==="write"?"point":handPose, side, weight);
+  if(handPose === "open" || handPose === "grip")hand.quaternion.slerp(new THREE.Quaternion(),weight);
+  if(handPose!=="grip")applyHandPose(vrm, handPose==="write"?"point":handPose, side, weight);
   const indexBase = vrm.humanoid.getNormalizedBoneNode(`${side}IndexProximal`);
   const indexTip = vrm.humanoid.getNormalizedBoneNode(`${side}IndexDistal`);
-  if (handPose !== "open" && indexBase && indexTip) {
+  if ((handPose === "point" || handPose === "write") && indexBase && indexTip) {
     const originalHand=hand.quaternion.clone();
     // Start from a neutral wrist. The arm solver carries the large directional
     // change; never fold the cuff to force an otherwise unreachable pointing ray.
@@ -532,4 +544,16 @@ export function removeTurnYaw(clip:THREE.AnimationClip,vrm:VRM){
     q.premultiply(yaw).toArray(track.values,i);
   }
   return result;
+}
+
+function solveFixedGrip(vrm:VRM,side:"left"|"right",target:THREE.Vector3,weight:number){
+ const hand=vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
+ const base=vrm.humanoid.getNormalizedBoneNode(`${side}MiddleProximal`);
+ const tip=vrm.humanoid.getNormalizedBoneNode(`${side}MiddleDistal`);
+ if(!hand || !base || !tip)return;
+ for(let i=0;i<3;i++){
+  vrm.scene.updateMatrixWorld(true);
+  const offset=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).sub(hand.getWorldPosition(new THREE.Vector3()));
+  aimArm(vrm,side,target.clone().sub(offset),weight,"grip");
+ }
 }

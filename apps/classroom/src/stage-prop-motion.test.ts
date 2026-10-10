@@ -24,15 +24,32 @@ it("carries the chalk between separate strokes continuously instead of teleporti
  }
 });
 
-it("never adds an ink layer, and aligns the pull ring with the final rendered grip",async()=>{
+it("never adds ink and keeps the ring on its own vertical trajectory",async()=>{
  const THREE=await import("three"),{StagePropVisuals}=await import("./stage-prop-motion.ts");
  const scene=new THREE.Scene(),visuals=new StagePropVisuals(scene),motion=new StagePropMotion();
  const writing={id:"w",kind:"write" as const};visuals.update(writing,motion.update(writing,true,0));
  expect(scene.children.filter(child=>child.visible)).toHaveLength(0);
  const screen={id:"s",kind:"screen" as const};let frame=motion.update(screen,true,0);
  for(let i=0;i<120;i++)frame=motion.update(screen,true,1/60);
- const grip=new THREE.Vector3(.93,2.31,.19);visuals.update(screen,frame,grip);
+ visuals.update(screen,frame);
  const ring=scene.children.find(child=>child instanceof THREE.Mesh)!;
- expect(ring.position.distanceTo(grip)).toBeLessThan(1e-8);
+ expect(ring.position.distanceTo(frame!.handle)).toBeLessThan(1e-8);
  visuals.dispose();expect(scene.children).toHaveLength(0);
+});
+
+
+it("keeps the cord still before grasp, pulls down, releases, then lowers the hand independently",()=>{
+ const motion=new StagePropMotion(),action={id:"s",kind:"screen" as const};
+ const samples=new Map<number,NonNullable<ReturnType<StagePropMotion["update"]>>>();
+ for(let i=0;i<=480;i++){const f=motion.update(action,true,i===0?0:1/60)!;if([60,210,258,360,480].includes(i))samples.set(i,f);}
+ expect(samples.get(60)!.handle.y).toBeCloseTo(2.55);
+ expect(samples.get(60)!.pose.grip).toBe(0);
+ expect(samples.get(210)!.handle.y).toBeLessThan(1.9);
+ expect(samples.get(210)!.pose.grip).toBe(1);
+ expect(samples.get(258)!.handle.y).toBeCloseTo(1.6);
+ expect(samples.get(360)!.pose.target.y).toBeLessThan(1.3);
+ expect(samples.get(360)!.handle.y).toBeGreaterThan(2.5);
+ expect(samples.get(360)!.pose.grip).toBe(0);
+ expect(samples.get(480)!.progress).toBe(1);
+ expect(samples.get(480)!.weight).toBe(0);
 });
