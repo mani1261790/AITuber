@@ -60,6 +60,7 @@ export class FixedLectureService {
   readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
   readonly #speechNext = new WeakMap<RuntimeSession, () => void>();
   readonly #travelArrived = new WeakSet<RuntimeSession>();
+  readonly #drawingWait = new WeakMap<RuntimeSession, {started:number; fail:()=>void}>();
   readonly #stageNext = new WeakMap<RuntimeSession, () => void>();
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan> }>();
@@ -414,6 +415,15 @@ export class FixedLectureService {
     const runtime = this.#requireSession(sessionId);
     const direction = this.#directions.get(runtime);
     if (runtime.state.epoch !== epoch || direction?.actionId !== actionId) return;
+    if(direction.phase === "drawing") {
+      const pending=this.#drawingWait.get(runtime);
+      if(pending && runtime.timer){
+        clearTimeout(runtime.timer);
+        const remaining=90_000-(Date.now()-pending.started);
+        runtime.timer=setTimeout(pending.fail,Math.max(1,Math.min(12_000,remaining)));
+      }
+      return;
+    }
     if (direction.phase !== "moving" && !direction.traveling) return;
     // A live stage may need more than twelve seconds on a slow renderer.
     // Keep the disconnect fallback, but do not interrupt a reported active move.
@@ -429,7 +439,7 @@ export class FixedLectureService {
     }
     if (!runtime.timer) return;
     const next = this.#stageNext.get(runtime); if (!next) return;
-    clearTimeout(runtime.timer); runtime.timer = null; this.#stageNext.delete(runtime); next();
+    clearTimeout(runtime.timer); runtime.timer = null; this.#drawingWait.delete(runtime); this.#stageNext.delete(runtime); next();
   }
 
   #runAction(runtime: RuntimeSession, unitId: string, epoch: number, actions: readonly LessonAction[], index: number) {
@@ -450,12 +460,14 @@ export class FixedLectureService {
         update({phase:"drawing",surface:"board",drawing:action.drawing,targetId:null});
         this.#stageNext.set(runtime,next);
         // Never speak about an illustration until a classroom has rendered it.
-        runtime.timer = setTimeout(() => {
-          runtime.timer = null; this.#stageNext.delete(runtime);
+        const fail = () => {
+          runtime.timer = null; this.#drawingWait.delete(runtime); this.#stageNext.delete(runtime);
           update({phase:"resting",surface:"slides",drawing:direction.drawing ?? null,reason:"黒板画像を表示できないため参考説明へ戻りました"});
           const unit = runtime.course.teachingUnits.find(item=>item.id===unitId)!;
           this.#runAction(runtime,unitId,epoch,referencePlan(unit).actions,0);
-        }, 12000);
+        };
+        this.#drawingWait.set(runtime,{started:Date.now(),fail});
+        runtime.timer=setTimeout(fail,12000);
         return;
       }
       case "move_to":
@@ -577,7 +589,8 @@ export class FixedLectureService {
       };
       this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
       this.#stageNext.set(runtime,move);
-      runtime.timer=setTimeout(()=>{ this.#stageNext.delete(runtime); if (pending.onFailure) pending.onFailure("黒板画像を表示できませんでした"); else this.deferSupplement(runtime.id,{...pending.view,status:"deferred",failure:"黒板画像を表示できませんでした"}); },12000);
+      const fail=()=>{ this.#drawingWait.delete(runtime); this.#stageNext.delete(runtime); if (pending.onFailure) pending.onFailure("黒板画像を表示できませんでした"); else this.deferSupplement(runtime.id,{...pending.view,status:"deferred",failure:"黒板画像を表示できませんでした"}); };
+      this.#drawingWait.set(runtime,{started:Date.now(),fail});runtime.timer=setTimeout(fail,12000);
       this.#publish(runtime);
     } else this.#playSupplementSpeech(runtime, candidate, pending);
   }
@@ -684,6 +697,7 @@ export class FixedLectureService {
 
   /** Discard executable cues without forgetting where the stage was directed to settle. */
   #clearDirection(runtime: RuntimeSession) {
+    this.#drawingWait.delete(runtime);
     const direction = this.#directions.get(runtime);
     if (direction) this.#lastStagePosition.set(runtime, direction.position);
     this.#directions.delete(runtime);

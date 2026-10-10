@@ -1,0 +1,23 @@
+name: Verify board few-shot on configured LLM
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/verify-board-preview.mjs
+        env:
+          OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-board-previews
+          path: output/board-preview/results.json
+          retention-days: 7

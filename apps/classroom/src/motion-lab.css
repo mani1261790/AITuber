@@ -15,3 +15,10 @@
 @media(max-width:360px){.lab-header{gap:10px;padding:10px 12px}.lab-brand-mark{display:none}.lab-header h1{font-size:16px}.lab-eyebrow{font-size:8px}.motion-lab .lab-export{font-size:12px;padding:8px 10px;gap:6px}}
 
 .vrma-trial-viewer{display:flex;flex-direction:column}.vrma-trial-viewer p{position:static;flex:none;margin:12px}.vrma-canvas{flex:1;min-height:0;min-width:0;overflow:hidden}
+
+.board-rehearsal-control { position:absolute;bottom:12px;left:12px;right:12px;max-width:560px;padding:10px 12px;background:rgb(14 31 24 / .85);border-radius:12px;z-index:3;color:#f6f3dc; }
+.board-rehearsal-control textarea {width:100%;box-sizing:border-box;resize:vertical;max-height:130px;background:#17372b;color:inherit;border:1px solid #608477;border-radius:8px;padding:8px;font:inherit;}
+.board-rehearsal-control button {min-height:36px;padding:6px 14px;border-radius:8px;background:#c8e6a2;color:#193124;border:0;font:inherit;cursor:pointer;}
+.board-rehearsal-control p {margin:6px 0 0;font-size:12px;}
+.motion-lab .board-rehearsal-control button:hover {background:#d9eebd;color:#193124;}
+.motion-lab .board-rehearsal-control button:active {background:#bed896;color:#193124;}

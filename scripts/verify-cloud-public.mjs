@@ -1,5 +1,5 @@
 const base='https://aituber.mani1261790.workers.dev';
-for(const [path,expected] of [['/login',200],['/api/courses',401],['/_internal/state',404]]){
+for(const [path,expected] of [['/login',200],['/api/courses',401],['/api/settings/llm/board-preview',401],['/_internal/state',404]]){
  let actual='unreachable';
  for(let attempt=0;attempt<12;attempt++){
   try{const response=await fetch(base+path,{redirect:'manual',signal:AbortSignal.timeout(10000)});actual=response.status;await response.body?.cancel();}catch{actual='unreachable';}

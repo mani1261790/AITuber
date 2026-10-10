@@ -95,7 +95,7 @@ export class LiveSupplementService {
   }
 
   #queuePlayback(sessionId: string, view: LiveSupplementView) {
-    const elapsed = Date.now() - Date.parse(view.adoptedAt); const remaining = Math.max(1, this.#waitLimitMs - elapsed);
+    const elapsed = Date.now() - Date.parse(view.adoptedAt); const remaining = Math.max(1, this.#waitLimitMs - elapsed + (view.candidate?.drawing ? 90_000 : 0));
     const deadline = setTimeout(() => this.#defer(sessionId, view, "制限時間内に音声を開始できなかったため、授業後の回答へ保留しました。"), remaining);
     this.#audioDeadlines.set(view.id, deadline);
     try {

@@ -1,3 +1,4 @@
+import { paintBoardReveal } from "./board-reveal.ts";
 import {StagePropMotion, StagePropVisuals, type StagePropAction} from "./stage-prop-motion.ts";
 import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
 import { connectHairCollisions } from "./hair-collisions.ts";
@@ -292,6 +293,10 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
       if(import.meta.env.DEV)renderer.domElement.dataset.cameraFov=String(camera.fov);
     };
 
+    let revealCanvas:HTMLCanvasElement|null=null;
+    let revealTick=-1;
+    let boardActionId="";
+    let propAcknowledged="";
     const render = () => {
       if (disposed) return;
       // Root travel, gait speed and pose solvers must advance on the same timestep.
@@ -318,12 +323,38 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         setLessonMap(boardMaterial, boardTexture);
         setLessonMap(screenMaterial, texture);
       }
-      const propAction=stageRef.current.propAction;
-      const propX=propAction?.kind==="write"?-.6:1.35;
-      const propYaw=propAction?.kind==="write"?Math.PI:-.65;
-      const propReady=!!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-propX)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-propYaw),Math.cos(locomotion.yaw-propYaw)))<.05;
-      const propFrame=propMotion.update(propAction,propReady,delta);
+      const drawingDirection=stageRef.current.direction?.phase==="drawing"?stageRef.current.direction:null;
+      const drawingReady=!!drawingDirection?.drawing && currentImage?.drawingId===drawingDirection.drawing.id;
+      const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (drawingDirection?{
+        id:drawingDirection.actionId,kind:"write",writingDuration:currentImage?.boardReveal?.duration ?? 1,
+      }:undefined);
+      const destination=propAction?propMotion.destination(propAction,curtain>.02):null;
+      const propReady=reducedMotion || (!!destination && !!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-destination.yaw),Math.cos(locomotion.yaw-destination.yaw)))<.05);
+      const propFrame=propMotion.update(propAction,propReady && (!drawingDirection || drawingReady),delta,curtain>.02);
       curtain = propFrame ? (propFrame.kind==="screen"?propFrame.progress:0) : reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
+      if(drawingDirection && drawingReady && currentImage){
+        if(boardActionId!==drawingDirection.actionId){
+          boardActionId=drawingDirection.actionId;revealTick=-1;
+          revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
+        }
+        const elapsed=propFrame?.writingElapsed??0;
+        const tick=Math.floor(elapsed*15);
+        if(revealCanvas && tick!==revealTick){
+          revealTick=tick;
+          if(currentImage.boardReveal)paintBoardReveal(revealCanvas,currentImage.boardCanvas,currentImage.boardReveal,elapsed);
+          else {const ctx=revealCanvas.getContext("2d")!;ctx.fillStyle="#204a3d";ctx.fillRect(0,0,1280,720);if(elapsed>=1)ctx.drawImage(currentImage.boardCanvas,0,0);}
+          boardTexture=updateLessonTexture(boardTexture,revealCanvas,renderer.capabilities.getMaxAnisotropy());
+          if(boardTexture)boardTexture.needsUpdate=true;
+          setLessonMap(boardMaterial,boardTexture);
+        }
+        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId);}
+        if(propFrame?.done && propAcknowledged!==drawingDirection.actionId){
+          propAcknowledged=drawingDirection.actionId;stageRef.current.onStageComplete?.(drawingDirection.actionId);
+        }
+      }else if(boardActionId){
+        boardActionId="";revealCanvas=null;
+        boardTexture=updateLessonTexture(boardTexture,currentImage?.boardCanvas??null,renderer.capabilities.getMaxAnisotropy());setLessonMap(boardMaterial,boardTexture);
+      }
       screen.scale.y=Math.max(.001,curtain)*.82;
       const screenUv = screen.geometry.attributes.uv!;
       screenUv.setY(2,1-curtain); screenUv.setY(3,1-curtain); screenUv.needsUpdate=true;
@@ -440,7 +471,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           lastProgressReport=time;
           stageRef.current.onStageProgress?.(direction.actionId);
         }
-        if ((direction?.phase === "moving" || direction?.traveling) && !walking && !teacherMotion?.settlingFeet && Math.abs(distance)<.04 && Math.abs(avatar.scene.rotation.y-facing)<.08 && acknowledgedAction !== direction.actionId) {
+        if ((direction?.phase === "moving" || direction?.traveling) && !walking && !teacherMotion?.settlingFeet && Math.abs(distance)<.04 && Math.abs(Math.atan2(Math.sin(avatar.scene.rotation.y-facing),Math.cos(avatar.scene.rotation.y-facing)))<.08 && acknowledgedAction !== direction.actionId) {
           acknowledgedAction = direction.actionId;
           stageRef.current.onStageComplete?.(direction.actionId);
         }

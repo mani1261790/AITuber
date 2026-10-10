@@ -1,8 +1,8 @@
 import {expect,it} from "vitest";
-import {StagePropMotion} from "./stage-prop-motion.ts";
+import {StagePropMotion,handwritingDuration} from "./stage-prop-motion.ts";
 it("waits until the teacher arrives before writing or lowering the screen, then releases the pose",()=>{
  for(const kind of ["write","screen"] as const){
-  const motion=new StagePropMotion(),action={id:"a",kind};
+  const motion=new StagePropMotion(),action={id:"a",kind,writingDuration:handwritingDuration};
   for(let i=0;i<180;i++){const frame=motion.update(action,false,1/60)!;expect(frame.weight).toBe(0);expect(frame.progress).toBe(0);}
   let previous=0,peak=0;
   for(let i=0;i<720;i++){
@@ -52,4 +52,23 @@ it("keeps the cord still before grasp, pulls down, releases, then lowers the han
  expect(samples.get(360)!.pose.grip).toBe(0);
  expect(samples.get(480)!.progress).toBe(1);
  expect(samples.get(480)!.weight).toBe(0);
+});
+
+it("retracts a projected screen with a short tug before starting a looping write",()=>{
+ const motion=new StagePropMotion(),action={id:"w",kind:"write" as const};
+ expect(motion.destination(action,true).x).toBe(1.35);
+ let frame=motion.update(action,true,0,true)!;
+ for(let i=0;i<150;i++)frame=motion.update(action,true,1/60,true)!;
+ expect(frame.kind).toBe("screen");expect(frame.handle.y).toBeCloseTo(2.25);expect(frame.progress).toBe(1);
+ for(let i=0;i<210;i++)frame=motion.update(action,true,1/60,true)!;
+ expect(frame.kind).toBe("write");expect(frame.progress).toBe(0);
+ for(let i=0;i<1800;i++)frame=motion.update(action,true,1/60)!;
+ expect(frame.done).toBe(false);expect(frame.weight).toBe(1);
+ for(let i=0;i<80;i++)frame=motion.update({...action,writingComplete:true},true,1/60)!;
+ expect(frame.done).toBe(true);expect(frame.weight).toBe(0);
+});
+it("returns smoothly across handwriting loop boundaries",async()=>{
+ const {loopingHandwritingPoint}=await import("./stage-prop-motion.ts");
+ let previous=loopingHandwritingPoint(0);
+ for(let t=0;t<40;t+=1/60){const p=loopingHandwritingPoint(t);expect(p.distanceTo(previous)).toBeLessThan(.11);previous=p;}
 });

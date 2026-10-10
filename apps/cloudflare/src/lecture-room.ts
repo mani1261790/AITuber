@@ -1,3 +1,4 @@
+import { previewBoard } from "../../server/src/board-preview";
 import { audioResponse } from './audio-response';
 import { DurableObject } from 'cloudflare:workers';
 import type { AppEnv } from './index';
@@ -91,6 +92,10 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const url=new URL(request.url), path=url.pathname;
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?28*1024*1024:64*1024);
+    if(path==='/api/settings/llm/board-preview' && request.method==='POST') {
+      const body=await read<{example:number}>();
+      return json(200,await previewBoard(settings.createProvider("runtime"),body.example));
+    }
     if(path==='/api/settings/llm') {
       if(request.method==='GET')return json(200,{settings:settings.get()});
       if(request.method==='PUT')return json(200,{settings:settings.save(await read<UpdateLlmSettingsRequest>())});

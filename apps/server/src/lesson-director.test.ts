@@ -331,3 +331,17 @@ it("generates notes together with speech and returns to slides on the next null 
   expect(plan.actions.findIndex(a=>a.type==="show_slides")).toBeGreaterThan(plan.actions.findIndex(a=>a.type==="speak"));
  }finally{runtime.close();}
 });
+
+it("waits through long acknowledged board writing without starting speech; disconnected rendering still fails",async()=>{
+ vi.useFakeTimers();
+ const runtime=setup(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing:{id:"board",markdown:"# 要点",purpose:"要点"}},{type:"speak",text:"板書が見えた後の説明"}]}));
+ try{
+  await vi.advanceTimersByTimeAsync(0);
+  const view=runtime.service.getSession(runtime.session.id);
+  for(let i=0;i<15;i++){runtime.service.reportStageProgress(view.id,view.epoch,view.direction!.actionId);await vi.advanceTimersByTimeAsync(2000);}
+  expect(runtime.service.getSession(view.id).direction?.phase).toBe("drawing");
+  expect(runtime.service.getSession(view.id).speech.playing).toBe(false);
+  runtime.service.completeStageAction(view.id,view.epoch,view.direction!.actionId);
+  expect(runtime.service.getSession(view.id).speech.text).toBe("板書が見えた後の説明");
+ }finally{runtime.close();}
+});

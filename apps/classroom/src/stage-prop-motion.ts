@@ -1,5 +1,5 @@
 import * as THREE from "three";
-export type StagePropAction = { id:string; kind:"write"|"screen" };
+export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; writingDuration?:number; writingComplete?:boolean };
 export interface StagePropPose {
  kind:"write"|"screen"; weight:number; target:THREE.Vector3; side:"left"|"right";
  grip:number; wristRoll:number;
@@ -30,27 +30,54 @@ export function handwritingPoint(time:number){
  const a=writingKeys[index-1]!,b=writingKeys[index]!;
  return a.point.clone().lerp(b.point,ease((t-a.time)/(b.time-a.time)));
 }
+/** A continuous reset stroke, with the hand lifted off the board. */
+export function loopingHandwritingPoint(time:number) {
+ const t=Math.max(0,time)%(handwritingDuration+.7);
+ if(t<=handwritingDuration)return handwritingPoint(t);
+ const p=handwritingPoint(handwritingDuration).lerp(handwritingPoint(0),ease((t-handwritingDuration)/.7));
+ p.z+=.08*Math.sin(Math.PI*(t-handwritingDuration)/.7);return p;
+}
 export class StagePropMotion {
  private id=""; private age=0; private arrived=false;
- update(action:StagePropAction|undefined,ready:boolean,delta:number){
+ private stage:StagePropAction["kind"]="write"; private returningFirst=false;
+ private stopAge:number|null=null; private alreadyRaised=false;
+ destination(action:StagePropAction,screenVisible=false){
+  if(action.id!==this.id){
+   this.id=action.id;this.age=0;this.arrived=false;this.stopAge=null;
+   this.alreadyRaised=action.kind==="screen-up" && !screenVisible;
+   this.returningFirst=action.kind==="write" && screenVisible;
+   this.stage=this.returningFirst?"screen-up":action.kind;
+  }
+  return {x:this.stage==="write"?-.6:1.35,yaw:this.stage==="write"?Math.PI:-.65};
+ }
+ update(action:StagePropAction|undefined,ready:boolean,delta:number,screenVisible=false){
   if(!action){this.id="";this.age=0;this.arrived=false;return null;}
-  if(action.id!==this.id){this.id=action.id;this.age=0;this.arrived=false;}
+  this.destination(action,screenVisible);
+  if(this.alreadyRaised)return null;
   if(ready)this.arrived=true;
   if(this.arrived)this.age+=THREE.MathUtils.clamp(delta,0,1/30);
-  const writing=action.kind==="write",duration=writing?handwritingDuration+2.4:7.2;
+  const writing=this.stage==="write",raising=this.stage==="screen-up";
+  const writingElapsed=Math.max(0,this.age-1.2);
+  if(writing && this.stopAge===null && (action.writingComplete || writingElapsed>=(action.writingDuration??Infinity)))this.stopAge=this.age;
+  const duration=writing?(this.stopAge===null?Infinity:this.stopAge+1.1):raising?5.6:7.2;
   const weight=this.arrived?ease(this.age/1.2)*(1-ease((this.age-(duration-1.1))/1.1)):0;
-  const progress=writing?THREE.MathUtils.clamp((this.age-1.2)/handwritingDuration,0,1):ease((this.age-1.8)/2.4);
-  // Reach -> close -> pull -> release -> return cord / lower arm -> settle.
-  const release=ease((this.age-4.35)/.4);
-  const returnCord=ease((this.age-4.8)/1.3);
-  const handle=new THREE.Vector3(.9,2.55-progress*.95*(1-returnCord),.21);
-  const target=writing?handwritingPoint(this.age-1.2):new THREE.Vector3(.9,2.55-progress*.95,.21);
-  if(!writing)target.lerp(new THREE.Vector3(1.18,1.26,.65),ease((this.age-4.75)/1.25));
+  const pull=ease((this.age-1.8)/(raising?.7:2.4));
+  const progress=writing?Math.min(1,writingElapsed/(action.writingDuration??Infinity)):raising?1-ease((this.age-2.8)/1.9):pull;
+  const release=ease((this.age-(raising?2.55:4.35))/.4);
+  const returnCord=ease((this.age-(raising?2.9:4.8))/(raising?1:1.3));
+  const depth=raising?.3:.95;
+  const handle=new THREE.Vector3(.9,2.55-pull*depth*(1-returnCord),.21);
+  const target=writing?loopingHandwritingPoint(writingElapsed):new THREE.Vector3(.9,2.55-pull*depth,.21);
+  if(!writing)target.lerp(new THREE.Vector3(1.18,1.26,.65),ease((this.age-(raising?2.95:4.75))/1.25));
   const grip=writing?weight:ease((this.age-1.3)/.4)*(1-release);
-  const wristRoll=writing && this.age>1.2 && this.age<handwritingDuration+1.2 ? .055*Math.sin((this.age-1.2)*14) : 0;
-  return {phase:!this.arrived?"approach":writing?"write":this.age<1.3?"reach":this.age<1.8?"grasp":this.age<4.2?"pull":this.age<4.75?"release":this.age<6.1?"lower":"settle",kind:action.kind,progress,weight,handle,done:this.age>=duration,
-    x:writing?-.6:1.35,yaw:this.age>=duration?0:writing?Math.PI:-.65,
-    pose:{kind:action.kind,weight,target,side:writing?"left":"right",grip,wristRoll} satisfies StagePropPose};
+  const wristRoll=writing && this.age>1.2 ? .055*Math.sin(writingElapsed*14) : 0;
+  const done=this.age>=duration;
+  const frame={phase:!this.arrived?"approach":writing?(this.stopAge===null?"write":"settle"):this.age<1.3?"reach":this.age<1.8?"grasp":this.age<(raising?2.5:4.2)?"pull":this.age<(raising?2.95:4.75)?"release":this.age<(raising?4.5:6.1)?"lower":"settle",
+    kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,
+    x:writing?-.6:1.35,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
+    pose:{kind:writing?"write":"screen",weight,target,side:writing?"left":"right",grip,wristRoll} satisfies StagePropPose};
+  if(done && this.returningFirst){this.returningFirst=false;this.stage="write";this.age=0;this.arrived=false;}
+  return frame;
  }
 }
 
@@ -63,8 +90,8 @@ export class StagePropVisuals {
   this.handle=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,8,24),new THREE.MeshStandardMaterial({color:0xddd9ce}));scene.add(this.handle);
  }
  update(action:StagePropAction|undefined,frame:ReturnType<StagePropMotion["update"]>){
-  this.cord.visible=this.handle.visible=action?.kind==="screen";
-  if(!frame || action?.kind!=="screen")return;
+  this.cord.visible=this.handle.visible=Boolean(action && frame?.kind==="screen" && !frame.done);
+  if(!frame || frame.kind!=="screen")return;
   const bottom=frame.handle;
   const positions=this.cord.geometry.getAttribute("position") as THREE.BufferAttribute;
   positions.setXYZ(0,.9,3.44,.02);positions.setXYZ(1,bottom.x,bottom.y,bottom.z);positions.needsUpdate=true;
