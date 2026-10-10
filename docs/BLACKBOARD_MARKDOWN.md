@@ -42,3 +42,10 @@ $$x^2-4x+3=(x-2)^2-1$$
 管理者専用の `POST /api/settings/llm/board-preview` に `{ "example": 0 }`〜2を送ると、保存済みLLM設定・利用予算を使って生成する。授業や教材を作らず、few-shotにない高校数学・大学数学・生物の3題で適用を確認する。返却は板書・発話文・モデル・使用量・遅延のみ。APIキーは返さない。
 
 GitHub Actions の **Verify board few-shot on configured LLM** は手動実行専用で、最大3回だけ生成し、結果を7日間のArtifactに保存する。通常のデプロイで有料生成は実行しない。生成の成否と、数式の正しさ・言い回し・最終画面の読みやすさは別に確認する。
+
+### 2026-10-11 の確認結果
+
+- 関連90テスト、Classroomビルド、Worker型チェックが成功。デプロイrun `38068335722` は成功（公開コード `3dd4b47`）。
+- 実ブラウザで、格納→移動→書字ループ→文字と数式の表示→腕を下ろす→説明位置へ移動→説明開始を確認。大学数学の例はローカル、高校数学の例は公開版で確認。ラボのTTS実再生は対象外。
+- 実LLM確認run `38068510778` は、公開設定の `apiKeyConfigured:false` により `LLM API key is required for non-local endpoints` で失敗。モデルへの生成要求には到達しておらず、few-shotによる実生成の品質・使用量・遅延は未確認。
+- 再開手順：管理画面の「LLM接続」にAPIキーを設定して「接続設定を保存」。その後 `gh workflow run verify-board-preview.yml --ref main` を実行し、成功したArtifactの生成結果を表示・内容の両面で確認する。キーはチャットや実行ログに記載しない。
