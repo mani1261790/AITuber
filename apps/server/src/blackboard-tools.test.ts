@@ -16,7 +16,7 @@ it("stores validated drawings and forwards the prior specialist SVG for append",
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 
-it("compiles a typed LLM tool call into a saved SVG before its spoken explanation",async()=>{
+it("compiles board markdown from the same response as speech without calling an SVG model",async()=>{
   const {FixedResponseLlmProvider}=await import("@aituber/providers");
   const {quadraticFunctionsFixture}=await import("@aituber/content");
   const {LectureEventStore}=await import("@aituber/storage");
@@ -27,11 +27,12 @@ it("compiles a typed LLM tool call into a saved SVG before its spoken explanatio
   try {
     const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
     const provider={generate:vi.fn<SvgProvider["generate"]>(async()=>svg)};
-    const llm=new FixedResponseLlmProvider([{beats:[{text:"頂点の位置を図で見ましょう。",targetId:null,camera:"lecture",position:"left",gesture:"explain",walkWhileSpeaking:false,toolCall:{name:"draw_blackboard",arguments:{purpose:"頂点",requirements:"頂点を日本語で明記",mode:"replace"}}}]}]);
-    const plan=await createLessonPlanner(()=>llm,new BlackboardTools(provider,dir))({session,unit:quadraticFunctionsFixture.teachingUnits[0]!,previousSpeech:"",remainingMs:10000},new AbortController().signal);
+    const llm=new FixedResponseLlmProvider([{beats:[{text:"頂点の位置を図で見ましょう。",targetId:null,camera:"lecture",position:"left",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:"# 頂点\n◎ $x=2$ → 最小値"}]}]);
+    const plan=await createLessonPlanner(()=>llm)({session,unit:quadraticFunctionsFixture.teachingUnits[0]!,previousSpeech:"",remainingMs:10000},new AbortController().signal);
     expect(plan.source).toBe("generated");
     expect(plan.actions.map(action=>action.type)).toEqual(["show_blackboard","camera","move_to","point_at","speak","release_point"]);
-    expect(provider.generate).toHaveBeenCalledTimes(1);
+    expect(provider.generate).not.toHaveBeenCalled();
+    expect(plan.actions[0]).toMatchObject({type:"show_blackboard",drawing:{markdown:"# 頂点\n◎ $x=2$ → 最小値"}});
     expect(plan.actions.find(action=>action.type==="speak")).toEqual({type:"speak",text:"頂点の位置を図で見ましょう。",gesture:"explain"});
   } finally {lecture.close();store.close();await rm(dir,{recursive:true,force:true});}
 });

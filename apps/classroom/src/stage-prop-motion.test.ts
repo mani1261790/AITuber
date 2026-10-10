@@ -23,3 +23,16 @@ it("carries the chalk between separate strokes continuously instead of teleporti
   }
  }
 });
+
+it("never adds an ink layer, and aligns the pull ring with the final rendered grip",async()=>{
+ const THREE=await import("three"),{StagePropVisuals}=await import("./stage-prop-motion.ts");
+ const scene=new THREE.Scene(),visuals=new StagePropVisuals(scene),motion=new StagePropMotion();
+ const writing={id:"w",kind:"write" as const};visuals.update(writing,motion.update(writing,true,0));
+ expect(scene.children.filter(child=>child.visible)).toHaveLength(0);
+ const screen={id:"s",kind:"screen" as const};let frame=motion.update(screen,true,0);
+ for(let i=0;i<120;i++)frame=motion.update(screen,true,1/60);
+ const grip=new THREE.Vector3(.93,2.31,.19);visuals.update(screen,frame,grip);
+ const ring=scene.children.find(child=>child instanceof THREE.Mesh)!;
+ expect(ring.position.distanceTo(grip)).toBeLessThan(1e-8);
+ visuals.dispose();expect(scene.children).toHaveLength(0);
+});

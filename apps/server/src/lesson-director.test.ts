@@ -18,7 +18,7 @@ describe("lesson director",()=>{
     const runtime = setup();
     try {
       const unit = quadraticFunctionsFixture.teachingUnits[0]!;
-      const llm = new FixedResponseLlmProvider([{beats:[{text:"では、この式の頂点に注目しましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false}]}]);
+      const llm = new FixedResponseLlmProvider([{beats:[{text:"では、この式の頂点に注目しましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position:"right",gesture:"explain",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
       const plan = await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"さきほどの説明",remainingMs:10000},new AbortController().signal);
       expect(plan.source).toBe("generated");
       expect(plan.actions.map(action=>action.type)).toEqual(["camera","move_to","point_at","speak","release_point"]);
@@ -173,12 +173,12 @@ it("compiles a semantic gesture and concurrent audience-facing explanation, but 
   const runtime=setup();
   try {
     const unit=quadraticFunctionsFixture.teachingUnits[0]!;
-    const llm=new FixedResponseLlmProvider([{beats:[{text:unit.speechText,targetId:null,camera:"lecture",position:"center",gesture:"emphasize",walkWhileSpeaking:true}]}]);
+    const llm=new FixedResponseLlmProvider([{beats:[{text:unit.speechText,targetId:null,camera:"lecture",position:"center",gesture:"emphasize",blackboardMarkdown:null,walkWhileSpeaking:true}]}]);
     const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:1000},new AbortController().signal);
     expect(plan.source).toBe("generated");
     expect(plan.actions.some(action=>action.type==="move_to")).toBe(false);
     expect(plan.actions).toContainEqual({type:"speak",text:unit.speechText,gesture:"emphasize",position:"center"});
-    const pointing=new FixedResponseLlmProvider([{beats:[{text:unit.speechText,targetId:unit.focusTargetIds[0],camera:"lecture",position:"center",gesture:"explain",walkWhileSpeaking:true}]}]);
+    const pointing=new FixedResponseLlmProvider([{beats:[{text:unit.speechText,targetId:unit.focusTargetIds[0],camera:"lecture",position:"center",gesture:"explain",blackboardMarkdown:null,walkWhileSpeaking:true}]}]);
     const safe=await createLessonPlanner(()=>pointing)({session:runtime.session,unit,previousSpeech:"",remainingMs:1000},new AbortController().signal);
     expect(safe.actions).toContainEqual({type:"move_to",position:"right"});
     expect(safe.actions.find(action=>action.type==="speak")).not.toHaveProperty("position");
@@ -189,7 +189,7 @@ it("keeps the same position while explaining the same focus across consecutive b
  const runtime=setup();
  try{
   const unit=quadraticFunctionsFixture.teachingUnits[0]!;
-  const llm=new FixedResponseLlmProvider([{beats:["left","right"].map(position=>({text:"頂点の位置を式から読み取りましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position,gesture:"explain",walkWhileSpeaking:false}))}]);
+  const llm=new FixedResponseLlmProvider([{beats:["left","right"].map(position=>({text:"頂点の位置を式から読み取りましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position,gesture:"explain",blackboardMarkdown:null,walkWhileSpeaking:false}))}]);
   const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
   expect(plan.source).toBe("generated");
   expect(plan.actions.filter(a=>a.type==="move_to").map(a=>a.position)).toEqual(["left","left"]);
@@ -220,7 +220,7 @@ it("converts listening attached to a spoken beat into an explanation",async()=>{
  const runtime=setup();
  try{
   const unit=quadraticFunctionsFixture.teachingUnits[0]!;
-  const llm=new FixedResponseLlmProvider([{beats:[{text:"それでは式を見てみましょう。",targetId:null,camera:"lecture",position:"center",gesture:"listen",walkWhileSpeaking:false}]}]);
+  const llm=new FixedResponseLlmProvider([{beats:[{text:"それでは式を見てみましょう。",targetId:null,camera:"lecture",position:"center",gesture:"listen",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
   const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
   expect(plan.source).toBe("generated");
   expect(plan.actions.find(action=>action.type==="speak")).toMatchObject({gesture:"explain"});
@@ -316,5 +316,18 @@ it("carries the standing position through a live answer back to the resumed unit
   await vi.advanceTimersByTimeAsync(100);
   expect(planner.mock.calls[0]![0].session.direction?.position).toBe("left");
   expect(planner.mock.calls[0]![0].session.direction?.targetId).toBeNull();
+ }finally{runtime.close();}
+});
+
+it("generates notes together with speech and returns to slides on the next null board beat",async()=>{
+ const runtime=setup();
+ try {
+  const unit=quadraticFunctionsFixture.teachingUnits[0]!;
+  const beat={text:unit.speechText,targetId:null,camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false};
+  const llm=new FixedResponseLlmProvider([{beats:[{...beat,blackboardMarkdown:"# 要点\n◎ 頂点 → 式の形"},{...beat,blackboardMarkdown:null}]}]);
+  const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
+  expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(1);
+  expect(plan.actions[0]).toMatchObject({type:"show_blackboard",drawing:{markdown:"# 要点\n◎ 頂点 → 式の形"}});
+  expect(plan.actions.findIndex(a=>a.type==="show_slides")).toBeGreaterThan(plan.actions.findIndex(a=>a.type==="speak"));
  }finally{runtime.close();}
 });

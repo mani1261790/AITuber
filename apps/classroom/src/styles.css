@@ -421,3 +421,13 @@ button { cursor: pointer; }
 .exit-survey .after-class-survey button:disabled { color:#b5b7c8; background:#30334e; }
 
 .speech-audio { display:none !important; }
+
+.board-markdown { position: absolute; left: 80px; top: 80px; width: 1120px; color: #f6f3dc; font-size: 42px; line-height: 1.4; }
+.board-markdown p, .board-markdown h3 { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.board-markdown h3 { font-size: 48px; color: #ffe5a0; }
+.board-markdown strong { color: #ffe5a0; }
+.lesson-image-source--board .board-markdown .rich-text { font-size: inherit; line-height: inherit; }
+.lesson-image-source--board .board-markdown .formula { display: inline-block; font-size: 1em; vertical-align: middle; }
+.board-markdown .katex-display { margin: 0; }
+/* KaTeX's glyph bearings can extend beyond its measured inline box when rasterized. */
+.lesson-image-source--board .board-markdown .formula { overflow: visible; padding: 4px 10px; }

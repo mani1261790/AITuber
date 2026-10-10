@@ -1,7 +1,6 @@
 import {mkdtempSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {BlackboardTools} from "./blackboard-tools.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { quadraticFunctionsFixture } from "@aituber/content";
 import type { LiveSupplementCandidateView } from "@aituber/contracts";
@@ -97,18 +96,19 @@ describe("LiveSupplementService", () => {
     expect(questions.list(session.id)[0]).toMatchObject({ resolution: "deferred" });
   });
 
-  it("prepares specialist SVG, waits for drawing and walking, then rejoins", async()=>{
+  it("prepares markdown notes with speech, waits for board and walking, then rejoins", async()=>{
     const directory=mkdtempSync(join(tmpdir(),"aituber-live-svg-"));
     try {
-      const provider=new FixedResponseLlmProvider([{...candidate(),boardPatches:[],toolCall:{name:"draw_blackboard",arguments:{purpose:"符号",requirements:"日本語の式",mode:"replace"}}},passReview]);
+      const provider=new FixedResponseLlmProvider([{...candidate(),boardPatches:[],blackboardMarkdown:"# 符号\n◎ $x-h=0$"},passReview]);
       const generate=vi.fn(async()=>'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><text x="200" y="200" fill="white" font-size="64">x − h = 0</text></svg>');
       supplements.close();
-      supplements=new LiveSupplementService({store:supplementStore,questions,lecture,llm:()=>provider,blackboardTools:new BlackboardTools({generate},directory)});
+      supplements=new LiveSupplementService({store:supplementStore,questions,lecture,llm:()=>provider});
       const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
       vi.advanceTimersByTime(100);
       questions.submit(questionInput(session.id,"なぜ括弧の符号を反対に読むのですか。"));
       await supplements.drain(session.id);
-      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      expect(supplementStore.list(session.id)[0]?.candidate).toMatchObject({drawing:{markdown:"# 符号\n◎ $x-h=0$"}});
       vi.advanceTimersByTime(1000);
       let current=lecture.getSession(session.id);
       expect(current.direction?.phase).toBe("drawing");
@@ -126,4 +126,4 @@ describe("LiveSupplementService", () => {
 });
 
 function questionInput(sessionId: string, text: string) { return { sessionId, participantId: "learner.one", submittedAt: new Date().toISOString(), request: { accessToken: "domain-test", text, sceneId: "scene.math.form", semanticTargetId: "target.math.h-term" } }; }
-function candidate(speechText = "括弧の内側がゼロになる位置を見ると、符号を反対に読む理由が分かります。"): LiveSupplementCandidateView { return { speechText, captionText: "x - h = 0 となる位置が x = h です。", sceneId: "scene.math.form", focusTargetIds: ["target.math.h-term"], boardPatches: [{ operation: "replace", targetId: "target.math.h-term", content: "x - h = 0" }], sourceIds: ["source.quadratic"], knowledgeBasis: "course", calculations: [{ operator: "subtract", left: 3, right: 3, result: 0 }], corrections: [{ targetId: "target.math.h-term", content: "x - h = 0 なら x = h", rationale: "読み取りの根拠を明示する" }] }; }
+function candidate(speechText = "括弧の内側がゼロになる位置を見ると、符号を反対に読む理由が分かります。"): LiveSupplementCandidateView { return { blackboardMarkdown:null, speechText, captionText: "x - h = 0 となる位置が x = h です。", sceneId: "scene.math.form", focusTargetIds: ["target.math.h-term"], boardPatches: [{ operation: "replace", targetId: "target.math.h-term", content: "x - h = 0" }], sourceIds: ["source.quadratic"], knowledgeBasis: "course", calculations: [{ operator: "subtract", left: 3, right: 3, result: 0 }], corrections: [{ targetId: "target.math.h-term", content: "x - h = 0 なら x = h", rationale: "読み取りの根拠を明示する" }] }; }

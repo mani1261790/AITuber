@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toCanvas } from "html-to-image";
 import { rasterFontCss } from "./raster-fonts.ts";
 import type { StageScene, StageTarget } from "@aituber/presentation";
+import { BoardMarkdown, fitBoardMarkdown } from "./board-markdown.tsx";
 import { RichText } from "./rich-text.tsx";
 import { TargetView } from "./target-view.tsx";
 import { VrmAvatar } from "./vrm-avatar.tsx";
@@ -47,7 +48,7 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
       const canvas = await toCanvas(node, { ...options, fontEmbedCSS });
       if (!active) return;
       let boardCanvas: HTMLCanvasElement;
-      if (drawing || (!notes.length && !noteText)) {
+      if (drawing?.svg || (!drawing?.markdown && !notes.length && !noteText)) {
         // Empty boards need no DOM/font rasterization. Specialist SVGs replace
         // the whole surface below, so their temporary background is unused.
         boardCanvas = document.createElement("canvas");
@@ -59,6 +60,7 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
       } else {
         const boardFonts = await rasterFontCss(boardNode);
         if (!active) return;
+        fitBoardMarkdown(boardNode);
         boardCanvas = await toCanvas(boardNode, { ...options, fontEmbedCSS: boardFonts });
       }
       if (!active) return;
@@ -69,7 +71,7 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
         const anchorX = content ? (content.x+content.width/2-parent.x)/1280 : (rect.x-parent.x)/1280+.15;
         return { id: element.dataset.semanticId!, x: (rect.x-parent.x)/1280, y: (rect.y-parent.y)/720, width: rect.width/1280, height: rect.height/720, anchorX };
       }); };
-      const svgRegion = drawing ? await paintBlackboardSvg(drawing,boardCanvas) : null;
+      const svgRegion = drawing?.svg ? await paintBlackboardSvg(drawing,boardCanvas) : null;
       if (active) setImage({ canvas, boardCanvas, regions: measure(node), boardRegions: svgRegion ? [svgRegion] : measure(boardNode), ...(drawing ? {drawingId:drawing.id} : {}) });
     })().catch(() => { if (active) setError(true); }).finally(() => { node.remove(); boardNode.remove(); });
     return () => { active = false; };
@@ -82,7 +84,7 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
   },[direction?.phase,direction?.actionId,drawing?.id,image?.drawingId,error]);
   return <>
     <div className="lesson-image-source" aria-hidden="true" inert ref={source}><h2>{scene.title}</h2><div className="image-targets">{scene.targets.filter(t => t.visible).map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}</div></div>
-    <div className="lesson-image-source lesson-image-source--board" aria-hidden="true" inert ref={boardSource}>{(notes.length > 0 || noteText) && <><h2>補足メモ</h2><div className="image-targets">{notes.map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}{noteText && <RichText text={noteText} />}</div></>}</div>
+    <div className="lesson-image-source lesson-image-source--board" aria-hidden="true" inert ref={boardSource}>{drawing?.markdown ? <BoardMarkdown text={drawing.markdown} id={drawing.id}/> : (notes.length > 0 || noteText) && <><h2>補足メモ</h2><div className="image-targets">{notes.map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}{noteText && <RichText text={noteText} />}</div></>}</div>
     <VrmAvatar listening={listening} speaking={speaking} readSpeechLevel={readSpeechLevel} state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onStageComplete={onStageComplete} onStageProgress={onStageProgress} />
     <div className="sr-only" aria-label="教材の内容"><h2>{scene.title}</h2>{scene.targets.filter(t => t.visible).map(target => <p key={target.id}>{target.label}: {target.content}</p>)}</div>
     {!image && <span className="stage-loading" role="status">{error ? "教材画像を作成できません。再読み込みしてください。" : "教材を準備中…"}</span>}
@@ -93,6 +95,7 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
 
 /** Measure the specialist's actual SVG, then rasterize without changing its layout. */
 export async function paintBlackboardSvg(drawing: BlackboardDrawing, canvas: HTMLCanvasElement): Promise<ImageRegion> {
+  if (!drawing.svg) throw new Error("Legacy SVG missing");
   const doc = new DOMParser().parseFromString(drawing.svg,"image/svg+xml");
   if (doc.querySelector("parsererror")) throw new Error("Invalid SVG");
   const svg = document.importNode(doc.documentElement,true) as unknown as SVGSVGElement;

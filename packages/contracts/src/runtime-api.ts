@@ -33,7 +33,10 @@ export type TeachingGesture = "idle" | "listen" | "explain" | "emphasize" | "nod
 
 export type StagePosition = "left" | "center" | "right";
 export type StageCamera = "lecture" | "material" | "board";
-export interface BlackboardDrawing { readonly id: string; readonly svg: string; readonly purpose: string }
+export type BlackboardDrawing = { readonly id: string; readonly purpose: string } & (
+  | { readonly markdown: string; readonly svg?: never }
+  | { readonly svg: string; readonly markdown?: never }
+);
 
 export type LessonAction =
   | { type: "show_blackboard"; drawing: BlackboardDrawing }
@@ -104,6 +107,7 @@ export interface SupplementOriginView {
 }
 
 export interface LiveSupplementCandidateView {
+  readonly blackboardMarkdown?: string | null;
   readonly drawing?: BlackboardDrawing;
   readonly speechText: string;
   readonly captionText: string;

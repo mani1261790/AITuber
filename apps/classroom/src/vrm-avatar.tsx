@@ -319,11 +319,10 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         setLessonMap(screenMaterial, texture);
       }
       const propAction=stageRef.current.propAction;
-      const propX=propAction?.kind==="write"?-.6:1.65;
+      const propX=propAction?.kind==="write"?-.6:1.35;
       const propYaw=propAction?.kind==="write"?Math.PI:-.65;
       const propReady=!!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-propX)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-propYaw),Math.cos(locomotion.yaw-propYaw)))<.05;
       const propFrame=propMotion.update(propAction,propReady,delta);
-      propVisuals.update(propAction,propFrame);
       curtain = propFrame ? (propFrame.kind==="screen"?propFrame.progress:0) : reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
       screen.scale.y=Math.max(.001,curtain)*.82;
       const screenUv = screen.geometry.attributes.uv!;
@@ -447,6 +446,13 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         }
       }
       updateCamera(0);
+      let grip:THREE.Vector3|undefined;
+      if(avatar && propAction?.kind==="screen"){
+        const base=avatar.humanoid.getRawBoneNode("rightMiddleProximal");
+        const tip=avatar.humanoid.getRawBoneNode("rightMiddleDistal");
+        if(base && tip)grip=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5);
+      }
+      propVisuals.update(propAction,propFrame,grip);
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
     };
