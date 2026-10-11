@@ -1,9 +1,10 @@
 import { MathUtils } from "three";
+export const rightStageX = 1.35;
 /** Use the same standing pose for initial display and subsequent stage commands. */
 export function stageStandingPose(position: "left" | "center" | "right" | undefined, pointing = false) {
   if (position === "left") return {x:-4.2,yaw:.26};
   if (position === "center" && !pointing) return {x:-.65,yaw:0};
-  return {x:2.35,yaw:-.26};
+  return {x:rightStageX,yaw:-.26};
 }
 export type TravelPhase = "idle" | "turn" | "walk" | "brake";
 /** Turn and walking share one clock; the final departure step blends into travel. */

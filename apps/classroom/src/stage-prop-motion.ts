@@ -1,3 +1,4 @@
+import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
 export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; writingDuration?:number; writingComplete?:boolean };
 export interface StagePropPose {
@@ -48,7 +49,7 @@ export class StagePropMotion {
    this.returningFirst=action.kind==="write" && screenVisible;
    this.stage=this.returningFirst?"screen-up":action.kind;
   }
-  return {x:this.stage==="write"?-.6:1.35,yaw:this.stage==="write"?Math.PI:-.65};
+  return {x:this.stage==="write"?-.6:rightStageX,yaw:this.stage==="write"?Math.PI:-.65};
  }
  update(action:StagePropAction|undefined,ready:boolean,delta:number,screenVisible=false){
   if(!action){this.id="";this.age=0;this.arrived=false;return null;}
@@ -74,7 +75,7 @@ export class StagePropMotion {
   const done=this.age>=duration;
   const frame={phase:!this.arrived?"approach":writing?(this.stopAge===null?"write":"settle"):this.age<1.3?"reach":this.age<1.8?"grasp":this.age<(raising?2.5:4.2)?"pull":this.age<(raising?2.95:4.75)?"release":this.age<(raising?4.5:6.1)?"lower":"settle",
     kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,
-    x:writing?-.6:1.35,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
+    x:writing?-.6:rightStageX,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
     pose:{kind:writing?"write":"screen",weight,target,side:writing?"left":"right",grip,wristRoll} satisfies StagePropPose};
   if(done && this.returningFirst){this.returningFirst=false;this.stage="write";this.age=0;this.arrived=false;}
   return frame;

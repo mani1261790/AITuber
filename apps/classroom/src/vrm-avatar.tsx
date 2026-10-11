@@ -145,7 +145,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
     const clock = new THREE.Clock();
     let springSimulation: SpringSimulation | null = null;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let destinationX = 2.35;
+    let destinationX = stageStandingPose("right").x;
     let locomotion: StageLocomotion | null = null;
     let gaitPhase = 0;
     let walkVelocity = 0;

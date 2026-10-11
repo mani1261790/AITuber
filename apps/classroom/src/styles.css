@@ -422,9 +422,14 @@ button { cursor: pointer; }
 
 .speech-audio { display:none !important; }
 
-.board-markdown { position: absolute; left: 80px; top: 80px; width: 1120px; color: #f6f3dc; font-size: 42px; line-height: 1.4; }
-.board-markdown p, .board-markdown h3 { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.board-markdown h3 { font-size: 48px; color: #ffe5a0; }
+.board-markdown { position: absolute; left: 80px; top: 80px; width: max-content; min-width: 760px; max-width: 1120px; color: #f6f3dc; font-size: 44px; line-height: 1.5; text-align: left; }
+.board-markdown p, .board-markdown h3 { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.board-markdown .board-row + .board-row { margin-top: 18px; }
+.board-markdown h3 { font-size: 50px; color: #ffe5a0; text-align: center; padding-bottom: 10px; }
+.board-markdown .board-row--formula { text-align: center; padding-block: 6px; }
+.board-markdown [data-indent="1"] { padding-inline-start: 40px; }
+.board-markdown [data-indent="2"] { padding-inline-start: 80px; }
+.board-markdown .board-row--separated { margin-top: 32px; }
 .board-markdown strong { color: #ffe5a0; }
 .lesson-image-source--board .board-markdown .rich-text { font-size: inherit; line-height: inherit; }
 .lesson-image-source--board .board-markdown .formula { display: inline-block; font-size: 1em; vertical-align: middle; }

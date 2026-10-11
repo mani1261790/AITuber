@@ -72,3 +72,9 @@ it("returns smoothly across handwriting loop boundaries",async()=>{
  let previous=loopingHandwritingPoint(0);
  for(let t=0;t<40;t+=1/60){const p=loopingHandwritingPoint(t);expect(p.distanceTo(previous)).toBeLessThan(.11);previous=p;}
 });
+it("uses the ordinary right standing position to operate the screen without an extra step",async()=>{
+ const {stageStandingPose}=await import("./stage-locomotion.ts");
+ const motion=new StagePropMotion();
+ expect(motion.destination({id:"pull",kind:"screen"}).x).toBe(stageStandingPose("right").x);
+ expect(motion.destination({id:"up",kind:"screen-up"},true).x).toBe(stageStandingPose("right").x);
+});

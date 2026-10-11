@@ -4,7 +4,7 @@ import { boardMarkdownInstruction, boardMarkdownSchema, markdownBoard } from "./
 // Held-out topics: these answers are not present in the few-shot examples.
 export const boardPreviewInputs=[
  "高校数学。y=x^2+6x+5を平方完成して頂点(-3,-4)を読む。同じ値を足して引く理由を短く補足。",
- "大学数学。部分積分は積の微分から導ける。積分 x cos(x) dx = x sin(x) + cos(x) + C の例を短く説明。",
+ "大学線形代数。T:R^3→R^2, T(x,y,z)=(x+y,y+z)。核はspan{(1,-1,1)}、階数2、退化次数1。次元定理 dim ker T + rank T = 3 を説明。",
  "高校生物。DNA→RNA→タンパク質。転写と翻訳の違いを、矢印と要点で短く説明。",
 ] as const;
 export async function previewBoard(provider:LlmProvider,index:number){
