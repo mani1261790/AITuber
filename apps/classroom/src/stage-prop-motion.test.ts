@@ -113,3 +113,27 @@ it("finishes screen return, real travel, erasure and maximum writing within the 
  }
  expect(complete).toBe(true);
 });
+
+it("keeps screen return grip and release outside the sheet and in front of it",()=>{
+ const motion=new StagePropMotion(),action={id:"raise",kind:"screen-up" as const};
+ for(let i=0;i<360;i++){
+  const frame=motion.update(action,true,1/60,true)!;
+  expect(frame.handle.x).toBeGreaterThan(.908+.18);
+  expect(frame.pose.target.x).toBeGreaterThan(.908+.18);
+  expect(frame.pose.target.z).toBeGreaterThanOrEqual(.48);
+ }
+});
+it("starts writing after a short erase including travel between the two working positions",async()=>{
+ const {StageLocomotion}=await import("./stage-locomotion.ts");
+ const movement=new StageLocomotion(1.35,-.26),motion=new StagePropMotion();
+ const action={id:"short",kind:"write" as const,eraseFirst:true,eraseArea:{left:250,top:160,right:1030,bottom:550}};
+ let elapsed=0;
+ for(;elapsed<25;elapsed+=1/60){
+  const dest=motion.destination(action);
+  const ready=movement.phase==="idle" && Math.abs(movement.x-dest.x)<.01 && Math.abs(Math.atan2(Math.sin(movement.yaw-dest.yaw),Math.cos(movement.yaw-dest.yaw)))<.05;
+  const frame=motion.update(action,ready,1/60)!;
+  if(frame.kind==="write")break;
+  movement.update(1/60,frame.x,frame.yaw,1.1,1.1);
+ }
+ expect(elapsed).toBeLessThan(25);
+});

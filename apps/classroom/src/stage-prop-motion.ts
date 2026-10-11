@@ -1,4 +1,4 @@
-import { eraserWorldPoint, eraserStandingX, eraseDuration, type EraseArea } from "./board-erase.ts";
+import { eraserWorldPoint, eraserStandingX, eraseDuration, eraseColumns, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
 export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean };
@@ -6,6 +6,10 @@ export interface StagePropPose {
  kind:"write"|"screen"|"erase"; weight:number; target:THREE.Vector3; side:"left"|"right";
  grip:number; wristRoll:number;
 }
+// The sheet ends at x=.908; keep the cord and the whole hand outside it,
+// with extra depth clearance for fingers when the grip opens on release.
+export const screenCordX=1.12;
+export const screenGripZ=.48;
 const ease=(n:number)=>THREE.MathUtils.clamp(THREE.MathUtils.smootherstep(n,0,1),0,1);
 
 // Short horizontal strokes, vertical strokes and a hook. Each stroke lifts off
@@ -79,9 +83,9 @@ export class StagePropMotion {
   const release=ease((this.age-(raising?2.55:4.35))/.4);
   const returnCord=ease((this.age-(raising?2.9:4.8))/(raising?1:1.3));
   const depth=raising?.3:.95;
-  const handle=new THREE.Vector3(.9,2.55-pull*depth*(1-returnCord),.21);
-  const target=writing?loopingHandwritingPoint(writingElapsed):new THREE.Vector3(.9,2.55-pull*depth,.21);
-  if(!writing)target.lerp(new THREE.Vector3(1.18,1.26,.65),ease((this.age-(raising?2.95:4.75))/1.25));
+  const handle=new THREE.Vector3(screenCordX,2.55-pull*depth*(1-returnCord),screenGripZ);
+  const target=writing?loopingHandwritingPoint(writingElapsed):new THREE.Vector3(screenCordX,2.55-pull*depth,screenGripZ);
+  if(!writing)target.lerp(new THREE.Vector3(1.4,1.26,.75),ease((this.age-(raising?2.95:4.75))/1.25));
   const grip=writing?weight:ease((this.age-1.3)/.4)*(1-release);
   const wristRoll=writing && this.age>1.2 ? .055*Math.sin(writingElapsed*14) : 0;
   const done=this.age>=duration;
@@ -100,7 +104,7 @@ export class StagePropVisuals {
  private handle:THREE.Mesh;
  private eraser:THREE.Mesh;
  constructor(private scene:THREE.Scene){
-  this.eraser=new THREE.Mesh(new THREE.BoxGeometry(4.633/12,.326,.09),[0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x353c38].map(color=>new THREE.MeshStandardMaterial({color})));
+  this.eraser=new THREE.Mesh(new THREE.BoxGeometry(4.633/eraseColumns,.326,.09),[0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x353c38].map(color=>new THREE.MeshStandardMaterial({color})));
   this.cord=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color:0xece8dd}));scene.add(this.cord);
   this.handle=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,8,24),new THREE.MeshStandardMaterial({color:0xddd9ce}));scene.add(this.handle);scene.add(this.eraser);
  }
@@ -114,7 +118,7 @@ export class StagePropVisuals {
   if(!frame || frame.kind!=="screen")return;
   const bottom=frame.handle;
   const positions=this.cord.geometry.getAttribute("position") as THREE.BufferAttribute;
-  positions.setXYZ(0,.9,3.44,.02);positions.setXYZ(1,bottom.x,bottom.y,bottom.z);positions.needsUpdate=true;
+  positions.setXYZ(0,screenCordX,3.44,.02);positions.setXYZ(1,bottom.x,bottom.y,bottom.z);positions.needsUpdate=true;
   this.cord.geometry.computeBoundingSphere();this.handle.position.copy(bottom);
  }
  dispose(){for(const object of [this.cord,this.handle,this.eraser]){this.scene.remove(object);object.geometry.dispose();for(const material of Array.isArray(object.material)?object.material:[object.material])material.dispose();}}

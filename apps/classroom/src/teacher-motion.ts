@@ -99,6 +99,7 @@ export class TeacherMotion {
   get acknowledgementStrength() { return this.acknowledgement; }
   category = "idle";
   private pointBlend = 0;
+  private screenReachOrigin: THREE.Vector3 | null = null;
   private pointSide: "left" | "right" = "right";
   private pointTracking = new PointTarget();
   private pointTrackingInitialized = false;
@@ -203,6 +204,14 @@ export class TeacherMotion {
 
   update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
+    if(input.propPose?.kind==="screen" && input.propPose.weight>0){
+      if(!this.screenReachOrigin){
+        const base=this.vrm.humanoid.getNormalizedBoneNode(`${input.propPose.side}MiddleProximal`);
+        const tip=this.vrm.humanoid.getNormalizedBoneNode(`${input.propPose.side}MiddleDistal`);
+        this.vrm.scene.updateMatrixWorld(true);
+        if(base && tip)this.screenReachOrigin=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5);
+      }
+    }else this.screenReachOrigin=null;
     const voiced = input.speaking && (input.speechLevel === undefined || input.speechLevel > .045);
     const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
     this.speakingHold = input.speaking ? .7 : Math.max(0, this.speakingHold - delta);
@@ -417,7 +426,13 @@ export class TeacherMotion {
     // A held rigid prop is a positional constraint, not another delayed pose.
     // Re-solve the small contact residual after smoothing; acquisition/release
     // ramps the constraint, while the ring always keeps its own trajectory.
-    if((input.propPose?.kind==="screen" || input.propPose?.kind==="erase") && input.propPose.grip>0)
+    if(input.propPose?.kind==="screen" && this.screenReachOrigin){
+      // Quaternion blending can swing the wrist through the sheet even when
+      // both endpoints are clear. Constrain the acquisition/release in world
+      // space as well as the held grip, after the final pose blend.
+      const handPath=this.screenReachOrigin.clone().lerp(input.propPose.target,input.propPose.weight);
+      solveFixedGrip(this.vrm,input.propPose.side,handPath,1);
+    }else if(input.propPose?.kind==="erase" && input.propPose.grip>0)
       solveFixedGrip(this.vrm,input.propPose.side,input.propPose.target,input.propPose.weight*input.propPose.grip);
     this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();

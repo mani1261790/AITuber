@@ -6,16 +6,17 @@ export function boardEraseArea(marks:BoardMark[]):EraseArea {
  return {left:Math.max(0,Math.min(...marks.map(m=>m.x))-4),top:Math.max(0,Math.min(...marks.map(m=>m.y))-4),right:Math.min(1280,Math.max(...marks.map(m=>m.x+m.width))+4),bottom:Math.min(720,Math.max(...marks.map(m=>m.y+m.height))+4)};
 }
 /** Shared pixel-space path for both the eraser prop and the board texture. */
-export const eraseStrokeSeconds=1.7;
-export const eraseColumns=12;
+export const eraseStrokeSeconds=.85;
+export const eraseColumns=8;
 export const eraseDuration=eraseColumns*eraseStrokeSeconds;
+export function eraserColumnsPerStop(area:EraseArea=wholeBoard){return area.right-area.left<=900?4:2;}
 export function eraserPoint(elapsed:number,area:EraseArea=wholeBoard){
  const t=Math.max(0,Math.min(eraseDuration-.000001,elapsed));
  const column=Math.floor(t/eraseStrokeSeconds);
- const p=Math.min(1,(t%eraseStrokeSeconds)/1.1);
+ const p=Math.min(1,(t%eraseStrokeSeconds)/.55);
  const eased=p*p*(3-2*p);
- const travel=Math.max(0,Math.min(1,((t%eraseStrokeSeconds)-1.1)/.6));
- const next=column%3===2?0:travel*travel*(3-2*travel);
+ const travel=Math.max(0,Math.min(1,((t%eraseStrokeSeconds)-.55)/.3));
+ const next=(column+1)%eraserColumnsPerStop(area)===0?0:travel*travel*(3-2*travel);
  const top=Math.min(area.bottom,area.top+45),bottom=Math.max(top,area.bottom-45);
  return {x:area.left+(column+.5+next)*(area.right-area.left)/eraseColumns,y:column%2?bottom-(bottom-top)*eased:top+(bottom-top)*eased,column};
 }
@@ -37,6 +38,6 @@ export function eraserWorldPoint(elapsed:number,area:EraseArea=wholeBoard){
  return {x:-3.7865+p.x/1280*4.633,y:3.3038-p.y/720*2.6076,z:-.16};
 }
 export function eraserStandingX(elapsed:number,area:EraseArea=wholeBoard){
- const group=Math.floor(eraserPoint(elapsed).column/3);
- return -3.7865+(area.left+(group*3+1.5)/12*(area.right-area.left))/1280*4.633+.2;
+ const perStop=eraserColumnsPerStop(area),group=Math.floor(eraserPoint(elapsed,area).column/perStop);
+ return -3.7865+(area.left+(group*perStop+perStop/2)/eraseColumns*(area.right-area.left))/1280*4.633+.2;
 }
