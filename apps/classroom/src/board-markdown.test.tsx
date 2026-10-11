@@ -7,17 +7,18 @@ it("renders headings, emphasis, Japanese board marks and TeX without executing H
  expect(html).toContain('data-formula-state="rendered"');expect(html).not.toContain('data-formula-state="invalid"');
  expect(html).not.toContain("<script>");expect(html).toContain("&lt;script&gt;");
 });
-it("distinguishes centered equations, indented explanations and paragraph spacing",()=>{
+it("distinguishes indented equations, explanations and paragraph spacing",()=>{
  const html=renderToStaticMarkup(<BoardMarkdown id="board.layout" text={'# 題\n$$Av=\\lambda v$$\n  固有ベクトル\n    基底を選ぶ\n\n→ 結論'}/>);
  expect(html).toContain('board-row--formula');expect(html).toContain('data-indent="1"');expect(html).toContain('data-indent="2"');expect(html).toContain('board-row--separated');
 });
-it("centers short and oversized notes inside the board safe area",async()=>{
+it("anchors short and oversized notes at a stable upper-left writing origin",async()=>{
  const {boardLayout}=await import("./board-markdown.tsx");
  for(const [width,height] of [[760,300],[1400,800],[1120,560]]){
   const layout=boardLayout(width!,height!);
   expect(layout.left).toBeGreaterThanOrEqual(80);expect(layout.top).toBeGreaterThanOrEqual(80);
-  expect(layout.left*2+width!*layout.scale).toBeCloseTo(1280);
-  expect(layout.top*2+height!*layout.scale).toBeCloseTo(720);
+  expect(layout.left).toBe(112);expect(layout.top).toBe(80);
+  expect(layout.left+width!*layout.scale).toBeLessThanOrEqual(1168);
+  expect(layout.top+height!*layout.scale).toBeLessThanOrEqual(640);
  }
 });
 it("renders the university example with its matrix and diagonalization formula",async()=>{

@@ -7,7 +7,7 @@ export function BoardMarkdown({text,id}:{text:string;id:string}) {
     if(!line.trim()){separated=true;return null;}
     const clean=line.trim(),heading=/^#{1,2}\s+/.test(clean);
     const formula=/^\$\$[\s\S]+\$\$$/.test(clean);
-    const indent=formula||heading?0:Math.min(2,Math.floor((line.match(/^ */)?.[0].length??0)/2)) || (/^[→⇒]/.test(clean)?1:0);
+    const indent=heading?0:Math.min(2,Math.floor((line.match(/^ */)?.[0].length??0)/2)) || (formula || /^[→⇒]/.test(clean)?1:0);
     const content=clean.replace(/^#{1,2}\s+/,"").replace(/^[-*]\s+/,"・ ");
     const className=`board-row${formula?" board-row--formula":""}${separated?" board-row--separated":""}`;
     separated=false;
@@ -16,10 +16,10 @@ export function BoardMarkdown({text,id}:{text:string;id:string}) {
   })}</div>;
 }
 
-/** Center the fitted composition; align explanatory lines within that block. */
+/** Keep a stable writing origin; short notes must not float into the board center. */
 export function boardLayout(width:number,height:number){
-  const scale=Math.min(1,1120/Math.max(1,width),560/Math.max(1,height));
-  return {scale,left:(1280-width*scale)/2,top:(720-height*scale)/2};
+  const scale=Math.min(1,1056/Math.max(1,width),560/Math.max(1,height));
+  return {scale,left:112,top:80};
 }
 export function fitBoardMarkdown(root:HTMLElement) {
   const content=root.querySelector<HTMLElement>(".board-markdown");
