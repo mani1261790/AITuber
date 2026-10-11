@@ -1,3 +1,4 @@
+import { paintBoardErase, eraseDuration, boardEraseArea, type EraseArea } from "./board-erase.ts";
 import { paintBoardReveal } from "./board-reveal.ts";
 import {StagePropMotion, StagePropVisuals, type StagePropAction} from "./stage-prop-motion.ts";
 import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
@@ -296,6 +297,11 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
     let revealCanvas:HTMLCanvasElement|null=null;
     let revealTick=-1;
     let boardActionId="";
+    let previousBoard:HTMLCanvasElement|null=null;
+    let boardHasInk=false;
+    let eraseFirst=false;
+    let inkArea:EraseArea|undefined;
+    let eraseArea:EraseArea|undefined;
     let propAcknowledged="";
     const render = () => {
       if (disposed) return;
@@ -319,30 +325,47 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         currentImage = stageRef.current.lessonImage;
         const anisotropy = renderer.capabilities.getMaxAnisotropy();
         texture = updateLessonTexture(texture, currentImage?.canvas ?? null, anisotropy);
-        boardTexture = updateLessonTexture(boardTexture, currentImage?.boardCanvas ?? null, anisotropy);
+        if(!boardTexture){
+          const blank=document.createElement("canvas");blank.width=1280;blank.height=720;
+          const ctx=blank.getContext("2d")!;ctx.fillStyle="#204a3d";ctx.fillRect(0,0,1280,720);
+          // A late-joining viewer must see the board already in use. Only a new
+          // drawing action starts blank; subsequent images never replace ink.
+          if(currentImage && stageRef.current.direction?.phase!=="drawing"){
+            ctx.drawImage(currentImage.boardCanvas,0,0);
+            boardHasInk=Boolean(currentImage.boardReveal?.marks.length || currentImage.drawingId);
+            inkArea=currentImage.boardReveal?boardEraseArea(currentImage.boardReveal.marks):undefined;
+          }
+          boardTexture = updateLessonTexture(boardTexture, blank, anisotropy);
+        }
         setLessonMap(boardMaterial, boardTexture);
         setLessonMap(screenMaterial, texture);
       }
       const drawingDirection=stageRef.current.direction?.phase==="drawing"?stageRef.current.direction:null;
       const drawingReady=!!drawingDirection?.drawing && currentImage?.drawingId===drawingDirection.drawing.id;
+      if(drawingDirection && boardActionId!==drawingDirection.actionId){
+        boardActionId=drawingDirection.actionId;revealTick=-1;eraseFirst=boardHasInk;eraseArea=inkArea;
+        previousBoard=document.createElement("canvas");previousBoard.width=1280;previousBoard.height=720;
+        if(boardTexture?.image)previousBoard.getContext("2d")!.drawImage(boardTexture.image as HTMLCanvasElement,0,0);
+        revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
+        revealCanvas.getContext("2d")!.drawImage(previousBoard,0,0);
+      }
       const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (drawingDirection?{
-        id:drawingDirection.actionId,kind:"write",writingDuration:currentImage?.boardReveal?.duration ?? 1,
+        id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingDuration:currentImage?.boardReveal?.duration ?? 1,
       }:undefined);
       const destination=propAction?propMotion.destination(propAction,curtain>.02):null;
       const propReady=reducedMotion || (!!destination && !!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-destination.yaw),Math.cos(locomotion.yaw-destination.yaw)))<.05);
       const propFrame=propMotion.update(propAction,propReady && (!drawingDirection || drawingReady),delta,curtain>.02);
       curtain = propFrame ? (propFrame.kind==="screen"?propFrame.progress:0) : reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
       if(drawingDirection && drawingReady && currentImage){
-        if(boardActionId!==drawingDirection.actionId){
-          boardActionId=drawingDirection.actionId;revealTick=-1;
-          revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
-        }
         const elapsed=propFrame?.writingElapsed??0;
-        const tick=Math.floor(elapsed*15);
+        const tick=propFrame?.kind==="write"?10000+Math.floor(elapsed*15):Math.floor((propFrame?.eraseElapsed??0)*15);
         if(revealCanvas && tick!==revealTick){
           revealTick=tick;
-          if(currentImage.boardReveal)paintBoardReveal(revealCanvas,currentImage.boardCanvas,currentImage.boardReveal,elapsed);
+          if(propFrame?.kind!=="write" && previousBoard)paintBoardErase(revealCanvas,previousBoard,propFrame?.eraseElapsed??0,"#204a3d",eraseArea);
+          else if(currentImage.boardReveal)paintBoardReveal(revealCanvas,currentImage.boardCanvas,currentImage.boardReveal,elapsed);
           else {const ctx=revealCanvas.getContext("2d")!;ctx.fillStyle="#204a3d";ctx.fillRect(0,0,1280,720);if(elapsed>=1)ctx.drawImage(currentImage.boardCanvas,0,0);}
+          if(propFrame?.kind==="write")inkArea=currentImage.boardReveal?boardEraseArea(currentImage.boardReveal.marks):undefined;
+          boardHasInk=propFrame?.kind==="write"?elapsed>0:eraseFirst && (propFrame?.eraseElapsed??0)<eraseDuration;
           boardTexture=updateLessonTexture(boardTexture,revealCanvas,renderer.capabilities.getMaxAnisotropy());
           if(boardTexture)boardTexture.needsUpdate=true;
           setLessonMap(boardMaterial,boardTexture);
@@ -352,8 +375,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           propAcknowledged=drawingDirection.actionId;stageRef.current.onStageComplete?.(drawingDirection.actionId);
         }
       }else if(boardActionId){
-        boardActionId="";revealCanvas=null;
-        boardTexture=updateLessonTexture(boardTexture,currentImage?.boardCanvas??null,renderer.capabilities.getMaxAnisotropy());setLessonMap(boardMaterial,boardTexture);
+        boardActionId="";previousBoard=null; // Keep the displayed ink until the next physical wipe.
       }
       screen.scale.y=Math.max(.001,curtain)*.82;
       const screenUv = screen.geometry.attributes.uv!;
@@ -388,6 +410,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           renderer.domElement.dataset.camera=currentCamera;
         }
         const startX=avatar.scene.position.x;
+        avatar.scene.position.z=THREE.MathUtils.damp(avatar.scene.position.z,propFrame?.kind==="erase"?.3:.6,5,delta);
         const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? locomotion.update(delta,propFrame?.x ?? destinationX,propFrame?.yaw ?? (Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26),...teacherMotion.turnDurations,teacherMotion.turnRotationProgress):null;
         const distance = destinationX-avatar.scene.position.x;
         const travelling = Math.abs(distance) > .18;
@@ -477,11 +500,16 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         }
       }
       updateCamera(0);
-      propVisuals.update(propAction,propFrame);
+      const eraserBase=propFrame?.kind==="erase"?avatar?.humanoid.getRawBoneNode("leftMiddleProximal"):null;
+      const eraserTip=propFrame?.kind==="erase"?avatar?.humanoid.getRawBoneNode("leftMiddleDistal"):null;
+      const eraserGrip=eraserBase && eraserTip?eraserBase.getWorldPosition(new THREE.Vector3()).lerp(eraserTip.getWorldPosition(new THREE.Vector3()),.5):undefined;
+      propVisuals.update(propAction,propFrame,eraserGrip);
       if(import.meta.env.DEV){
         renderer.domElement.dataset.propPhase=propFrame?.phase??"none";
         if(propFrame)renderer.domElement.dataset.propHandle=JSON.stringify(propFrame.handle.toArray());
-        const base=avatar?.humanoid.getRawBoneNode("rightMiddleProximal"),tip=avatar?.humanoid.getRawBoneNode("rightMiddleDistal");
+        const propSide=propFrame?.pose.side??"right";
+        const base=avatar?.humanoid.getRawBoneNode(`${propSide}MiddleProximal`),tip=avatar?.humanoid.getRawBoneNode(`${propSide}MiddleDistal`);
+        renderer.domElement.dataset.eraseElapsed=String(propFrame?.eraseElapsed??0);
         if(base && tip)renderer.domElement.dataset.propGrip=JSON.stringify(base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).toArray());
       }
       renderer.render(scene, camera);

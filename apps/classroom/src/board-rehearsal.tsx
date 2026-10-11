@@ -17,7 +17,7 @@ export function BoardRehearsal({index}:{index:number}){
    }}/>
   <div className="board-rehearsal-control">
    {!started && <textarea aria-label="試す板書Markdown" value={text} rows={4} maxLength={700} onChange={e=>setText(e.target.value)}/>}
-   <button onClick={()=>{setStarted(true);setDirection({actionId:crypto.randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",source:"reference",reason:null,drawing:{id:crypto.randomUUID(),markdown:text,purpose:example.title}});}}>板書を開始</button>
+   <button disabled={direction.phase==="drawing" || direction.phase==="moving"} onClick={()=>{setStarted(true);setDirection({actionId:crypto.randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",source:"reference",reason:null,drawing:{id:crypto.randomUUID(),markdown:text,purpose:example.title}});}}>{started?"消して書き直す":"板書を開始"}</button>
    <p role="status">{direction.phase==="speaking" ? `説明開始（音声なしの確認）：${example.text}` : started ? "板書中 — 説明は表示と移動の完了後" : "スクリーンを戻すところから確認できます"}</p>
   </div>
  </>;

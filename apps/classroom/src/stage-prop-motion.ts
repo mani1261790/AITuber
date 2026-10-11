@@ -1,8 +1,9 @@
+import { eraserWorldPoint, eraserStandingX, eraseDuration, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
-export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; writingDuration?:number; writingComplete?:boolean };
+export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean };
 export interface StagePropPose {
- kind:"write"|"screen"; weight:number; target:THREE.Vector3; side:"left"|"right";
+ kind:"write"|"screen"|"erase"; weight:number; target:THREE.Vector3; side:"left"|"right";
  grip:number; wristRoll:number;
 }
 const ease=(n:number)=>THREE.MathUtils.clamp(THREE.MathUtils.smootherstep(n,0,1),0,1);
@@ -40,21 +41,32 @@ export function loopingHandwritingPoint(time:number) {
 }
 export class StagePropMotion {
  private id=""; private age=0; private arrived=false;
- private stage:StagePropAction["kind"]="write"; private returningFirst=false;
- private stopAge:number|null=null; private alreadyRaised=false;
+ private stage:StagePropAction["kind"]|"erase"="write"; private returningFirst=false;
+ private stopAge:number|null=null; private alreadyRaised=false; private eraseWeight=0;
  destination(action:StagePropAction,screenVisible=false){
   if(action.id!==this.id){
-   this.id=action.id;this.age=0;this.arrived=false;this.stopAge=null;
+   this.id=action.id;this.age=0;this.arrived=false;this.stopAge=null;this.eraseWeight=0;
    this.alreadyRaised=action.kind==="screen-up" && !screenVisible;
    this.returningFirst=action.kind==="write" && screenVisible;
-   this.stage=this.returningFirst?"screen-up":action.kind;
+   this.stage=this.returningFirst?"screen-up":action.kind==="write" && action.eraseFirst?"erase":action.kind;
   }
+  if(this.stage==="erase")return {x:eraserStandingX(this.age,action.eraseArea),yaw:Math.PI};
   return {x:this.stage==="write"?-.6:rightStageX,yaw:this.stage==="write"?Math.PI:-.65};
  }
  update(action:StagePropAction|undefined,ready:boolean,delta:number,screenVisible=false){
   if(!action){this.id="";this.age=0;this.arrived=false;return null;}
   this.destination(action,screenVisible);
   if(this.alreadyRaised)return null;
+  if(this.stage==="erase"){
+   this.eraseWeight=THREE.MathUtils.damp(this.eraseWeight,ready?1:0,8,delta);
+   const elapsed=this.age;
+   if(ready && this.eraseWeight>.98)this.age+=THREE.MathUtils.clamp(delta,0,1/30);
+   const point=eraserWorldPoint(elapsed,action.eraseArea),target=new THREE.Vector3(point.x,point.y,point.z);
+   const frame={phase:ready?"erase":"approach",kind:"erase" as const,progress:0,weight:this.eraseWeight,handle:target,done:false,writingElapsed:0,eraseElapsed:elapsed,x:eraserStandingX(elapsed,action.eraseArea),yaw:Math.PI,
+    pose:{kind:"erase",weight:this.eraseWeight,target,side:"left",grip:this.eraseWeight,wristRoll:0} satisfies StagePropPose};
+   if(this.age>=eraseDuration){this.stage="write";this.age=0;this.arrived=false;}
+   return frame;
+  }
   if(ready)this.arrived=true;
   if(this.arrived)this.age+=THREE.MathUtils.clamp(delta,0,1/30);
   const writing=this.stage==="write",raising=this.stage==="screen-up";
@@ -74,10 +86,10 @@ export class StagePropMotion {
   const wristRoll=writing && this.age>1.2 ? .055*Math.sin(writingElapsed*14) : 0;
   const done=this.age>=duration;
   const frame={phase:!this.arrived?"approach":writing?(this.stopAge===null?"write":"settle"):this.age<1.3?"reach":this.age<1.8?"grasp":this.age<(raising?2.5:4.2)?"pull":this.age<(raising?2.95:4.75)?"release":this.age<(raising?4.5:6.1)?"lower":"settle",
-    kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,
+    kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,eraseElapsed:writing && action.eraseFirst?eraseDuration:0,
     x:writing?-.6:rightStageX,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
     pose:{kind:writing?"write":"screen",weight,target,side:writing?"left":"right",grip,wristRoll} satisfies StagePropPose};
-  if(done && this.returningFirst){this.returningFirst=false;this.stage="write";this.age=0;this.arrived=false;}
+  if(done && this.returningFirst){this.returningFirst=false;this.stage=action.eraseFirst?"erase":"write";this.age=0;this.arrived=false;}
   return frame;
  }
 }
@@ -86,11 +98,18 @@ export class StagePropMotion {
 export class StagePropVisuals {
  private cord:THREE.Line;
  private handle:THREE.Mesh;
+ private eraser:THREE.Mesh;
  constructor(private scene:THREE.Scene){
+  this.eraser=new THREE.Mesh(new THREE.BoxGeometry(4.633/12,.326,.09),[0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x353c38].map(color=>new THREE.MeshStandardMaterial({color})));
   this.cord=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color:0xece8dd}));scene.add(this.cord);
-  this.handle=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,8,24),new THREE.MeshStandardMaterial({color:0xddd9ce}));scene.add(this.handle);
+  this.handle=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,8,24),new THREE.MeshStandardMaterial({color:0xddd9ce}));scene.add(this.handle);scene.add(this.eraser);
  }
- update(action:StagePropAction|undefined,frame:ReturnType<StagePropMotion["update"]>){
+ update(action:StagePropAction|undefined,frame:ReturnType<StagePropMotion["update"]>,gripPosition?:THREE.Vector3){
+  this.eraser.visible=frame?.kind==="erase";
+  if(frame?.kind==="erase"){
+   this.eraser.position.copy(gripPosition??frame.pose.target);
+   this.eraser.scale.x=action?.eraseArea?(action.eraseArea.right-action.eraseArea.left)/1280:1;
+  }
   this.cord.visible=this.handle.visible=Boolean(action && frame?.kind==="screen" && !frame.done);
   if(!frame || frame.kind!=="screen")return;
   const bottom=frame.handle;
@@ -98,5 +117,5 @@ export class StagePropVisuals {
   positions.setXYZ(0,.9,3.44,.02);positions.setXYZ(1,bottom.x,bottom.y,bottom.z);positions.needsUpdate=true;
   this.cord.geometry.computeBoundingSphere();this.handle.position.copy(bottom);
  }
- dispose(){for(const object of [this.cord,this.handle]){this.scene.remove(object);object.geometry.dispose();(object.material as THREE.Material).dispose();}}
+ dispose(){for(const object of [this.cord,this.handle,this.eraser]){this.scene.remove(object);object.geometry.dispose();for(const material of Array.isArray(object.material)?object.material:[object.material])material.dispose();}}
 }

@@ -369,7 +369,7 @@ export class TeacherMotion {
         const angle=prop.kind==="write" && finger==="Index"?.25:.85;
         joint?.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),(prop.side==="left"?1:-1)*angle),prop.grip);
       }
-      if(prop.kind==="screen"){
+      if(prop.kind==="screen" || prop.kind==="erase"){
         // Solve the arm towards a fixed grip point, accounting for finger length.
         // Do not move the ring to hide contact errors.
         solveFixedGrip(this.vrm,prop.side,prop.target,prop.weight);
@@ -417,7 +417,7 @@ export class TeacherMotion {
     // A held rigid prop is a positional constraint, not another delayed pose.
     // Re-solve the small contact residual after smoothing; acquisition/release
     // ramps the constraint, while the ring always keeps its own trajectory.
-    if(input.propPose?.kind==="screen" && input.propPose.grip>0)
+    if((input.propPose?.kind==="screen" || input.propPose?.kind==="erase") && input.propPose.grip>0)
       solveFixedGrip(this.vrm,input.propPose.side,input.propPose.target,input.propPose.weight*input.propPose.grip);
     this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();

@@ -78,3 +78,38 @@ it("uses the ordinary right standing position to operate the screen without an e
  expect(motion.destination({id:"pull",kind:"screen"}).x).toBe(stageStandingPose("right").x);
  expect(motion.destination({id:"up",kind:"screen-up"},true).x).toBe(stageStandingPose("right").x);
 });
+
+it("retracts, erases existing ink, and only then starts the new writing clock",()=>{
+ const motion=new StagePropMotion(),action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:2};
+ const kinds:string[]=[];let sawErase=false,sawWrite=false,complete=false;
+ for(let i=0;i<2400;i++){
+  const frame=motion.update(action,true,1/60,true)!;
+  if(kinds.at(-1)!==frame.kind)kinds.push(frame.kind);
+  if(frame.kind==="erase"){sawErase=true;expect(frame.writingElapsed).toBe(0);expect(frame.done).toBe(false);}
+  if(frame.kind==="write")sawWrite=true;
+  if(frame.done){complete=true;break;}
+ }
+ expect(kinds).toEqual(["screen","erase","write"]);expect(sawErase&&sawWrite&&complete).toBe(true);
+});
+it("does not erase before arrival and does not repeat erasing after completion",()=>{
+ const motion=new StagePropMotion(),action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:1};
+ for(let i=0;i<120;i++)expect(motion.update(action,false,1/60)!.eraseElapsed).toBe(0);
+ for(let i=0;i<2400;i++)motion.update(action,true,1/60);
+ expect(motion.update(action,true,1/60)!.kind).toBe("write");
+ expect(motion.update(action,true,1/60)!.done).toBe(true);
+ expect(motion.update({id:"fresh",kind:"write"},true,0)!.kind).toBe("write");
+});
+it("finishes screen return, real travel, erasure and maximum writing within the stage deadline",async()=>{
+ const {StageLocomotion}=await import("./stage-locomotion.ts");
+ const movement=new StageLocomotion(1.35,-.26),motion=new StagePropMotion();
+ const action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:30.45,eraseArea:{left:200,top:100,right:1080,bottom:620}};
+ let complete=false;
+ for(let i=0;i<90*60;i++){
+  const destination=motion.destination(action,true);
+  const ready=movement.phase==="idle" && Math.abs(movement.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(movement.yaw-destination.yaw),Math.cos(movement.yaw-destination.yaw)))<.05;
+  const frame=motion.update(action,ready,1/60,true)!;
+  movement.update(1/60,frame.x,frame.yaw,1.1,1.1);
+  if(frame.done){complete=true;break;}
+ }
+ expect(complete).toBe(true);
+});
