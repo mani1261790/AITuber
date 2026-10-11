@@ -1,5 +1,6 @@
 import { MathUtils } from "three";
-export const rightStageX = 1.35;
+// Leave shoulder clearance beside the fixed screen cord, including the pull/release.
+export const rightStageX = 1.65;
 /** Use the same standing pose for initial display and subsequent stage commands. */
 export function stageStandingPose(position: "left" | "center" | "right" | undefined, pointing = false) {
   if (position === "left") return {x:-4.2,yaw:.26};

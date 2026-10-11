@@ -1,4 +1,5 @@
 import {expect,it} from "vitest";
+import {rightStageX} from "./stage-locomotion.ts";
 import {StagePropMotion,handwritingDuration} from "./stage-prop-motion.ts";
 it("waits until the teacher arrives before writing or lowering the screen, then releases the pose",()=>{
  for(const kind of ["write","screen"] as const){
@@ -62,7 +63,7 @@ it("keeps the cord still before grasp, pulls down, releases, then lowers the han
 
 it("retracts a projected screen with a short tug before starting a looping write",()=>{
  const motion=new StagePropMotion(),action={id:"w",kind:"write" as const};
- expect(motion.destination(action,true).x).toBe(1.35);
+ expect(motion.destination(action,true).x).toBe(rightStageX);
  let frame=motion.update(action,true,0,true)!;
  for(let i=0;i<150;i++)frame=motion.update(action,true,1/60,true)!;
  expect(frame.kind).toBe("screen");expect(frame.handle.y).toBeCloseTo(2.25);expect(frame.progress).toBe(1);
@@ -107,7 +108,7 @@ it("does not erase before arrival and does not repeat erasing after completion",
 });
 it("finishes screen return, real travel, erasure and maximum writing within the stage deadline",async()=>{
  const {StageLocomotion}=await import("./stage-locomotion.ts");
- const movement=new StageLocomotion(1.35,-.26),motion=new StagePropMotion();
+ const movement=new StageLocomotion(rightStageX,-.26),motion=new StagePropMotion();
  const action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:30.45,eraseArea:{left:200,top:100,right:1080,bottom:620}};
  let complete=false;
  for(let i=0;i<90*60;i++){
@@ -131,7 +132,7 @@ it("keeps screen return grip and release outside the sheet and in front of it",(
 });
 it("starts writing after a short erase including travel between the two working positions",async()=>{
  const {StageLocomotion}=await import("./stage-locomotion.ts");
- const movement=new StageLocomotion(1.35,-.26),motion=new StagePropMotion();
+ const movement=new StageLocomotion(rightStageX,-.26),motion=new StagePropMotion();
  const action={id:"short",kind:"write" as const,eraseFirst:true,eraseArea:{left:250,top:160,right:1030,bottom:550}};
  let elapsed=0;
  for(;elapsed<25;elapsed+=1/60){
