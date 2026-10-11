@@ -1,3 +1,4 @@
+import {eraserPalmPosition} from "./eraser-grip.ts";
 import { paintBoardErase, eraseDuration, boardEraseArea, type EraseArea } from "./board-erase.ts";
 import { paintBoardReveal } from "./board-reveal.ts";
 import {StagePropMotion, StagePropVisuals, type StagePropAction} from "./stage-prop-motion.ts";
@@ -500,10 +501,9 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         }
       }
       updateCamera(0);
-      const eraserBase=propFrame?.kind==="erase"?avatar?.humanoid.getRawBoneNode("leftMiddleProximal"):null;
-      const eraserTip=propFrame?.kind==="erase"?avatar?.humanoid.getRawBoneNode("leftMiddleDistal"):null;
-      const eraserGrip=eraserBase && eraserTip?eraserBase.getWorldPosition(new THREE.Vector3()).lerp(eraserTip.getWorldPosition(new THREE.Vector3()),.5):undefined;
-      propVisuals.update(propAction,propFrame,eraserGrip);
+      const eraserGrip=propFrame?.kind==="erase" && avatar?eraserPalmPosition(avatar,true):undefined;
+      const eraserHand=avatar?.humanoid.getNormalizedBoneNode("leftHand");
+      propVisuals.update(propAction,propFrame,eraserGrip??undefined,eraserHand?.getWorldQuaternion(new THREE.Quaternion()));
       if(import.meta.env.DEV){
         renderer.domElement.dataset.propPhase=propFrame?.phase??"none";
         if(propFrame)renderer.domElement.dataset.propHandle=JSON.stringify(propFrame.handle.toArray());

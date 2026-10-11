@@ -16,7 +16,7 @@ it("clears horizontal sweeps, retaining old pixels until contact",()=>{
 it("sweeps a wide horizontal reach and advances rows continuously",()=>{
  const area={left:250,top:160,right:1030,bottom:550},plan=erasePlan(area);
  const start=eraserPoint(0,area),end=eraserPoint(plan.strokeSeconds*.8,area);
- expect(Math.abs(end.x-start.x)).toBeGreaterThan(300);expect(end.y).toBe(start.y);
+ expect(Math.abs(end.x-start.x)).toBeGreaterThan(450);expect(end.y).toBe(start.y);
  expect(eraserWorldPoint(0).z).toBe(-.16);
  for(let t=1/120;t<eraseDuration;t+=1/120){
   const a=eraserPoint(t-1/120,area),b=eraserPoint(t,area);

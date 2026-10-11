@@ -144,3 +144,12 @@ it("starts writing after a short erase including travel between the two working 
  }
  expect(elapsed).toBeLessThan(25);
 });
+
+it("keeps holding the eraser when stepping across the board",()=>{
+ const motion=new StagePropMotion(),action={id:"hold",kind:"write" as const,eraseFirst:true};
+ for(let i=0;i<120;i++)motion.update(action,true,1/60);
+ let frame=motion.update(action,false,1/60)!;
+ for(let i=0;i<120;i++)frame=motion.update(action,false,1/60)!;
+ expect(frame.pose.weight).toBeLessThan(.01);
+ expect(frame.pose.grip).toBeGreaterThan(.99);
+});

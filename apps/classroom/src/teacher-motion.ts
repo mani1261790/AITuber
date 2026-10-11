@@ -1,3 +1,4 @@
+import {applyEraserFingers,eraserPalmPosition,eraserHandOrientation,eraserPalmClearance} from "./eraser-grip.ts";
 import { BoardSideStep, type SideStep } from "./board-side-step.ts";
 import type { StagePropPose } from "./stage-prop-motion.ts";
 import { AudienceScan } from "./audience-scan.ts";
@@ -370,13 +371,22 @@ export class TeacherMotion {
         chest?.rotateX(forward * .025*acknowledgement);
       }
     }
+    if(input.propPose?.kind==="erase"){
+      const hips=this.vrm.humanoid.getNormalizedBoneNode("hips");
+      if(hips?.parent){
+        this.vrm.scene.updateMatrixWorld(true);
+        const offset=THREE.MathUtils.clamp((input.propPose.target.x-this.vrm.scene.position.x+.2)*.25,-.17,.17)*input.propPose.weight;
+        const world=hips.getWorldPosition(new THREE.Vector3());world.x+=offset;
+        hips.position.copy(hips.parent.worldToLocal(world));
+      }
+    }
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
     if(input.propPose && input.propPose.weight>0){
       const prop=input.propPose;
       applyTeacherAttention(this.vrm,prop.target,prop.weight);
       aimArm(this.vrm,prop.side,prop.target,prop.weight,prop.kind==="write"?"write":"open");
-      for(const finger of ["Index","Middle","Ring","Little"] as const)for(const part of ["Proximal","Intermediate","Distal"] as const){
+      if(prop.kind!=="erase")for(const finger of ["Index","Middle","Ring","Little"] as const)for(const part of ["Proximal","Intermediate","Distal"] as const){
         const joint=this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}${finger}${part}`);
         const angle=prop.kind==="write" && finger==="Index"?.25:.85;
         joint?.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),(prop.side==="left"?1:-1)*angle),prop.grip);
@@ -384,7 +394,8 @@ export class TeacherMotion {
       if(prop.kind==="screen" || prop.kind==="erase"){
         // Solve the arm towards a fixed grip point, accounting for finger length.
         // Do not move the ring to hide contact errors.
-        solveFixedGrip(this.vrm,prop.side,prop.target,prop.weight);
+        if(prop.kind==="erase")solveEraserGrip(this.vrm,prop.target,prop.weight,prop.grip);
+        else solveFixedGrip(this.vrm,prop.side,prop.target,prop.weight);
       }else{
         this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}Hand`)?.rotateX(prop.wristRoll*prop.weight);
       }
@@ -437,7 +448,7 @@ export class TeacherMotion {
       const handPath=this.screenReachOrigin.clone().lerp(input.propPose.target,input.propPose.weight);
       solveFixedGrip(this.vrm,input.propPose.side,handPath,1);
     }else if(input.propPose?.kind==="erase" && input.propPose.grip>0)
-      solveFixedGrip(this.vrm,input.propPose.side,input.propPose.target,input.propPose.weight*input.propPose.grip);
+      solveEraserGrip(this.vrm,input.propPose.target,input.propPose.weight,input.propPose.grip);
     this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();
   }
@@ -575,4 +586,34 @@ function solveFixedGrip(vrm:VRM,side:"left"|"right",target:THREE.Vector3,weight:
   const offset=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).sub(hand.getWorldPosition(new THREE.Vector3()));
   aimArm(vrm,side,target.clone().sub(offset),weight,"grip");
  }
+}
+
+/** Broad-object grip: orient the palm first, then solve the wrist behind the wood. */
+export function solveEraserGrip(vrm:VRM,target:THREE.Vector3,weight:number,grip:number){
+ const hand=vrm.humanoid.getNormalizedBoneNode("leftHand");if(!hand)return;
+ const palmGoal=target.clone().add(new THREE.Vector3(0,0,eraserPalmClearance));
+ const original=hand.getWorldQuaternion(new THREE.Quaternion());
+ const orientation=original.clone().slerp(eraserHandOrientation,weight);
+ for(let i=0;i<3;i++){
+  vrm.scene.updateMatrixWorld(true);
+  hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(orientation));
+  vrm.scene.updateMatrixWorld(true);
+  const palm=eraserPalmPosition(vrm);if(!palm)return;
+  const offset=palm.sub(hand.getWorldPosition(new THREE.Vector3()));
+  aimArm(vrm,"left",palmGoal.clone().sub(offset),weight,"grip");
+ }
+ vrm.scene.updateMatrixWorld(true);
+ // Carry axial rotation through the forearm/cuff instead of twisting only the wrist.
+ const lower=vrm.humanoid.getNormalizedBoneNode("leftLowerArm");
+ if(lower?.parent){
+  const axis=hand.getWorldPosition(new THREE.Vector3()).sub(lower.getWorldPosition(new THREE.Vector3())).normalize();
+  const difference=orientation.clone().multiply(hand.getWorldQuaternion(new THREE.Quaternion()).invert());
+  const projection=axis.clone().multiplyScalar(new THREE.Vector3(difference.x,difference.y,difference.z).dot(axis));
+  const twist=new THREE.Quaternion(projection.x,projection.y,projection.z,difference.w).normalize();
+  const parent=lower.parent.getWorldQuaternion(new THREE.Quaternion());
+  lower.quaternion.premultiply(parent.clone().invert().multiply(new THREE.Quaternion().slerp(twist,weight)).multiply(parent));
+  vrm.scene.updateMatrixWorld(true);
+ }
+ hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(orientation));
+ applyEraserFingers(vrm,grip);
 }

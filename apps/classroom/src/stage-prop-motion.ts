@@ -1,3 +1,4 @@
+import {eraserHeldTransform,eraserHandOrientation} from "./eraser-grip.ts";
 import { createBlackboardEraser, disposeBlackboardEraser } from "./blackboard-eraser.ts";
 import { eraserWorldPoint, eraserStandingX, eraseDuration, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
@@ -47,10 +48,10 @@ export function loopingHandwritingPoint(time:number) {
 export class StagePropMotion {
  private id=""; private age=0; private arrived=false;
  private stage:StagePropAction["kind"]|"erase"="write"; private returningFirst=false;
- private stopAge:number|null=null; private alreadyRaised=false; private eraseWeight=0; private eraseTarget:THREE.Vector3|null=null;
+ private stopAge:number|null=null; private alreadyRaised=false; private eraseWeight=0; private eraseHold=0; private eraseTarget:THREE.Vector3|null=null;
  destination(action:StagePropAction,screenVisible=false){
   if(action.id!==this.id){
-   this.id=action.id;this.age=0;this.arrived=false;this.stopAge=null;this.eraseWeight=0;this.eraseTarget=null;
+   this.id=action.id;this.age=0;this.arrived=false;this.stopAge=null;this.eraseWeight=0;this.eraseHold=0;this.eraseTarget=null;
    this.alreadyRaised=action.kind==="screen-up" && !screenVisible;
    this.returningFirst=action.kind==="write" && screenVisible;
    this.stage=this.returningFirst?"screen-up":action.kind==="write" && action.eraseFirst?"erase":action.kind;
@@ -64,6 +65,7 @@ export class StagePropMotion {
   if(this.alreadyRaised)return null;
   if(this.stage==="erase"){
    this.eraseWeight=THREE.MathUtils.damp(this.eraseWeight,ready?1:0,8,delta);
+   this.eraseHold=Math.max(this.eraseHold,this.eraseWeight);
    const elapsed=this.age;
    if(ready && this.eraseWeight>.98)this.age+=THREE.MathUtils.clamp(delta,0,1/30);
    const point=eraserWorldPoint(elapsed,action.eraseArea);
@@ -71,7 +73,7 @@ export class StagePropMotion {
    if(!this.eraseTarget || ready || this.eraseWeight<.05)this.eraseTarget=new THREE.Vector3(point.x,point.y,point.z);
    const target=this.eraseTarget.clone();
    const frame={phase:ready?"erase":"approach",kind:"erase" as const,progress:0,weight:this.eraseWeight,handle:target,done:false,writingElapsed:0,eraseElapsed:elapsed,x:eraserStandingX(elapsed,action.eraseArea),yaw:Math.PI,
-    pose:{kind:"erase",weight:this.eraseWeight,target,side:"left",grip:this.eraseWeight,wristRoll:0} satisfies StagePropPose};
+    pose:{kind:"erase",weight:this.eraseWeight,target,side:"left",grip:this.eraseHold,wristRoll:0} satisfies StagePropPose};
    if(this.age>=eraseDuration){this.stage="write";this.age=0;this.arrived=false;}
    return frame;
   }
@@ -116,10 +118,13 @@ export class StagePropVisuals {
   this.bracket=new THREE.Mesh(new THREE.BoxGeometry(.07,.06,screenGripZ+.06),new THREE.MeshStandardMaterial({color:0x858785,metalness:.6,roughness:.45}));
   this.bracket.position.set(screenCordX,3.47,screenGripZ/2);scene.add(this.bracket);
  }
- update(_action:StagePropAction|undefined,frame:ReturnType<StagePropMotion["update"]>,gripPosition?:THREE.Vector3){
+ update(_action:StagePropAction|undefined,frame:ReturnType<StagePropMotion["update"]>,gripPosition?:THREE.Vector3,handOrientation?:THREE.Quaternion){
   this.eraser.visible=frame?.kind==="erase";
   if(frame?.kind==="erase"){
-   this.eraser.position.copy(gripPosition??frame.pose.target);
+   if(gripPosition){
+    const held=eraserHeldTransform(gripPosition,handOrientation??eraserHandOrientation);
+    this.eraser.position.copy(held.position);this.eraser.quaternion.copy(held.quaternion);
+   }else this.eraser.position.copy(frame.pose.target);
 
   }
   // The weighted handle always hangs below its fixed pulley, including at rest.
