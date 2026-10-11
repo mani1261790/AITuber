@@ -1,4 +1,5 @@
-import { eraserWorldPoint, eraserStandingX, eraseDuration, eraseColumns, type EraseArea } from "./board-erase.ts";
+import { createBlackboardEraser, disposeBlackboardEraser } from "./blackboard-eraser.ts";
+import { eraserWorldPoint, eraserStandingX, eraseDuration, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
 export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean };
@@ -102,9 +103,9 @@ export class StagePropMotion {
 export class StagePropVisuals {
  private cord:THREE.Line;
  private handle:THREE.Mesh;
- private eraser:THREE.Mesh;
+ private eraser:THREE.Group;
  constructor(private scene:THREE.Scene){
-  this.eraser=new THREE.Mesh(new THREE.BoxGeometry(4.633/eraseColumns,.326,.09),[0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x9b7044,0x353c38].map(color=>new THREE.MeshStandardMaterial({color})));
+  this.eraser=createBlackboardEraser();
   this.cord=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color:0xece8dd}));scene.add(this.cord);
   this.handle=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,8,24),new THREE.MeshStandardMaterial({color:0xddd9ce}));scene.add(this.handle);scene.add(this.eraser);
  }
@@ -112,7 +113,7 @@ export class StagePropVisuals {
   this.eraser.visible=frame?.kind==="erase";
   if(frame?.kind==="erase"){
    this.eraser.position.copy(gripPosition??frame.pose.target);
-   this.eraser.scale.x=action?.eraseArea?(action.eraseArea.right-action.eraseArea.left)/1280:1;
+
   }
   this.cord.visible=this.handle.visible=Boolean(action && frame?.kind==="screen" && !frame.done);
   if(!frame || frame.kind!=="screen")return;
@@ -121,5 +122,5 @@ export class StagePropVisuals {
   positions.setXYZ(0,screenCordX,3.44,.02);positions.setXYZ(1,bottom.x,bottom.y,bottom.z);positions.needsUpdate=true;
   this.cord.geometry.computeBoundingSphere();this.handle.position.copy(bottom);
  }
- dispose(){for(const object of [this.cord,this.handle,this.eraser]){this.scene.remove(object);object.geometry.dispose();for(const material of Array.isArray(object.material)?object.material:[object.material])material.dispose();}}
+ dispose(){disposeBlackboardEraser(this.eraser);for(const object of [this.cord,this.handle]){this.scene.remove(object);object.geometry.dispose();for(const material of Array.isArray(object.material)?object.material:[object.material])material.dispose();}}
 }
