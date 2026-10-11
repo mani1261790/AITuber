@@ -585,7 +585,7 @@ it("presents in front of the torso with elbows below the hands for either VRM co
 });
 
 it("keeps prop elbows ahead of the torso at low and cross-body reaches",()=>{
- for(const yaw of [0,-.65,Math.PI])for(const side of ["left","right"] as const)for(const height of [-.5,0,.3]){
+ for(const cord of [false,true])for(const yaw of [0,-.65,Math.PI])for(const side of ["left","right"] as const)for(const height of [-.5,0,.3]){
   const scene=new THREE.Group();scene.rotation.y=yaw;
   const nodes:Record<string,THREE.Bone>={};
   for(const s of ["left","right"] as const){
@@ -597,8 +597,9 @@ it("keeps prop elbows ahead of the torso at low and cross-body reaches",()=>{
   const vrm={scene,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
   scene.updateMatrixWorld(true);
   const target=scene.localToWorld(new THREE.Vector3(0,1.4+height,.45));
-  aimArm(vrm,side,target,1,"grip");scene.updateMatrixWorld(true);
+  aimArm(vrm,side,target,1,"grip",cord);scene.updateMatrixWorld(true);
   const elbow=scene.worldToLocal(nodes[`${side}LowerArm`]!.getWorldPosition(new THREE.Vector3()));
   expect(elbow.z).toBeGreaterThan(.10);
+  if(cord && height<0)expect(elbow.y).toBeLessThan(1.3);
  }
 });

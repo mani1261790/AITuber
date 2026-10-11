@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
+import { sideStepStride } from "./stage-locomotion.ts";
 import { solveLeg } from "./foot-contact.ts";
 export interface SideStep {progress:number;start:number;goal:number}
 /** Step out with the leading foot, then bring the other foot alongside it. */
 export function sideStepOffset(step:SideStep,leading:boolean){
- const count=Math.max(1,Math.ceil(Math.abs(step.goal-step.start)/.48));
+ const count=Math.max(1,Math.ceil(Math.abs(step.goal-step.start)/sideStepStride));
  const cycle=Math.min(count,Math.max(0,step.progress));
  const whole=Math.floor(cycle),phase=cycle-whole;
  const swing=THREE.MathUtils.clamp((phase-(leading?0:.5))*2,0,1);

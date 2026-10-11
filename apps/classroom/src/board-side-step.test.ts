@@ -8,7 +8,7 @@ it("moves laterally without changing board-facing yaw or overshooting",()=>{
   for(let i=0;i<300;i++){
    motion.updateSideStep(1/60,goal);
    expect(motion.yaw).toBe(Math.PI);expect(motion.phase).not.toBe("turn");
-   expect(Math.abs(motion.x-previous)).toBeLessThan(.023);previous=motion.x;
+   expect(Math.abs(motion.x-previous)).toBeLessThan(.028);previous=motion.x;
   }
   expect(motion.x).toBeCloseTo(goal);expect(motion.phase).toBe("idle");
  }
@@ -39,4 +39,11 @@ it("keeps grounding translation independent of the foot-placement constraint",as
  scene.position.y=2;motion.apply(step);
  const after=bones.get("leftFoot")!.getWorldPosition(new THREE.Vector3());
  expect(after.y-before.y).toBeCloseTo(2,3);expect(after.x).toBeCloseTo(before.x,3);
+});
+
+it("takes two full side steps for a 1.4 metre reposition",()=>{
+ const motion=new StageLocomotion(0,Math.PI);
+ for(let i=0;i<120;i++)motion.updateSideStep(1/60,1.4);
+ expect(motion.lateralProgress).toBe(2);
+ expect(sideStepOffset({start:0,goal:1.4,progress:1},true).x).toBeCloseTo(.7);
 });

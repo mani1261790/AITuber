@@ -1,6 +1,8 @@
 import { MathUtils } from "three";
 // Leave shoulder clearance beside the fixed screen cord, including the pull/release.
 export const rightStageX = 1.95;
+export const sideStepStride = .8;
+export const sideStepSeconds = .85;
 /** Use the same standing pose for initial display and subsequent stage commands. */
 export function stageStandingPose(position: "left" | "center" | "right" | undefined, pointing = false) {
   if (position === "left") return {x:-4.2,yaw:.26};
@@ -37,10 +39,10 @@ export class StageLocomotion {
       this.lateralGoal=goal;this.lateralAge=0;this.speed=0;
     }
     const distance=this.lateralGoal-this.lateralStart;
-    const steps=Math.max(1,Math.ceil(Math.abs(distance)/.48));
-    const duration=steps*.7;
+    const steps=Math.max(1,Math.ceil(Math.abs(distance)/sideStepStride));
+    const duration=steps*sideStepSeconds;
     this.lateralAge=Math.min(duration,this.lateralAge+dt);
-    this.lateralProgress=this.lateralAge/.7;
+    this.lateralProgress=this.lateralAge/sideStepSeconds;
     const before=this.x;
     const cycle=this.lateralProgress,whole=Math.floor(cycle),fraction=cycle-whole;
     this.x=this.lateralStart+distance/steps*(whole+MathUtils.smootherstep(fraction,0,1));

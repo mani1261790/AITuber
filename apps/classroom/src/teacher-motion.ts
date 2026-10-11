@@ -102,6 +102,7 @@ export class TeacherMotion {
   get acknowledgementStrength() { return this.acknowledgement; }
   category = "idle";
   private pointBlend = 0;
+  private boardPostureWeight=0;
   private screenReachOrigin: THREE.Vector3 | null = null;
   private pointSide: "left" | "right" = "right";
   private pointTracking = new PointTarget();
@@ -371,21 +372,22 @@ export class TeacherMotion {
         chest?.rotateX(forward * .025*acknowledgement);
       }
     }
-    if(input.propPose?.kind==="erase"){
-      const hips=this.vrm.humanoid.getNormalizedBoneNode("hips");
-      if(hips?.parent){
-        this.vrm.scene.updateMatrixWorld(true);
-        const offset=THREE.MathUtils.clamp((input.propPose.target.x-this.vrm.scene.position.x+.2)*.25,-.17,.17)*input.propPose.weight;
-        const world=hips.getWorldPosition(new THREE.Vector3());world.x+=offset;
-        hips.position.copy(hips.parent.worldToLocal(world));
-      }
+    // Keep the torso upright while working; lateral reach comes from the arm
+    // and side steps, not from translating the pelvis away from planted feet.
+    this.boardPostureWeight=THREE.MathUtils.damp(this.boardPostureWeight,
+      input.propPose?.kind==="erase" || input.sideStep ? 1 : 0,8,delta);
+    for(const name of ["hips","spine","chest","upperChest"] as const){
+      const bone=this.vrm.humanoid.getNormalizedBoneNode(name);if(!bone)continue;
+      const q=bone.quaternion;
+      const yaw=new THREE.Quaternion(0,q.y,0,q.w).normalize();
+      q.slerp(yaw,this.boardPostureWeight);
     }
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
     if(input.propPose && input.propPose.weight>0){
       const prop=input.propPose;
       applyTeacherAttention(this.vrm,prop.target,prop.weight);
-      aimArm(this.vrm,prop.side,prop.target,prop.weight,prop.kind==="write"?"write":"open");
+      if(prop.kind==="write")aimArm(this.vrm,prop.side,prop.target,prop.weight,"write");
       if(prop.kind!=="erase")for(const finger of ["Index","Middle","Ring","Little"] as const)for(const part of ["Proximal","Intermediate","Distal"] as const){
         const joint=this.vrm.humanoid.getNormalizedBoneNode(`${prop.side}${finger}${part}`);
         const angle=prop.kind==="write" && finger==="Index"?.25:.85;
@@ -446,7 +448,7 @@ export class TeacherMotion {
       // both endpoints are clear. Constrain the acquisition/release in world
       // space as well as the held grip, after the final pose blend.
       const handPath=this.screenReachOrigin.clone().lerp(input.propPose.target,input.propPose.weight);
-      solveFixedGrip(this.vrm,input.propPose.side,handPath,1);
+      solveFixedGrip(this.vrm,input.propPose.side,handPath,input.propPose.weight);
     }else if(input.propPose?.kind==="erase" && input.propPose.grip>0)
       solveEraserGrip(this.vrm,input.propPose.target,input.propPose.weight,input.propPose.grip);
     this.gaze.update(gazeTarget,delta);
@@ -486,7 +488,7 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
     .addScaledVector(forward,length*(emphasis?.70-.13*flex:.65));
 }
 
-export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" | "grip" = "point") {
+export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, weight: number, handPose: "point" | "open" | "write" | "grip" = "point", cord = false) {
   const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`);
   const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerArm`);
   const hand = vrm.humanoid.getNormalizedBoneNode(`${side}Hand`);
@@ -507,7 +509,7 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   // Rigid props need elbow room in front of the jacket. The presenting
   // pole bends backward and can push the cuff through the torso at low reach.
   const pole=handPose === "grip"
-    ? frame.up.clone().multiplyScalar(-.55).addScaledVector(frame.forward,.8).addScaledVector(frame.lateral,side==="left"?.7:-.7)
+    ? frame.up.clone().multiplyScalar(cord?-1:-.55).addScaledVector(frame.forward,cord?.15:.8).addScaledVector(frame.lateral,side==="left"?.7:-.7)
     : handPose !== "point"
     ? frame.up.clone().negate().addScaledVector(frame.forward,-.25).addScaledVector(frame.lateral,side==="left"?.2:-.2)
     : new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
@@ -588,7 +590,7 @@ function solveFixedGrip(vrm:VRM,side:"left"|"right",target:THREE.Vector3,weight:
  for(let i=0;i<3;i++){
   vrm.scene.updateMatrixWorld(true);
   const offset=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).sub(hand.getWorldPosition(new THREE.Vector3()));
-  aimArm(vrm,side,target.clone().sub(offset),weight,"grip");
+  aimArm(vrm,side,target.clone().sub(offset),weight,"grip",true);
  }
 }
 
