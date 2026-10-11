@@ -504,7 +504,11 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   const reach=handGoal.distanceTo(shoulder);
   const axis=handGoal.clone().sub(shoulder).normalize();
   const frame=presentingFrame(vrm);
-  const pole=handPose !== "point"
+  // Rigid props need elbow room in front of the jacket. The presenting
+  // pole bends backward and can push the cuff through the torso at low reach.
+  const pole=handPose === "grip"
+    ? frame.up.clone().multiplyScalar(-.55).addScaledVector(frame.forward,.8).addScaledVector(frame.lateral,side==="left"?.7:-.7)
+    : handPose !== "point"
     ? frame.up.clone().negate().addScaledVector(frame.forward,-.25).addScaledVector(frame.lateral,side==="left"?.2:-.2)
     : new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
   pole.addScaledVector(axis,-pole.dot(axis)).normalize();

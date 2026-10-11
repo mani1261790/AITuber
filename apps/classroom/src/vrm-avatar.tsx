@@ -411,7 +411,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           renderer.domElement.dataset.camera=currentCamera;
         }
         const startX=avatar.scene.position.x;
-        avatar.scene.position.z=THREE.MathUtils.damp(avatar.scene.position.z,propFrame?.kind==="erase"?.3:.6,5,delta);
+        avatar.scene.position.z=THREE.MathUtils.damp(avatar.scene.position.z,propFrame?.kind==="erase"?.65:.6,5,delta);
         const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? (propFrame?.yaw===Math.PI && Math.abs(Math.atan2(Math.sin(locomotion.yaw-Math.PI),Math.cos(locomotion.yaw-Math.PI)))<.05 && (locomotion.phase==="idle" || locomotion.sidestepping) ? locomotion.updateSideStep(delta,propFrame.x) : locomotion.update(delta,propFrame?.x ?? destinationX,propFrame?.yaw ?? (Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26),...teacherMotion.turnDurations,teacherMotion.turnRotationProgress)):null;
         const distance = destinationX-avatar.scene.position.x;
         const travelling = Math.abs(distance) > .18;

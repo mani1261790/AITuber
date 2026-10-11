@@ -91,7 +91,7 @@ export class StagePropMotion {
   const depth=raising?.3:.95;
   const handle=new THREE.Vector3(screenCordX,2.55-pull*depth*(1-returnCord),screenGripZ);
   const target=writing?loopingHandwritingPoint(writingElapsed):new THREE.Vector3(screenCordX,2.55-pull*depth,screenGripZ);
-  if(!writing)target.lerp(new THREE.Vector3(1.4,1.26,.75),ease((this.age-(raising?2.95:4.75))/1.25));
+  if(!writing)target.lerp(new THREE.Vector3(rightStageX-.22,1.26,.85),ease((this.age-(raising?2.95:4.75))/1.25));
   const grip=writing?weight:ease((this.age-1.3)/.4)*(1-release);
   const wristRoll=writing && this.age>1.2 ? .055*Math.sin(writingElapsed*14) : 0;
   const done=this.age>=duration;
