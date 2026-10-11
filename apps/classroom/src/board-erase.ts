@@ -5,39 +5,47 @@ export function boardEraseArea(marks:BoardMark[]):EraseArea {
  if(!marks.length)return wholeBoard;
  return {left:Math.max(0,Math.min(...marks.map(m=>m.x))-4),top:Math.max(0,Math.min(...marks.map(m=>m.y))-4),right:Math.min(1280,Math.max(...marks.map(m=>m.x+m.width))+4),bottom:Math.min(720,Math.max(...marks.map(m=>m.y+m.height))+4)};
 }
-/** Shared pixel-space path for both the eraser prop and the board texture. */
-export const eraseStrokeSeconds=.85;
-export const eraseColumns=8;
-export const eraseDuration=eraseColumns*eraseStrokeSeconds;
-export function eraserColumnsPerStop(area:EraseArea=wholeBoard){return area.right-area.left<=900?4:2;}
+/** Horizontal serpentine strokes. The upright felt covers 42 × 94 board pixels. */
+export const eraseDuration=6.8;
+export const eraserWidth=42,eraserHeight=94;
+export function erasePlan(area:EraseArea=wholeBoard){
+ const panels=Math.max(1,Math.ceil((area.right-area.left)/400));
+ const rows=Math.max(1,Math.ceil((area.bottom-area.top)/eraserHeight));
+ return {panels,rows,width:(area.right-area.left)/panels,height:(area.bottom-area.top)/rows,strokeSeconds:eraseDuration/(panels*rows)};
+}
 export function eraserPoint(elapsed:number,area:EraseArea=wholeBoard){
- const t=Math.max(0,Math.min(eraseDuration-.000001,elapsed));
- const column=Math.floor(t/eraseStrokeSeconds);
- const p=Math.min(1,(t%eraseStrokeSeconds)/.55);
- const eased=p*p*(3-2*p);
- const travel=Math.max(0,Math.min(1,((t%eraseStrokeSeconds)-.55)/.3));
- const next=(column+1)%eraserColumnsPerStop(area)===0?0:travel*travel*(3-2*travel);
- const top=Math.min(area.bottom,area.top+45),bottom=Math.max(top,area.bottom-45);
- return {x:area.left+(column+.5+next)*(area.right-area.left)/eraseColumns,y:column%2?bottom-(bottom-top)*eased:top+(bottom-top)*eased,column};
+ const plan=erasePlan(area);
+ const t=Math.max(0,Math.min(eraseDuration-.000001,elapsed))/plan.strokeSeconds;
+ const stroke=Math.floor(t),panel=Math.floor(stroke/plan.rows),row=stroke%plan.rows;
+ const left=area.right-(panel+1)*plan.width,right=left+plan.width;
+ const p=Math.min(1,(t-stroke)/.8),ease=p*p*(3-2*p);
+ const inset=Math.min(eraserWidth/2,plan.width/2);
+ const start=row%2?left+inset:right-inset,end=row%2?right-inset:left+inset;
+ const advance=Math.max(0,(t-stroke-.8)/.2),down=advance*advance*(3-2*advance);
+ const y=area.top+(row+.5)*plan.height+(row<plan.rows-1?down*plan.height:0);
+ return {x:start+(end-start)*ease,y,panel,row,stroke};
 }
 export function paintBoardErase(output:HTMLCanvasElement,source:HTMLCanvasElement,elapsed:number,background="#204a3d",area:EraseArea=wholeBoard){
  const ctx=output.getContext("2d");if(!ctx)return;
  ctx.drawImage(source,0,0);ctx.fillStyle=background;
- const point=eraserPoint(elapsed,area),width=(area.right-area.left)/eraseColumns;
- // Only the area swept by the felt disappears. No whole-board fade or swap.
- for(let column=0;column<=point.column;column++){
-  const complete=elapsed>=eraseDuration || column<point.column;
-  const y=complete?area.top:column%2?point.y-45:area.top;
-  const height=complete?area.bottom-area.top:column%2?area.bottom-y:point.y+45-area.top;
-  if(elapsed>0)ctx.fillRect(area.left+column*width,y,width+.5,height);
+ if(elapsed<=0)return;
+ const plan=erasePlan(area),point=eraserPoint(elapsed,area);
+ for(let stroke=0;stroke<=point.stroke;stroke++){
+  const panel=Math.floor(stroke/plan.rows),row=stroke%plan.rows;
+  const left=area.right-(panel+1)*plan.width,right=left+plan.width;
+  const top=Math.max(area.top,area.top+(row+.5)*plan.height-eraserHeight/2);
+  const bottom=Math.min(area.bottom,area.top+(row+.5)*plan.height+eraserHeight/2);
+  const complete=elapsed>=eraseDuration || stroke<point.stroke;
+  const x=complete||row%2?left:Math.max(left,point.x-eraserWidth/2);
+  const end=complete||!(row%2)?right:Math.min(right,point.x+eraserWidth/2);
+  ctx.fillRect(x,top,end-x,bottom-top);
  }
 }
-
 export function eraserWorldPoint(elapsed:number,area:EraseArea=wholeBoard){
  const p=eraserPoint(elapsed,area);
  return {x:-3.7865+p.x/1280*4.633,y:3.3038-p.y/720*2.6076,z:-.16};
 }
 export function eraserStandingX(elapsed:number,area:EraseArea=wholeBoard){
- const perStop=eraserColumnsPerStop(area),group=Math.floor(eraserPoint(elapsed,area).column/perStop);
- return -3.7865+(area.left+(group*perStop+perStop/2)/eraseColumns*(area.right-area.left))/1280*4.633+.2;
+ const plan=erasePlan(area),panel=eraserPoint(elapsed,area).panel;
+ return -3.7865+(area.right-(panel+.5)*plan.width)/1280*4.633+.2;
 }

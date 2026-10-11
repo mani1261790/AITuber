@@ -1,3 +1,4 @@
+import { BoardSideStep, type SideStep } from "./board-side-step.ts";
 import type { StagePropPose } from "./stage-prop-motion.ts";
 import { AudienceScan } from "./audience-scan.ts";
 import { withLightWalk } from "./light-walk.ts";
@@ -63,6 +64,7 @@ export class TeacherMotion {
   private transition: PoseTransition;
   private outputLimit: PoseTransition;
   private footContact: FootContact;
+  private boardSideStep: BoardSideStep;
   private standingRecovery: StandingRecovery;
   get settlingFeet(){return this.standingRecovery.active;}
   gaitDiagnostics: Record<string,number[]> = {};
@@ -147,6 +149,7 @@ export class TeacherMotion {
     this.gaze = new TeacherGaze(vrm);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.footContact = new FootContact(vrm);
+    this.boardSideStep = new BoardSideStep(vrm);
     for (const name of Object.values(VRMHumanBoneName)) {
       if(name === "leftEye" || name === "rightEye")continue;
       const bone = vrm.humanoid.getNormalizedBoneNode(name);
@@ -202,7 +205,7 @@ export class TeacherMotion {
     this.vrm.humanoid.update();
   }
 
-  update(delta: number, input: { speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
+  update(delta: number, input: { sideStep?:SideStep|undefined; speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
     if(input.propPose?.kind==="screen" && input.propPose.weight>0){
       if(!this.screenReachOrigin){
@@ -216,7 +219,7 @@ export class TeacherMotion {
     const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
     this.speakingHold = input.speaking ? .7 : Math.max(0, this.speakingHold - delta);
     const previousState = this.state;
-    if (input.reducedMotion) this.state = "idle";
+    if (input.reducedMotion || input.sideStep) this.state = "idle";
     else if (input.turning) this.state = input.turnSign === -1 ? "turnRight" : "turnLeft";
     else if (input.moving) this.state = "walk";
     else if (input.gesture === "listen" && !input.target && this.speakingHold === 0) this.state = "listen";
@@ -411,7 +414,7 @@ export class TeacherMotion {
     this.poseOffsetAge+=delta;
     this.transition.apply(delta);
     this.sampleKnees("blended");
-    this.footContact.apply(delta,input.moving && !input.reducedMotion,input.turning);
+    if(!input.sideStep)this.footContact.apply(delta,input.moving && !input.reducedMotion,input.turning);
     this.sampleKnees("contact");
     this.standingRecovery.apply(delta);
     // IK may rewrite joints after blending. Bound the final rendered pose too,
@@ -421,6 +424,7 @@ export class TeacherMotion {
       return bone ? {bone,position:bone.getWorldPosition(new THREE.Vector3())} : null;
     }) : [];
     this.outputLimit.apply(delta);
+    this.boardSideStep.apply(input.sideStep);
     this.standingRecovery.confirmSettled();
     this.postIkError=solvedFeet.map(foot=>foot ? foot.bone.getWorldPosition(new THREE.Vector3()).distanceTo(foot.position) : 0);
     // A held rigid prop is a positional constraint, not another delayed pose.

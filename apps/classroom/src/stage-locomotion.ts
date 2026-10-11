@@ -13,6 +13,11 @@ export class StageLocomotion {
   x: number; yaw: number; speed = 0;
   turnSign = 1; turnProgress = 0;
   walkBlend = 0;
+  sidestepping = false;
+  lateralProgress = 0;
+  lateralStart = 0;
+  lateralGoal = 0;
+  private lateralAge = 0;
   private goal: number;
   private elapsed = 0;
   private startYaw = 0;
@@ -23,7 +28,28 @@ export class StageLocomotion {
   private afterTurn: TravelPhase = "walk";
   private travelSign = 1;
   constructor(x:number,yaw:number){this.x=x;this.yaw=yaw;this.goal=x;}
+  /** Short board-facing step-together travel; orientation never follows velocity. */
+  updateSideStep(dt:number,goal:number){
+    dt=Math.min(Math.max(dt,0),1/30);
+    if(!this.sidestepping || Math.abs(goal-this.goal)>.025){
+      this.sidestepping=true;this.goal=goal;this.lateralStart=this.x;
+      this.lateralGoal=goal;this.lateralAge=0;this.speed=0;
+    }
+    const distance=this.lateralGoal-this.lateralStart;
+    const steps=Math.max(1,Math.ceil(Math.abs(distance)/.48));
+    const duration=steps*.7;
+    this.lateralAge=Math.min(duration,this.lateralAge+dt);
+    this.lateralProgress=this.lateralAge/.7;
+    const before=this.x;
+    const cycle=this.lateralProgress,whole=Math.floor(cycle),fraction=cycle-whole;
+    this.x=this.lateralStart+distance/steps*(whole+MathUtils.smootherstep(fraction,0,1));
+    this.speed=Math.abs(this.x-before)/Math.max(dt,.00001);
+    this.phase=this.lateralAge>=duration?"idle":"walk";
+    this.walkBlend=0;
+    return this;
+  }
   update(dt:number,goal:number,standYaw:number,leftDuration:number,rightDuration:number,rotationProgress: (progress:number,sign:number)=>number = progress=>MathUtils.smootherstep(progress,0,1)){
+    this.sidestepping=false;
     dt = Math.min(Math.max(dt, 0), 1 / 30);
     const beginTurn=(yaw:number,after:TravelPhase)=>{
       const angle=Math.atan2(Math.sin(yaw-this.yaw),Math.cos(yaw-this.yaw));

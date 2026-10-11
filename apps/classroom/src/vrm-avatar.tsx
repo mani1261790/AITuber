@@ -411,7 +411,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         }
         const startX=avatar.scene.position.x;
         avatar.scene.position.z=THREE.MathUtils.damp(avatar.scene.position.z,propFrame?.kind==="erase"?.3:.6,5,delta);
-        const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? locomotion.update(delta,propFrame?.x ?? destinationX,propFrame?.yaw ?? (Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26),...teacherMotion.turnDurations,teacherMotion.turnRotationProgress):null;
+        const locomotionState=teacherMotion&&locomotion&&!reducedMotion&&!stageRef.current.preview ? (propFrame?.yaw===Math.PI && Math.abs(Math.atan2(Math.sin(locomotion.yaw-Math.PI),Math.cos(locomotion.yaw-Math.PI)))<.05 && (locomotion.phase==="idle" || locomotion.sidestepping) ? locomotion.updateSideStep(delta,propFrame.x) : locomotion.update(delta,propFrame?.x ?? destinationX,propFrame?.yaw ?? (Math.abs(destinationX+.65)<.1?0:destinationX< -1?.26:-.26),...teacherMotion.turnDurations,teacherMotion.turnRotationProgress)):null;
         const distance = destinationX-avatar.scene.position.x;
         const travelling = Math.abs(distance) > .18;
         const travelFacing = Math.sign(distance)*Math.PI/2;
@@ -441,7 +441,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         if (teacherMotion && !stageRef.current.preview) {
           const target = region && activeGesture && !walking ? new THREE.Vector3(-3.85+(region.x+region.width/2)*4.76,targetY,-.06) : null;
           const speechLevel=speechLevelRef.current?.();
-          teacherMotion.update(delta, { propPose:propFrame?.pose, cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
+          teacherMotion.update(delta, { sideStep:locomotionState?.sidestepping ? {progress:locomotionState.lateralProgress,start:locomotionState.lateralStart,goal:locomotionState.lateralGoal} : undefined, propPose:propFrame?.pose, cameraPosition: camera.position, speechLevel, speed: Math.abs(avatar.scene.position.x-startX)/Math.max(delta,.001), moving: walking, speaking: motionRef.current.speaking,
             target, side: avatar.scene.position.x < -1 ? "left" : "right", reducedMotion, gesture, actionId: direction?.actionId, pointActionId: direction?.phase === "pointing" ? direction.actionId : undefined, turning: locomotionState ? locomotionState.phase==="turn" : Math.abs(avatar.scene.rotation.y-facing)>.08, departureWalkBlend: locomotionState?.walkBlend, turnSign: locomotionState?.turnSign, turnProgress: locomotionState?.turnProgress });
           animateExpression(avatar, gestureMotion, time, delta, speechLevel, gesture, teacherMotion.acknowledgementStrength);
           renderer.domElement.dataset.motionClip = teacherMotion.state;

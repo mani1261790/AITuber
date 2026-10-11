@@ -28,10 +28,16 @@ it("never adds ink and keeps the ring on its own vertical trajectory",async()=>{
  const THREE=await import("three"),{StagePropVisuals}=await import("./stage-prop-motion.ts");
  const scene=new THREE.Scene(),visuals=new StagePropVisuals(scene),motion=new StagePropMotion();
  const writing={id:"w",kind:"write" as const};visuals.update(writing,motion.update(writing,true,0));
- expect(scene.children.filter(child=>child.visible)).toHaveLength(0);
+ expect(scene.children.find(child=>child.name==="wood-and-felt-blackboard-eraser")!.visible).toBe(false);
+ expect(scene.children.filter(child=>child.visible)).toHaveLength(3);
  const screen={id:"s",kind:"screen" as const};let frame=motion.update(screen,true,0);
  for(let i=0;i<120;i++)frame=motion.update(screen,true,1/60);
- visuals.update(screen,frame);
+ visuals.update(screen,frame,new THREE.Vector3(10,10,10));
+ const cord=scene.children.find(child=>child instanceof THREE.Line) as import("three").Line;
+ const points=cord.geometry.getAttribute("position");
+ expect(points.getX(0)).toBeCloseTo(points.getX(1));
+ expect(points.getZ(0)).toBeCloseTo(points.getZ(1));
+ expect(points.getY(0)).toBeGreaterThan(points.getY(1));
  const ring=scene.children.find(child=>child instanceof THREE.Mesh)!;
  expect(ring.position.distanceTo(frame!.handle)).toBeLessThan(1e-8);
  visuals.dispose();expect(scene.children).toHaveLength(0);
