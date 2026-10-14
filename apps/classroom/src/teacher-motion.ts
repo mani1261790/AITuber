@@ -64,6 +64,8 @@ export class TeacherMotion {
   private weights = { idle: 1, talk: 0, walk: 0, listen: 0, turnLeft: 0, turnRight: 0 };
   private transition: PoseTransition;
   private outputLimit: PoseTransition;
+  private screenArmLimit: PoseTransition;
+  private screenArmHold=0;
   private footContact: FootContact;
   private boardSideStep: BoardSideStep;
   private standingRecovery: StandingRecovery;
@@ -204,6 +206,10 @@ export class TeacherMotion {
         return bone ? [bone] : [];
       }));
     this.outputLimit = new PoseTransition(this.overlayBases.keys(), Infinity, bone=>legBones.has(bone) && this.state === "walk" ? 8 : 5, legs);
+    const arms=(["left","right"] as const).map(side=>(["UpperArm","LowerArm","Hand"] as const).flatMap(part=>{
+      const bone=vrm.humanoid.getNormalizedBoneNode(`${side}${part}`);return bone?[bone]:[];
+    }));
+    this.screenArmLimit=new PoseTransition(arms.flat(),Infinity,()=>this.screenArmHold>0?4:Infinity,arms);
     this.vrm.humanoid.update();
   }
 
@@ -451,6 +457,10 @@ export class TeacherMotion {
       solveFixedGrip(this.vrm,input.propPose.side,handPath,input.propPose.weight);
     }else if(input.propPose?.kind==="erase" && input.propPose.grip>0)
       solveEraserGrip(this.vrm,input.propPose.target,input.propPose.weight,input.propPose.grip);
+    // Contact IK runs after outputLimit. Guard the actual rendered arm, including
+    // the first reach frame and the transition back to idle after releasing.
+    this.screenArmHold=input.propPose?.kind==="screen" ? .8 : Math.max(0,this.screenArmHold-delta);
+    this.screenArmLimit.apply(delta);
     this.gaze.update(gazeTarget,delta);
     this.vrm.humanoid.update();
   }
@@ -587,11 +597,17 @@ function solveFixedGrip(vrm:VRM,side:"left"|"right",target:THREE.Vector3,weight:
  const base=vrm.humanoid.getNormalizedBoneNode(`${side}MiddleProximal`);
  const tip=vrm.humanoid.getNormalizedBoneNode(`${side}MiddleDistal`);
  if(!hand || !base || !tip)return;
+ const joints=(["UpperArm","LowerArm","Hand"] as const).flatMap(part=>{
+  const bone=vrm.humanoid.getNormalizedBoneNode(`${side}${part}`);return bone?[bone]:[];
+ });
+ const initial=joints.map(bone=>bone.quaternion.clone());
  for(let i=0;i<3;i++){
   vrm.scene.updateMatrixWorld(true);
   const offset=base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).sub(hand.getWorldPosition(new THREE.Vector3()));
-  aimArm(vrm,side,target.clone().sub(offset),weight,"grip",true);
+  aimArm(vrm,side,target.clone().sub(offset),1,"grip",true);
  }
+ // Numerical refinement must not compound the acquisition/release weight.
+ joints.forEach((bone,i)=>bone.quaternion.slerpQuaternions(initial[i]!,bone.quaternion.clone(),weight));
 }
 
 /** Broad-object grip: orient the palm first, then solve the wrist behind the wood. */

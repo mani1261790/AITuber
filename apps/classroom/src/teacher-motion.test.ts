@@ -313,13 +313,17 @@ it("introduces an explanation with one restrained open-hand gesture when speech 
  controller.dispose();
 });
 
-function createGestureRig(relaxedArms = false) {
+function createGestureRig(relaxedArms = false, fingers = false) {
   const scene=new THREE.Group(),nodes:Record<string,THREE.Bone>={};
   const head=new THREE.Bone();head.name='head';head.position.y=1.8;scene.add(head);nodes.head=head;
   for(const side of ['left','right'] as const){
    const upper=new THREE.Bone(),lower=new THREE.Bone(),hand=new THREE.Bone(),sign=side==='left'?1:-1;
    upper.name=side+'UpperArm';lower.name=side+'LowerArm';hand.name=side+'Hand';upper.position.set(sign*.2,1.4,0);lower.position.x=sign*.4;hand.position.x=sign*.4;
    scene.add(upper);upper.add(lower);lower.add(hand);nodes[upper.name]=upper;nodes[lower.name]=lower;nodes[hand.name]=hand;
+   if(fingers){
+    const base=new THREE.Bone(),tip=new THREE.Bone();base.name=side+"MiddleProximal";tip.name=side+"MiddleDistal";
+    base.position.x=sign*.08;tip.position.x=sign*.06;hand.add(base);base.add(tip);nodes[base.name]=base;nodes[tip.name]=tip;
+   }
   }
   const vrm={scene,humanoid:{update(){},getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
   if (relaxedArms) for (const side of ["left", "right"] as const)
@@ -601,5 +605,22 @@ it("keeps prop elbows ahead of the torso at low and cross-body reaches",()=>{
   const elbow=scene.worldToLocal(nodes[`${side}LowerArm`]!.getWorldPosition(new THREE.Vector3()));
   expect(elbow.z).toBeGreaterThan(.10);
   if(cord && height<0)expect(elbow.y).toBeLessThan(1.3);
+ }
+});
+
+it("bounds rendered screen-arm rotation after contact IK through reach, release and interruption",async()=>{
+ const {StagePropMotion}=await import("./stage-prop-motion.ts");
+ for(const fps of [30,60,120])for(const kind of ["screen","screen-up"] as const){
+  const {nodes,controller}=createGestureRig(true,true),motion=new StagePropMotion();
+  const action={id:kind,kind};
+  const bones=[nodes.rightUpperArm!,nodes.rightLowerArm!,nodes.rightHand!];
+  let previous=bones.map(b=>b.quaternion.clone()),worst=0;
+  for(let frame=0;frame<fps*9;frame++){
+   const prop=motion.update(action,true,1/fps,true);
+   controller.update(1/fps,{speed:0,moving:false,speaking:false,target:null,side:"right",reducedMotion:false,gesture:"idle",propPose:frame<fps*6?prop?.pose:undefined});
+   bones.forEach((bone,i)=>{const angle=previous[i]!.angleTo(bone.quaternion);worst=Math.max(worst,angle);expect(angle).toBeLessThanOrEqual(4/fps+1e-6);});
+   previous=bones.map(b=>b.quaternion.clone());
+  }
+  expect(worst).toBeGreaterThan(.001);controller.dispose();
  }
 });
