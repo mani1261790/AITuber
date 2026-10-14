@@ -105,6 +105,7 @@ export class TeacherMotion {
   category = "idle";
   private pointBlend = 0;
   private boardPostureWeight=0;
+  private relaxedWalkWeight=0;
   private screenReachOrigin: THREE.Vector3 | null = null;
   private pointSide: "left" | "right" = "right";
   private pointTracking = new PointTarget();
@@ -388,6 +389,12 @@ export class TeacherMotion {
       const yaw=new THREE.Quaternion(0,q.y,0,q.w).normalize();
       q.slerp(yaw,this.boardPostureWeight);
     }
+    // Preserve the recorded gait and add a restrained, relaxed upper-body lean.
+    // Fade with actual travel speed so pivots and stopped poses do not bow.
+    const walkRelaxation=input.moving && !input.sideStep && !input.reducedMotion
+      ? THREE.MathUtils.smoothstep(input.speed,.08,.8)*(input.turning?(input.departureWalkBlend??0):1) : 0;
+    this.relaxedWalkWeight=THREE.MathUtils.damp(this.relaxedWalkWeight,walkRelaxation,6,delta);
+    applyRelaxedWalkPosture(this.vrm,this.relaxedWalkWeight);
     // Solve after torso gestures so a small emphasis lean does not shift the aim.
     if (this.pointBlend > .001) aimArm(this.vrm, this.pointSide, this.pointTarget, THREE.MathUtils.smootherstep(this.pointBlend,0,1));
     if(input.propPose && input.propPose.weight>0){
@@ -638,4 +645,11 @@ export function solveEraserGrip(vrm:VRM,target:THREE.Vector3,weight:number,grip:
  }
  hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(orientation));
  applyEraserFingers(vrm,grip);
+}
+
+/** Bend through the upper back, without tipping the pelvis or changing foot contacts. */
+export function applyRelaxedWalkPosture(vrm:VRM,weight:number){
+ const amount=THREE.MathUtils.clamp(weight,0,1)*teacherForwardSign(vrm);
+ for(const [name,angle] of [["spine",.055],["chest",.035],["neck",-.045]] as const)
+  vrm.humanoid.getNormalizedBoneNode(name)?.rotateX(angle*amount);
 }

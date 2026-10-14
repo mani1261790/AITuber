@@ -624,3 +624,18 @@ it("bounds rendered screen-arm rotation after contact IK through reach, release 
   expect(worst).toBeGreaterThan(.001);controller.dispose();
  }
 });
+
+it("relaxes the walking upper back in both VRM conventions without altering pelvis or gait",async()=>{
+ const {applyRelaxedWalkPosture}=await import("./teacher-motion.ts");
+ for(const version of ["0","1"]){
+  const nodes=Object.fromEntries(["hips","spine","chest","neck","leftUpperLeg","rightUpperLeg"].map(name=>[name,new THREE.Bone()]));
+  const vrm={meta:{metaVersion:version},humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]}} as unknown as VRM;
+  nodes.spine!.rotation.z=.03;const sway=nodes.spine!.quaternion.clone();
+  applyRelaxedWalkPosture(vrm,0);expect(nodes.spine!.quaternion.angleTo(sway)).toBeLessThan(1e-6);
+  applyRelaxedWalkPosture(vrm,1);
+  const delta=sway.invert().multiply(nodes.spine!.quaternion);
+  expect(new THREE.Euler().setFromQuaternion(delta).x).toBeCloseTo(version==="0"?-.055:.055);
+  expect(nodes.hips!.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
+  expect(nodes.leftUpperLeg!.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
+ }
+});
