@@ -139,3 +139,21 @@ Cloudflareの管理APIは前回ブラウザで401。ローカル設定は削除�
 - Cloudflare build、全456テスト、全体型チェック合格。実workerdのverify:cloud-nativeで認証/origin/WebSocket/日本語PDF受付/SQLiteとR2を使う保存/再起動/参加者復元が合格。
 - native検証は明示したtoneモードで実行するよう整備。以前は依存なしのサイレント進行に頼っていた。Workerに任意のテストモードbindingを接続したが、本番wrangler設定には設定しない。検証用PDF画像は入力境界のplaceholderであり、LLMや描画の品質検証には使わない。
 - デプロイworkflowへ今回のlive-execution/PDF/契約/再生/カメラ関連回帰テストを追加。公開反映はこの記載時点では未完了。
+
+## 2026-10-16: Cloudflare反映完了
+
+- c7d3ceaをmainへpushし、deploy run 38816942639がsuccess。指定アカウント2ea670c2a6ff28e248ef084adf095e8bへのガード、CI回帰テスト/型チェック/build/workerd検証/デプロイ/公開境界確認がすべて成功。
+- 追加で公開環境へ直接接続し、login200、未認証courses/board-preview401、internal404、VRMと帰属表示の配信を検証。
+- 公開JS `/assets/index-uOQZx5o6.js`、`/pdfjs/cmaps/UniJIS-UTF16-H.bcmap`、`/pdfjs/standard_fonts/FoxitSerif.pfb`、`/pdfjs/wasm/openjpeg.wasm` のSHA256がローカルCloudflareビルドの対応ファイルと一致。新コード・PDF描画依存ファイルの反映確認。
+- LLMキー未登録（run38816597691）のため、公開環境での実教材生成と実授業の完走はまだ未確認。これをデプロイ成功とは区別する。
+- 修正版手動シナリオ（板書後move_to追加）の再起動実行と、複数実ブラウザでの通知確認も残る。Goalはactive。
+
+## 2026-10-16: 修正版台本と2ブラウザの検証
+
+- 修正版runtime-smoke.tsを再起動し、独立したPlaywrightセッションlayout-review/second-viewerで同じ教室に参加。表示上も同期中2人。最初のstage報告をlayout-reviewに担当させたあと、両方から通常のstage通知を送信。
+- layout-reviewの実音声ended通知に5秒の送信遅延を加えた（音声自体は実Fishのキャッシュ）。second-viewerは通常送信。ownerのendedは22:29:50.832Z、otherのendedは22:29:51.151Z。実際にdrawingへ進んだのは22:29:56.695Zであり、ownerの遅延終了通知＋850msを待った。owner送信前のAPI snapshotがspeakingのままであることもassert済み。
+- 板書完了22:30:15.887Z→moving→22:30:21.440Z speaking。約5.55秒の戻り移動を待ち、22:30:21.444Zから次の音声へ。`output/playwright/multi-board-after-move.png` を開き、先生が右側に到着し、数式と板書を遮らないことを確認。
+- 22:30:53.352Z FINISHED。両ブラウザで終了画面に到達。シナリオの範囲は前記同様、3発話の手動台本＋後続pauseであり、8Unitの実LLM授業ではない。
+- 記録: `output/playwright/runtime-multi.log`、`multi-owner-wait.png`、`multi-board-after-move.png`、`multi-finished.png`。0 errors、フォント/THREE.Clockのwarningsあり。
+
+独立して進められるランタイム検証はここまで完了。残る本番PDF→実LLM生成→保存→実LLM台本→Fishの通し検証は、本番APIキー未登録が阻害要因。ユーザーへの登録依頼は継続中。Goalは未達成。
