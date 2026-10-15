@@ -234,7 +234,7 @@ function validateRequest(request: StructuredGenerationRequest<unknown>) {
   const maxTokens = request.maxOutputTokens ?? 4_096;
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 100_000) throw new TypeError("maxOutputTokens must be between 1 and 100000");
   if (request.temperature !== undefined && (!Number.isFinite(request.temperature) || request.temperature < 0 || request.temperature > 2)) throw new TypeError("temperature must be between 0 and 2");
-  if ((request.images?.length ?? 0) > 16 || request.images?.some((image) => image.dataBase64.length > 14_000_000)) throw new TypeError("images exceed the request limit");
+  if ((request.images?.length ?? 0) > 500 || (request.images?.reduce((sum,image)=>sum+image.dataBase64.length,0) ?? 0) > 32 * 1024 * 1024 || request.images?.some((image) => image.dataBase64.length > 14_000_000)) throw new TypeError("images exceed the request limit");
 }
 function boundedText(value: string, max: number, name: string): string { if (!value.trim() || new TextEncoder().encode(value).byteLength > max) throw new TypeError(`${name} must contain 1-${max} bytes`); return value; }
 function normalizeBaseUrl(value: string): string { const url = new URL(value); if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError("LLM Base URL must use http or https"); if (url.username || url.password) throw new TypeError("LLM Base URL must not contain credentials"); return url.toString().replace(/\/$/, ""); }

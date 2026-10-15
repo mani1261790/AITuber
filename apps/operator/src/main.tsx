@@ -1,3 +1,4 @@
+import { pdfPageImages } from "./pdf-page-images.ts";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
@@ -128,7 +129,9 @@ function OperatorApp() {
   async function startAuthoring() {
     setBusy(true); setError(null);
     try {
-      const sources: AuthoringSourceUpload[] = await Promise.all(sourceFiles.map(async (file) => ({ fileName: file.name, mimeType: supportedMimeType(file), dataBase64: await fileBase64(file), rights: { basis: sourceRights } })));
+      const sources: AuthoringSourceUpload[] = [];
+      // Render one document at a time; concurrent PDF workers can exhaust browser memory.
+      for (const file of sourceFiles) sources.push({ fileName: file.name, mimeType: supportedMimeType(file), dataBase64: await fileBase64(file), ...(supportedMimeType(file) === "application/pdf" ? {pageImages:await pdfPageImages(file)} : {}), rights: { basis: sourceRights } });
       if (sourceNote.trim()) sources.push({ fileName: "instructor-note.txt", mimeType: "text/plain", dataBase64: utf8Base64(sourceNote.trim()), rights: { basis: sourceRights } });
       const result = await fetchJson<{ job: AuthoringJobView }>("/api/authoring/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ durationMinutes: duration, sources, ...(targetLevel.trim() ? { targetLevel: targetLevel.trim() } : {}), ...(learningGoals.trim() ? { learningGoals: learningGoals.split("\n").map((value) => value.trim()).filter(Boolean) } : {}) }) });
       setAuthoringJob(result.job);

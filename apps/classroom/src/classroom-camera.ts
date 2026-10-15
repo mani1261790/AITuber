@@ -1,3 +1,4 @@
+import type { StageCamera } from "@aituber/contracts";
 import * as THREE from "three";
 
 export const CAMERA_HOLD_SECONDS = 10;
@@ -16,7 +17,7 @@ function projected(box: THREE.Box3, camera: THREE.PerspectiveCamera) {
   const points = [box.min.x,box.max.x].flatMap(x => [box.min.y,box.max.y].flatMap(y => [box.min.z,box.max.z].map(z => new THREE.Vector3(x,y,z).project(camera))));
   return { left: Math.min(...points.map(p=>p.x)), right: Math.max(...points.map(p=>p.x)), top: Math.max(...points.map(p=>p.y)), bottom: Math.min(...points.map(p=>p.y)) };
 }
-export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, material: THREE.Box3, current: ClassroomCameraId, elapsed: number, travelX = 0): ClassroomCameraId {
+export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, material: THREE.Box3, current: ClassroomCameraId, elapsed: number, travelX = 0, intent: StageCamera = "lecture"): ClassroomCameraId {
   if (elapsed < CAMERA_HOLD_SECONDS) return current;
   const probe = new THREE.PerspectiveCamera(35,aspect,.1,30);
   // Sample the coming crossing, not a union box: a union would count empty space as occlusion.
@@ -31,7 +32,9 @@ export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, mater
       const overlap = Math.max(0,Math.min(t.right,m.right)-Math.max(t.left,m.left))*Math.max(0,Math.min(t.top,m.top)-Math.max(t.bottom,m.bottom));
       const teacherCrop = Math.max(0,-.96-t.left)+Math.max(0,t.right-.96)+Math.max(0,t.top-.96);
       const occlusion = overlap / Math.max(.001,(m.right-m.left)*(m.top-m.bottom));
-      return occlusion*10+teacherCrop*30;
+      // Material/board directions prioritize readable teaching content while
+      // retaining the teacher crop guard and the same three fixed viewpoints.
+      return occlusion*(intent === "lecture" ? 10 : 30)+teacherCrop*30;
     });
     return { id: preset.id, score: Math.max(...samples)+crop*30+preset.bias+(preset.id===current ? -.015 : 0) };
   });

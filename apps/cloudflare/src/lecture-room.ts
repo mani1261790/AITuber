@@ -1,3 +1,4 @@
+import { lessonPdfSource, pdfSourceHeaders } from "../../server/src/lesson-pdf-source";
 import { previewBoard } from "../../server/src/board-preview";
 import { audioResponse } from './audio-response';
 import { DurableObject } from 'cloudflare:workers';
@@ -21,6 +22,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     runtimeContext.run(this.context, () => {
       initializeFiles();
       this.services = createServices({
+        AITUBER_TTS_TEST_MODE:env.AITUBER_TTS_TEST_MODE,
         AITUBER_LLM_MODEL:env.LLM_MODEL, AITUBER_LLM_BASE_URL:'https://api.openai.com/v1', AITUBER_LLM_API_KEY:env.OPENAI_API_KEY ?? '',
         AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS:env.LLM_INPUT_PRICE, AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS:env.LLM_OUTPUT_PRICE,
         AITUBER_FISH_AUDIO_API_KEY:env.FISH_API_KEY, AITUBER_FISH_AUDIO_VOICE_ID:env.FISH_VOICE_ID, AITUBER_FISH_AUDIO_MODEL:'s2.1-pro-free',
@@ -91,7 +93,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
   private async route(request:Request):Promise<Response> {
     const url=new URL(request.url), path=url.pathname;
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
-    const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?28*1024*1024:64*1024);
+    const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/board-preview' && request.method==='POST') {
       const body=await read<{example:number}>();
       return json(200,await previewBoard(settings.createProvider("runtime"),body.example));
@@ -127,6 +129,16 @@ export class LectureRoom extends DurableObject<AppEnv> {
       const access=this.classrooms.join((await read<{code:string}>()).code);this.publish(access.sessionId);
       return json(201,{participant:access.participant,room:access.room,snapshot:lecture.getSnapshot(access.sessionId),questions:questions.list(access.sessionId)});
     }
+    const sourceMatch=path.match(/^\/api\/classrooms\/([^/]+)\/source$/);
+    if(sourceMatch && request.method==='POST') {
+      const body=await read<{accessToken:string;sourceId:string}>();
+      const access=this.classrooms.authenticate(sourceMatch[1],body.accessToken);
+      const source=lessonPdfSource(lecture.getSession(access.sessionId).course,body.sourceId);
+      await flushSourceFiles();
+      const object=await this.env.STATE.get(`sources/${source.contentHash.slice(7)}`);
+      if(!object)throw new RangeError('Source file unavailable');
+      return new Response(object.body,{headers:{...pdfSourceHeaders,'content-length':String(object.size)}});
+    }
     const roomMatch=path.match(/^\/api\/classrooms\/([^/]+)\/(reconnect|stream|playback|stage-complete|stage-progress|questions|answer|evidence|survey)$/);
     if(roomMatch){
       const operation=roomMatch[2];
@@ -137,12 +149,12 @@ export class LectureRoom extends DurableObject<AppEnv> {
         return new Response(null,{status:101,webSocket:pair[0]});
       }
       if(request.method!=='POST')return json(405,{error:'method_not_allowed'});
-      const body=await read<SubmitQuestionRequest & SubmitLearningEvidenceRequest & SubmitAfterClassSurveyRequest & {accessToken:string;epoch:number;audioUrl:string;remainingMs:number;actionId:string;answer:string}>();
+      const body=await read<SubmitQuestionRequest & SubmitLearningEvidenceRequest & SubmitAfterClassSurveyRequest & {accessToken:string;epoch:number;audioUrl:string;remainingMs:number;playbackState?:string;startedAt?:string;actionId:string;answer:string}>();
       const access=this.classrooms.authenticate(roomMatch[1],body.accessToken),id=access.sessionId;
       if(operation==='reconnect')return json(200,{participant:access.participant,room:access.room,snapshot:lecture.getSnapshot(id),questions:questions.list(id)});
-      if(operation==='playback')lecture.reportPlayback(id,body.epoch,body.audioUrl,body.remainingMs);
-      if(operation==='stage-complete')lecture.completeStageAction(id,body.epoch,body.actionId);
-      if(operation==='stage-progress')lecture.reportStageProgress(id,body.epoch,body.actionId);
+      if(operation==='playback')lecture.reportPlayback(id,body.epoch,body.audioUrl,body.remainingMs,access.participant.id,body.playbackState,body.startedAt);
+      if(operation==='stage-complete')lecture.completeStageAction(id,body.epoch,body.actionId,access.participant.id);
+      if(operation==='stage-progress')lecture.reportStageProgress(id,body.epoch,body.actionId,access.participant.id);
       if(operation==='questions'){const result=questions.submit({sessionId:id,participantId:access.participant.id,request:body});this.schedule(1000);return json(201,{...result,snapshot:lecture.getSnapshot(id)});}
       if(operation==='answer'){pedagogy.answer({sessionId:id,participantId:access.participant.id,answer:body.answer});return json(200,{snapshot:lecture.getSnapshot(id)});}
       if(operation==='evidence'){pedagogy.submitEvidence({sessionId:id,participantId:access.participant.id,request:body});return json(201,{snapshot:lecture.getSnapshot(id)});}

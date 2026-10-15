@@ -38,6 +38,19 @@ describe("OpenAiCompatibleLlmProvider", () => {
     expect(requests[0]?.response_format).toEqual({ type: "json_schema", json_schema: { name: "review_result", strict: true, schema } });
   });
 
+  it("sends page images beyond sixteen without losing their order", async () => {
+    let sent: {messages:{content:unknown}[]} | undefined;
+    const provider=new OpenAiCompatibleLlmProvider({apiKey:"test",model:"vision-test",fetch:async(_url,init)=>{
+      sent=JSON.parse(String(init?.body));
+      return Response.json({choices:[{message:{content:JSON.stringify({decision:"accept",reasons:[]})}}]});
+    }});
+    const images=Array.from({length:17},(_,i)=>({mimeType:"image/jpeg" as const,dataBase64:Buffer.from(`page ${i+1}`).toString("base64")}));
+    await provider.createContext({purpose:"generation",systemInstruction:"Inspect pages."}).generate({prompt:"IMAGE 1 through IMAGE 17",schemaName:"review",schema,images});
+    const content=sent!.messages[1]!.content as {type:string;image_url?:{url:string}}[];
+    expect(content).toHaveLength(18);
+    expect(content[17]?.image_url?.url).toBe(`data:image/jpeg;base64,${images[16]!.dataBase64}`);
+  });
+
   it("accepts a keyless loopback Ollama endpoint", () => {
     expect(() => new OpenAiCompatibleLlmProvider({ model: "qwen3:8b", baseUrl: "http://localhost:11434/v1" })).not.toThrow();
     expect(() => new OpenAiCompatibleLlmProvider({ model: "remote", baseUrl: "https://example.com/v1" })).toThrow(/API key/);

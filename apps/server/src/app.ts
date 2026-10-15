@@ -1,3 +1,4 @@
+import { lessonPdfSource, pdfSourceHeaders } from "./lesson-pdf-source.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitAfterClassSurveyRequest, SubmitLearningEvidenceRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
 import { WebSocketServer } from "ws";
@@ -5,7 +6,7 @@ import { sendAudio } from "./audio-response.ts";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
-export interface AuthoringApi { list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
+export interface AuthoringApi { readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
 export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 export interface PedagogyApi { answer(input: { sessionId: string; participantId: string; answer: string }): FixedSessionView; submitEvidence(input: { sessionId: string; participantId: string; request: SubmitLearningEvidenceRequest }): FixedSessionView }
 export interface AfterClassApi { submitSurvey(input: { sessionId: string; participantId: string; request: SubmitAfterClassSurveyRequest }): unknown }
@@ -19,9 +20,9 @@ export interface LectureApi {
   subscribe(listener: (sessionId: string, snapshot: ClassroomSnapshot) => void): () => void;
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
-  reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number): void;
-  completeStageAction?(sessionId: string, epoch: number, actionId: string): void;
-  reportStageProgress?(sessionId: string, epoch: number, actionId: string): void;
+  reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number, participantId?: string, playbackState?: string, startedAt?: string): void;
+  completeStageAction?(sessionId: string, epoch: number, actionId: string, participantId?: string): void;
+  reportStageProgress?(sessionId: string, epoch: number, actionId: string, participantId?: string): void;
 }
 
 const unavailableApi: LectureApi = {
@@ -53,7 +54,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         if (request.method === "PUT") return json(response, 200, { settings: settings.save(await readJson<UpdateLlmSettingsRequest>(request)) });
       }
       if (url.pathname === "/api/authoring/jobs" && request.method === "GET") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 200, { jobs: authoring.list() }); }
-      if (url.pathname === "/api/authoring/jobs" && request.method === "POST") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 202, { job: await authoring.begin(await readJson<CreateAuthoringRequest>(request, 28 * 1024 * 1024)) }); }
+      if (url.pathname === "/api/authoring/jobs" && request.method === "POST") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 202, { job: await authoring.begin(await readJson<CreateAuthoringRequest>(request, 36 * 1024 * 1024)) }); }
       const authoringMatch = url.pathname.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart))?$/);
       if (authoringMatch) {
         requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable");
@@ -65,6 +66,17 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "classroom");
         const access = classrooms.join((await readJson<ClassroomJoinRequest>(request)).code);
         return json(response, 201, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
+      }
+      const sourceMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/source$/);
+      if (request.method === "POST" && sourceMatch) {
+        requireSurface(request, "classroom");
+        const body = await readJson<{accessToken: string; sourceId: string}>(request);
+        const access = classrooms.authenticate(sourceMatch[1]!, body.accessToken);
+        const source = lessonPdfSource(api.getSession(access.sessionId).course, body.sourceId);
+        if (!authoring?.readSource) throw new RangeError("Source file unavailable");
+        const bytes = authoring.readSource(source.contentHash);
+        response.writeHead(200, {...pdfSourceHeaders, "content-length": bytes.byteLength});
+        response.end(bytes); return;
       }
       const reconnectMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/reconnect$/);
       if (request.method === "POST" && reconnectMatch) {
@@ -78,15 +90,15 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request,"classroom");
         const body = await readJson<{accessToken:string;epoch:number;actionId:string}>(request);
         const access = classrooms.authenticate(stageMatch[1]!,body.accessToken);
-        if (stageMatch[2] === "progress") api.reportStageProgress?.(access.sessionId,body.epoch,body.actionId);
-        else api.completeStageAction?.(access.sessionId,body.epoch,body.actionId);
+        if (stageMatch[2] === "progress") api.reportStageProgress?.(access.sessionId,body.epoch,body.actionId,access.participant.id);
+        else api.completeStageAction?.(access.sessionId,body.epoch,body.actionId,access.participant.id);
         return json(response,200,{ok:true});
       }
       if (request.method === "POST" && playbackMatch) {
         requireSurface(request, "classroom");
-        const body = await readJson<{ accessToken: string; epoch: number; audioUrl: string; remainingMs: number }>(request);
+        const body = await readJson<{ accessToken: string; epoch: number; audioUrl: string; remainingMs: number; playbackState?: string; startedAt?: string }>(request);
         const access = classrooms.authenticate(playbackMatch[1]!, body.accessToken);
-        api.reportPlayback?.(access.sessionId, body.epoch, body.audioUrl, body.remainingMs);
+        api.reportPlayback?.(access.sessionId, body.epoch, body.audioUrl, body.remainingMs, access.participant.id, body.playbackState, body.startedAt);
         return json(response, 200, { ok: true });
       }
       const questionMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/questions$/);

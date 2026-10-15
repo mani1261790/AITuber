@@ -11,6 +11,7 @@ export interface StageTarget extends SemanticTarget {
 export interface StageScene {
   readonly id: string;
   readonly title: string;
+  readonly slide?: ReadonlyCoursePackage["scenes"][number]["slide"];
   readonly templateId: ReadonlyCoursePackage["scenes"][number]["templateId"];
   readonly targets: readonly StageTarget[];
   readonly focusedTargetId: string | null;
@@ -95,7 +96,7 @@ export function resolveStageScene(
     };
   });
   const focusedTargetIds = new Set([...boardState.focusedTargetIds].filter((targetId) => scene.targetIds.includes(targetId)));
-  return { id: scene.id, title: scene.title, templateId: scene.templateId, targets, focusedTargetId: [...focusedTargetIds][0] ?? null, focusedTargetIds };
+  return { ...(scene.slide ? {slide: scene.slide} : {}), id: scene.id, title: scene.title, templateId: scene.templateId, targets, focusedTargetId: [...focusedTargetIds][0] ?? null, focusedTargetIds };
 }
 
 export function localAssetUrl(assetId: string): string {

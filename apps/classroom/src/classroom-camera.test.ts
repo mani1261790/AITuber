@@ -67,3 +67,21 @@ it("frames the upcoming crossing for the whole cut hold without breaking the coo
   expect(selectClassroomCamera(16/9,teacher,board,current,11,0)).toBe(current);
  }
 });
+
+it("prioritizes material visibility when requested without bypassing the cut hold",()=>{
+ const teacher=new Box3(new Vector3(-2.5,1,.35),new Vector3(-1.5,3.1,1.1));
+ const lecture=selectClassroomCamera(16/9,teacher,board,"front",11,0,"lecture");
+ const material=selectClassroomCamera(16/9,teacher,board,"front",11,0,"material");
+ const coverage=(id:typeof lecture)=>{
+  const camera=new PerspectiveCamera(35,16/9,.1,30);applyClassroomCamera(camera,id);
+  const bounds=(box:Box3)=>{
+   const points=[box.min.x,box.max.x].flatMap(x=>[box.min.y,box.max.y].flatMap(y=>[box.min.z,box.max.z].map(z=>new Vector3(x,y,z).project(camera))));
+   return {left:Math.min(...points.map(p=>p.x)),right:Math.max(...points.map(p=>p.x)),top:Math.max(...points.map(p=>p.y)),bottom:Math.min(...points.map(p=>p.y))};
+  };
+  const t=bounds(teacher),b=bounds(board);
+  return Math.max(0,Math.min(t.right,b.right)-Math.max(t.left,b.left))*Math.max(0,Math.min(t.top,b.top)-Math.max(t.bottom,b.bottom))/((b.right-b.left)*(b.top-b.bottom));
+ };
+ expect(coverage(material)).toBeLessThan(coverage(lecture));
+ expect(selectClassroomCamera(16/9,teacher,board,"front",11,0,"board")).toBe(material);
+ expect(selectClassroomCamera(16/9,teacher,board,lecture,9,0,"material")).toBe(lecture);
+});

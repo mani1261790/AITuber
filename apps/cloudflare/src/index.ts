@@ -1,5 +1,5 @@
 import { authenticated, issueSession, loginHtml, sameOrigin, sameSecret } from "./auth.ts";
-export type AppEnv = Env & { OPERATOR_PASSWORD: string; FISH_API_KEY?: string; FISH_VOICE_ID?: string; OPENAI_API_KEY?: string };
+export type AppEnv = Env & { OPERATOR_PASSWORD: string; FISH_API_KEY?: string; FISH_VOICE_ID?: string; OPENAI_API_KEY?: string; AITUBER_TTS_TEST_MODE?: "tone" | "failure" };
 export { LectureRoom } from "./lecture-room";
 const secureHeaders={"cache-control":"no-store","x-content-type-options":"nosniff","referrer-policy":"no-referrer","x-frame-options":"DENY"};
 export default {

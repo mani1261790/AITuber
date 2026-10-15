@@ -30,7 +30,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -40,8 +40,8 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
   const lookRef = useRef(look);
   useEffect(() => { lookRef.current = look; }, [look]);
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
-  useEffect(() => { stageRef.current = { propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
+  const stageRef = useRef({ materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
+  useEffect(() => { stageRef.current = { materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
   const motionRef = useRef({ state, mouthOpen, speaking: speaking ?? mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -154,6 +154,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
     let gestureTarget: string | null = null;
     let gestureStarted = 0;
     let acknowledgedAction = "";
+    let acknowledgedAt = -Infinity;
     let lastProgressReport = 0;
     let currentCamera: ClassroomCameraId = "front";
     let lastCameraCut = -10;
@@ -298,12 +299,15 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
     let revealCanvas:HTMLCanvasElement|null=null;
     let revealTick=-1;
     let boardActionId="";
+    let screenActionId="";
+    let screenAlreadyDown=false;
     let previousBoard:HTMLCanvasElement|null=null;
     let boardHasInk=false;
     let eraseFirst=false;
     let inkArea:EraseArea|undefined;
     let eraseArea:EraseArea|undefined;
     let propAcknowledged="";
+    let propAcknowledgedAt=-Infinity;
     const render = () => {
       if (disposed) return;
       // Root travel, gait speed and pose solvers must advance on the same timestep.
@@ -341,6 +345,9 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         setLessonMap(boardMaterial, boardTexture);
         setLessonMap(screenMaterial, texture);
       }
+      const screenDirection=stageRef.current.direction?.phase==="projecting"?stageRef.current.direction:null;
+      if(screenDirection && screenActionId!==screenDirection.actionId){screenActionId=screenDirection.actionId;screenAlreadyDown=curtain>.998;}
+      if(!screenDirection)screenActionId="";
       const drawingDirection=stageRef.current.direction?.phase==="drawing"?stageRef.current.direction:null;
       const drawingReady=!!drawingDirection?.drawing && currentImage?.drawingId===drawingDirection.drawing.id;
       if(drawingDirection && boardActionId!==drawingDirection.actionId){
@@ -350,13 +357,19 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
         revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
         revealCanvas.getContext("2d")!.drawImage(previousBoard,0,0);
       }
-      const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (drawingDirection?{
+      const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (screenDirection && !screenAlreadyDown ? {id:screenDirection.actionId,kind:"screen"} : drawingDirection?{
         id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingDuration:currentImage?.boardReveal?.duration ?? 1,
       }:undefined);
       const destination=propAction?propMotion.destination(propAction,curtain>.02):null;
       const propReady=reducedMotion || (!!destination && !!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-destination.yaw),Math.cos(locomotion.yaw-destination.yaw)))<.05);
       const propFrame=propMotion.update(propAction,propReady && (!drawingDirection || drawingReady),delta,curtain>.02);
       curtain = propFrame ? (propFrame.kind==="screen"?propFrame.progress:0) : reducedMotion ? Number(stageRef.current.projecting) : THREE.MathUtils.damp(curtain,stageRef.current.projecting ? 1 : 0,7,delta);
+      if(screenDirection){
+        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(screenDirection.actionId);}
+        if(stageRef.current.materialReady && currentImage && (screenAlreadyDown || propFrame?.done) && (propAcknowledged!==screenDirection.actionId || time-propAcknowledgedAt>1)){
+          propAcknowledged=screenDirection.actionId;propAcknowledgedAt=time;stageRef.current.onStageComplete?.(screenDirection.actionId);
+        }
+      }
       if(drawingDirection && drawingReady && currentImage){
         const elapsed=propFrame?.writingElapsed??0;
         const tick=propFrame?.kind==="write"?10000+Math.floor(elapsed*15):Math.floor((propFrame?.eraseElapsed??0)*15);
@@ -372,8 +385,8 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           setLessonMap(boardMaterial,boardTexture);
         }
         if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId);}
-        if(propFrame?.done && propAcknowledged!==drawingDirection.actionId){
-          propAcknowledged=drawingDirection.actionId;stageRef.current.onStageComplete?.(drawingDirection.actionId);
+        if(propFrame?.done && (propAcknowledged!==drawingDirection.actionId || time-propAcknowledgedAt>1)){
+          propAcknowledged=drawingDirection.actionId;propAcknowledgedAt=time;stageRef.current.onStageComplete?.(drawingDirection.actionId);
         }
       }else if(boardActionId){
         boardActionId="";previousBoard=null; // Keep the displayed ink until the next physical wipe.
@@ -406,7 +419,7 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
             if (bone) teacherBounds.expandByPoint(bone.getWorldPosition(new THREE.Vector3()));
           }
           teacherBounds.expandByScalar(.16);
-          const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut,destinationX-avatar.scene.position.x);
+          const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut,destinationX-avatar.scene.position.x,direction?.camera ?? "lecture");
           if (next !== currentCamera) { currentCamera=next; lastCameraCut=time; }
           renderer.domElement.dataset.camera=currentCamera;
         }
@@ -495,8 +508,9 @@ export function VrmAvatar({ propAction, modelUrl = teacherModelUrl, look = "anim
           lastProgressReport=time;
           stageRef.current.onStageProgress?.(direction.actionId);
         }
-        if ((direction?.phase === "moving" || direction?.traveling) && !walking && !teacherMotion?.settlingFeet && Math.abs(distance)<.04 && Math.abs(Math.atan2(Math.sin(avatar.scene.rotation.y-facing),Math.cos(avatar.scene.rotation.y-facing)))<.08 && acknowledgedAction !== direction.actionId) {
+        if ((direction?.phase === "moving" || direction?.traveling) && !walking && !teacherMotion?.settlingFeet && Math.abs(distance)<.04 && Math.abs(Math.atan2(Math.sin(avatar.scene.rotation.y-facing),Math.cos(avatar.scene.rotation.y-facing)))<.08 && (acknowledgedAction !== direction.actionId || time-acknowledgedAt>1)) {
           acknowledgedAction = direction.actionId;
+          acknowledgedAt = time;
           stageRef.current.onStageComplete?.(direction.actionId);
         }
       }

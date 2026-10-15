@@ -1,6 +1,7 @@
+import { quadraticFunctionsFixture } from "@aituber/content";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LectureEventStore, QuestionStore } from "@aituber/storage";
 import { TestToneSpeechProvider } from "@aituber/providers";
 import { createApp } from "./app.ts";
@@ -42,6 +43,48 @@ async function startServer() {
 }
 
 describe("server boundary", () => {
+  it("serves original PDF bytes only to a participant of the owning lesson", async () => {
+    const course=structuredClone(quadraticFunctionsFixture);
+    const source={...course.sources[0]!,kind:"pdf" as const,pageCount:1};
+    const store=new LectureEventStore(":memory:");
+    const service=new FixedLectureService({store,courses:[{...course,sources:[source]}]});
+    resources.add({service,store});
+    const bytes=Buffer.from("%PDF-1.4 original source bytes");
+    const readSource=vi.fn(()=>bytes);
+    const job=authoringJob();
+    const server=createApp(service,undefined,{list:()=>[],get:()=>job,begin:async()=>job,beginResume:()=>job,beginRestart:()=>job,readSource});
+    servers.add(server);server.listen(0,"127.0.0.1");await once(server,"listening");
+    const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post=async(path:string,body:unknown,surface="classroom")=>fetch(origin+path,{method:"POST",headers:{"content-type":"application/json","x-aituber-surface":surface},body:JSON.stringify(body)});
+    const started=await (await post("/api/sessions",{coursePackageId:course.id,durationMinutes:6},"operator")).json() as {classroom:{code:string}};
+    const joined=await (await post("/api/classrooms/join",{code:started.classroom.code})).json() as {participant:{accessToken:string}};
+    const path=`/api/classrooms/${started.classroom.code}/source`;
+    const response=await post(path,{accessToken:joined.participant.accessToken,sourceId:source.id});
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/pdf");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+    expect(readSource).toHaveBeenCalledExactlyOnceWith(source.contentHash);
+    expect((await post(path,{accessToken:"invalid",sourceId:source.id})).status).toBe(401);
+    expect((await post(path,{accessToken:joined.participant.accessToken,sourceId:"source.other-course"})).status).toBe(404);
+    expect(readSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("derives stage notification identity from the participant token",async()=>{
+    const store=new LectureEventStore(":memory:");const service=new FixedLectureService({store});resources.add({store,service});
+    const complete=vi.spyOn(service,"completeStageAction"),progress=vi.spyOn(service,"reportStageProgress");
+    const server=createApp(service);servers.add(server);server.listen(0,"127.0.0.1");await once(server,"listening");
+    const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post=(path:string,body:unknown,surface="classroom")=>fetch(origin+path,{method:"POST",headers:{"content-type":"application/json","x-aituber-surface":surface},body:JSON.stringify(body)});
+    const started=await (await post("/api/sessions",{coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6},"operator")).json() as {session:{id:string;epoch:number};classroom:{code:string}};
+    const joined=await (await post("/api/classrooms/join",{code:started.classroom.code})).json() as {participant:{id:string;accessToken:string}};
+    for(const kind of ["complete","progress"]){
+      const response=await post(`/api/classrooms/${started.classroom.code}/stage-${kind}`,{accessToken:joined.participant.accessToken,epoch:started.session.epoch,actionId:"action.check",participantId:"forged"});
+      expect(response.status).toBe(200);
+    }
+    for(const spy of [complete,progress])expect(spy).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id);
+  });
+
   it("reports health without exposing provider configuration", async () => {
     const origin = await startServer();
     const response = await fetch(`${origin}/healthz`);

@@ -53,7 +53,7 @@ export interface LessonDirectionView {
   readonly drawing?: BlackboardDrawing | null;
   readonly surface?: "board" | "slides";
   readonly actionId: string;
-  readonly phase: "planning" | "drawing" | "moving" | "pointing" | "speaking" | "resting" | "complete";
+  readonly phase: "planning" | "projecting" | "drawing" | "moving" | "pointing" | "speaking" | "resting" | "complete";
   readonly position: StagePosition;
   readonly targetId: string | null;
   readonly camera: StageCamera;
@@ -278,6 +278,7 @@ export type AuthoringGateId = "source-alignment" | "factual-consistency" | "goal
 export interface AuthoringReviewGate { readonly id: AuthoringGateId; readonly passed: boolean; readonly rationale: string; readonly locations: readonly string[]; readonly repairInstruction: string }
 export interface AuthoringReview { readonly gates: readonly AuthoringReviewGate[]; readonly repairMode: "local" | "regenerate"; readonly summary: string }
 export interface AuthoringSourceUpload {
+  readonly pageImages?: readonly { readonly pageNumber: number; readonly mimeType: "image/jpeg" | "image/png"; readonly dataBase64: string }[];
   readonly fileName: string;
   readonly mimeType: "application/pdf" | "image/png" | "image/jpeg" | "image/webp" | "text/markdown" | "text/plain";
   readonly dataBase64: string;

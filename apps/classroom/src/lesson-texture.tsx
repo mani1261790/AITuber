@@ -1,3 +1,4 @@
+import { renderPdfSlide, type SlideAccess } from "./pdf-slide.ts";
 import { measureBoardReveal, type BoardReveal } from "./board-reveal.ts";
 import type { BlackboardDrawing, LessonDirectionView } from "@aituber/contracts";
 import { useEffect, useRef, useState } from "react";
@@ -10,18 +11,20 @@ import { TargetView } from "./target-view.tsx";
 import { VrmAvatar } from "./vrm-avatar.tsx";
 import type { MascotPresentation } from "@aituber/presentation";
 
-export interface LessonImage { canvas: HTMLCanvasElement; boardCanvas: HTMLCanvasElement; regions: ImageRegion[]; boardRegions: ImageRegion[]; drawingId?: string; boardReveal?: BoardReveal }
+export interface LessonImage { contentKey?: string; canvas: HTMLCanvasElement; boardCanvas: HTMLCanvasElement; regions: ImageRegion[]; boardRegions: ImageRegion[]; drawingId?: string; boardReveal?: BoardReveal }
 interface ImageRegion { id: string; x: number; y: number; width: number; height: number; anchorX: number }
 
-export function LessonStage({ listening = false, speaking, readSpeechLevel, scene, notes = [], noteText, presentation, projecting, onSelect, direction, onStageComplete, onStageProgress }: { listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
+export function LessonStage({ slideAccess, listening = false, speaking, readSpeechLevel, scene, notes = [], noteText, presentation, projecting, onSelect, direction, onStageComplete, onStageProgress }: { slideAccess?: SlideAccess | undefined; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
+  const pdfCache = useRef<{ key: string; result: Awaited<ReturnType<typeof renderPdfSlide>> } | null>(null);
   const source = useRef<HTMLDivElement>(null);
   const boardSource = useRef<HTMLDivElement>(null);
   const [image, setImage] = useState<LessonImage | null>(null);
   const [error, setError] = useState(false);
   const drawing = direction?.drawing;
-  const contentKey = JSON.stringify({ title: scene.title, targets: scene.targets.filter(t => t.visible).map(t => ({ ...t, focused: false })), notes, noteText, drawing });
+  const contentKey = JSON.stringify({ slide:scene.slide, slideAccess, title: scene.title, targets: scene.targets.filter(t => t.visible).map(t => ({ ...t, focused: false })), notes, noteText, drawing });
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     if (!source.current || !boardSource.current) return;
     // Freeze this revision while fonts and image resources are loaded asynchronously.
     const node = source.current.cloneNode(true) as HTMLDivElement;
@@ -42,9 +45,15 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
         element.style.strokeDashoffset = "0";
       }
       const options = { pixelRatio: 1, width: 1280, height: 720, preferredFontFormat: "woff2", style: { position: "static", left: "0", top: "0" } };
-      const fontEmbedCSS = await rasterFontCss(node);
+      const fontEmbedCSS = scene.slide ? "" : await rasterFontCss(node);
       if (!active) return;
-      const canvas = await toCanvas(node, { ...options, fontEmbedCSS });
+      if (scene.slide && !slideAccess) throw new Error("PDF閲覧権限がありません");
+      const pdfKey=JSON.stringify({slide:scene.slide,slideAccess,targets:scene.targets.map(t=>({id:t.id,visible:t.visible,region:t.pageRegion}))});
+      const pdfSlide = scene.slide ? pdfCache.current?.key === pdfKey ? pdfCache.current.result : await renderPdfSlide(scene,slideAccess!,controller.signal) : null;
+      if (!active) return;
+      if(pdfSlide)pdfCache.current={key:pdfKey,result:pdfSlide};
+      else pdfCache.current=null;
+      const canvas = pdfSlide?.canvas ?? await toCanvas(node, { ...options, fontEmbedCSS });
       if (!active) return;
       let boardCanvas: HTMLCanvasElement;
       if (drawing?.svg || (!drawing?.markdown && !notes.length && !noteText)) {
@@ -72,14 +81,14 @@ export function LessonStage({ listening = false, speaking, readSpeechLevel, scen
       }); };
       const svgRegion = drawing?.svg ? await paintBlackboardSvg(drawing,boardCanvas) : null;
       const boardReveal=measureBoardReveal(boardNode);
-      if (active) setImage({ ...(boardReveal ? {boardReveal} : {}), canvas, boardCanvas, regions: measure(node), boardRegions: svgRegion ? [svgRegion] : measure(boardNode), ...(drawing ? {drawingId:drawing.id} : {}) });
+      if (active) setImage({contentKey, ...(boardReveal ? {boardReveal} : {}), canvas, boardCanvas, regions: pdfSlide?.regions ?? measure(node), boardRegions: svgRegion ? [svgRegion] : measure(boardNode), ...(drawing ? {drawingId:drawing.id} : {}) });
     })().catch(() => { if (active) setError(true); }).finally(() => { node.remove(); boardNode.remove(); });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [contentKey]);
   return <>
     <div className="lesson-image-source" aria-hidden="true" inert ref={source}><h2>{scene.title}</h2><div className="image-targets">{scene.targets.filter(t => t.visible).map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}</div></div>
     <div className="lesson-image-source lesson-image-source--board" aria-hidden="true" inert ref={boardSource}>{drawing?.markdown ? <BoardMarkdown text={drawing.markdown} id={drawing.id}/> : (notes.length > 0 || noteText) && <><h2>補足メモ</h2><div className="image-targets">{notes.map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}{noteText && <RichText text={noteText} />}</div></>}</div>
-    <VrmAvatar listening={listening} speaking={speaking} readSpeechLevel={readSpeechLevel} state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onStageComplete={onStageComplete} onStageProgress={onStageProgress} />
+    <VrmAvatar materialReady={Boolean(image && image.contentKey === contentKey)} listening={listening} speaking={speaking} readSpeechLevel={readSpeechLevel} state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onStageComplete={onStageComplete} onStageProgress={onStageProgress} />
     <div className="sr-only" aria-label="教材の内容"><h2>{scene.title}</h2>{scene.targets.filter(t => t.visible).map(target => <p key={target.id}>{target.label}: {target.content}</p>)}</div>
     {!image && <span className="stage-loading" role="status">{error ? "教材画像を作成できません。再読み込みしてください。" : "教材を準備中…"}</span>}
     {image && direction?.phase === "planning" && <span className="stage-loading director-planning" role="status">次の説明を準備中…</span>}

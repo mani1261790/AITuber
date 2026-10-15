@@ -47,6 +47,20 @@ describe("CourseAuthoringService", () => {
     expect(service.get(result.id).course?.status).toBe("available");
   });
 
+  it("repairs a missing teaching plan before requesting independent review", async () => {
+    const source=upload("Quadratic notes");
+    const valid=remapSource(quadraticFunctionsFixture,sourceId(source));
+    const invalid=structuredClone(valid);delete invalid.teachingUnits[0]!.teachingPlan;
+    const provider=new FixedResponseLlmProvider([invalid,valid,passingReview()]);
+    const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),"aituber-plan-")),llm:()=>provider});
+    const result=await service.create({durationMinutes:6,sources:[source]});
+    expect(result.status).toBe("available");
+    expect(result.attempts).toBe(2);
+    expect(provider.calls.map(call=>call.purpose)).toEqual(["generation","generation","review"]);
+    expect(provider.calls[1]?.prompt).toContain("teachingPlan");
+    expect(result.course?.teachingUnits.every(unit=>unit.teachingPlan)).toBe(true);
+  });
+
   it("stops at a budget checkpoint and can resume without discarding the candidate", async () => {
     const source = upload("DNA notes"); const candidate = remapSource(dnaReplicationFixture, sourceId(source));
     const provider = new FixedResponseLlmProvider([candidate, candidate, passingReview()], { inputTokens: 100, outputTokens: 100, totalTokens: 200, estimatedCostUsd: 0.75 });
@@ -104,7 +118,7 @@ function upload(text: string) { return { fileName: "notes.md", mimeType: "text/m
 function sourceId(source: ReturnType<typeof upload>) { return `source.${createHash("sha256").update(Buffer.from(source.dataBase64, "base64")).digest("hex").slice(0, 24)}`; }
 function remapSource(fixture: ReadonlyCoursePackage, id: string): CoursePackage {
   const value = structuredClone(fixture) as CoursePackage;
-  value.semanticTargets.forEach((target) => { target.sourceIds = [id]; }); value.teachingUnits.forEach((unit) => { unit.sourceIds = [id]; unit.captionText = unit.speechText; });
+  value.semanticTargets.forEach((target) => { target.sourceIds = [id]; }); value.teachingUnits.forEach((unit) => { unit.sourceIds = [id]; unit.captionText = unit.speechText; unit.teachingPlan = {keyPoints:[unit.postconditions[0]!], explanationFlow:[unit.speechText]}; });
   return value;
 }
 function passingReview() { return { gates: gateIds().map((id) => ({ id, passed: true, rationale: "verified", locations: [], repairInstruction: "" })), repairMode: "local", summary: "all gates passed" }; }

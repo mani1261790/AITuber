@@ -35,6 +35,7 @@ export const SourceMaterialSchema = closedObject({
   ]),
   fileName: Type.String({ minLength: 1, maxLength: 255 }),
   contentHash: Hash,
+  pageCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   rights: closedObject({
     basis: Type.Union([
       Type.Literal("owned"),
@@ -65,12 +66,19 @@ export const SemanticTargetSchema = closedObject({
   ]),
   label: ShortText,
   content: NonEmptyText,
+  pageRegion: Type.Optional(closedObject({
+    x: Type.Number({ minimum: 0, maximum: 1 }),
+    y: Type.Number({ minimum: 0, maximum: 1 }),
+    width: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+    height: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+  })),
   assetId: Type.Optional(Identifier),
   altText: Type.Optional(ShortText),
   sourceIds: Type.Array(Identifier, { minItems: 1, maxItems: MAX_SOURCES, uniqueItems: true }),
 });
 
 export const SceneSchema = closedObject({
+  slide: Type.Optional(closedObject({ sourceId: Identifier, pageNumber: Type.Integer({ minimum: 1, maximum: 500 }) })),
   id: Identifier,
   title: ShortText,
   templateId: Type.Union([
@@ -257,12 +265,28 @@ function validateReferences(coursePackage: CoursePackage): ValidationIssue[] {
   coursePackage.concepts.forEach((concept, index) =>
     checkReferences(concept.prerequisiteConceptIds, conceptIds, `/concepts/${index}/prerequisiteConceptIds`, issues),
   );
-  coursePackage.scenes.forEach((scene, index) =>
-    checkReferences(scene.targetIds, targetIds, `/scenes/${index}/targetIds`, issues),
-  );
+  coursePackage.sources.forEach((source, index) => {
+    if (source.pageCount !== undefined && source.kind !== "pdf") issues.push({path: `/sources/${index}/pageCount`, message: "Only PDF sources have page counts"});
+  });
+  coursePackage.scenes.forEach((scene, index) => {
+    checkReferences(scene.targetIds, targetIds, `/scenes/${index}/targetIds`, issues);
+    if (scene.slide) {
+      const source = coursePackage.sources.find(source => source.id === scene.slide!.sourceId);
+      if (!source || source.kind !== "pdf" || !source.pageCount || scene.slide.pageNumber > source.pageCount) {
+        issues.push({path: `/scenes/${index}/slide`, message: "Slide must reference an existing page of a PDF source"});
+      }
+    }
+  });
   coursePackage.semanticTargets.forEach((target, index) => {
     checkReference(target.sceneId, sceneIds, `/semanticTargets/${index}/sceneId`, issues);
     checkReferences(target.sourceIds, sourceIds, `/semanticTargets/${index}/sourceIds`, issues);
+    if (target.pageRegion) {
+      const scene = coursePackage.scenes.find(scene => scene.id === target.sceneId);
+      const r = target.pageRegion;
+      if (!scene?.slide || !target.sourceIds.includes(scene.slide.sourceId) || r.x + r.width > 1.000001 || r.y + r.height > 1.000001) {
+        issues.push({path: `/semanticTargets/${index}/pageRegion`, message: "Page region must lie within its referenced slide"});
+      }
+    }
     if (target.kind === "image" && (!target.assetId || !target.altText)) {
       issues.push({
         path: `/semanticTargets/${index}`,

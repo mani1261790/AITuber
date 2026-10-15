@@ -143,3 +143,32 @@ describe("assertCoursePackageRevision", () => {
     expect(assertCoursePackageRevision(previous, candidate).version).toBe(2);
   });
 });
+
+describe("PDF slide provenance", () => {
+  function pdfCourse() {
+    const course = validCoursePackage();
+    course.sources[0] = {...course.sources[0]!, kind: "pdf", pageCount: 2};
+    course.scenes[0]!.slide = {sourceId: course.sources[0]!.id, pageNumber: 2};
+    course.semanticTargets[0]!.pageRegion = {x: .1, y: .2, width: .7, height: .3};
+    return course;
+  }
+  it("retains original page references and normalized target coordinates", () => {
+    const course = parseCoursePackage(pdfCourse());
+    expect(course.scenes[0]?.slide?.pageNumber).toBe(2);
+    expect(course.semanticTargets[0]?.pageRegion?.x).toBe(.1);
+  });
+  it.each([0, 3])("rejects nonexistent page %i", pageNumber => {
+    const course = pdfCourse(); course.scenes[0]!.slide!.pageNumber = pageNumber;
+    expect(() => parseCoursePackage(course)).toThrow(CoursePackageValidationError);
+  });
+  it("rejects a different source and an off-page pointing region", () => {
+    const course = pdfCourse(); course.scenes[0]!.slide!.sourceId = "source.missing";
+    expect(() => parseCoursePackage(course)).toThrow(CoursePackageValidationError);
+    const overflow = pdfCourse(); overflow.semanticTargets[0]!.pageRegion!.width = 1;
+    expect(() => parseCoursePackage(overflow)).toThrow(CoursePackageValidationError);
+  });
+  it("rejects page metadata for non-PDF content", () => {
+    const course = pdfCourse(); course.sources[0]!.kind = "markdown";
+    expect(() => parseCoursePackage(course)).toThrow(CoursePackageValidationError);
+  });
+});

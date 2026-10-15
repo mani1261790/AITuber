@@ -21,10 +21,25 @@ describe("lesson director",()=>{
       const llm = new FixedResponseLlmProvider([{beats:[{text:"では、この式の頂点に注目しましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position:"right",gesture:"explain",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
       const plan = await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"さきほどの説明",remainingMs:10000},new AbortController().signal);
       expect(plan.source).toBe("generated");
-      expect(plan.actions.map(action=>action.type)).toEqual(["camera","move_to","point_at","speak","release_point"]);
+      expect(plan.actions.map(action=>action.type)).toEqual(["show_slides","camera","move_to","point_at","speak","release_point"]);
       expect(llm.calls[0]?.prompt).toContain("さきほどの説明");
     } finally {runtime.close();}
   });
+  it("does not invent pointing regions on PDF slides with no known focus", async () => {
+    const runtime=setup();
+    try {
+      const original=runtime.session.course;
+      const unit={...original.teachingUnits[0]!,focusTargetIds:[]};
+      const course={...original,scenes:original.scenes.map(scene=>scene.id===unit.sceneId ? {...scene,slide:{sourceId:original.sources[0]!.id,pageNumber:1}} : scene)};
+      const input={session:{...runtime.session,course},unit,previousSpeech:"",remainingMs:10000};
+      expect(()=>validatePlan([{type:"point_at",targetId:original.semanticTargets[0]!.id},{type:"speak",text:"説明"}],input)).toThrow("Unknown pointing target");
+      const llm=new FixedResponseLlmProvider([{beats:[{text:"このページの考え方を説明します。",targetId:null,camera:"lecture",position:"right",gesture:"explain",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
+      const result=await createLessonPlanner(()=>llm)(input,new AbortController().signal);
+      expect(result.source).toBe("generated");
+      expect(result.actions.some(action=>action.type==="point_at")).toBe(false);
+    } finally {runtime.close();}
+  });
+
   it("falls back without a configured provider and validates target and wording",async()=>{
     const runtime = setup();
     try {

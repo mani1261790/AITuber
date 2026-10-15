@@ -15,6 +15,35 @@ describe("ingestSources", () => {
     expect(result.text).toContain("Hello PDF lesson");
   });
 
+  it("preserves page boundaries and rotated dimensions for original-slide projection", async () => {
+    const result = await ingestSources([{ fileName: "two.pdf", mimeType: "application/pdf", dataBase64: twoPagePdf(), rights: { basis: "owned" } }]);
+    expect(result.sources[0]?.pageCount).toBe(2);
+    expect(result.pages).toMatchObject([
+      { pageNumber: 1, width: 300, height: 144, text: "First slide" },
+      { pageNumber: 2, width: 144, height: 300, text: "Second slide" },
+    ]);
+    expect(result.pages?.every(page => page.sourceId === result.sources[0]?.id)).toBe(true);
+    expect(result.text.indexOf("PAGE 1")).toBeLessThan(result.text.indexOf("First slide"));
+    expect(result.text.indexOf("First slide")).toBeLessThan(result.text.indexOf("PAGE 2"));
+    expect(result.text.indexOf("PAGE 2")).toBeLessThan(result.text.indexOf("Second slide"));
+  });
+
+  it("accepts scanned PDFs with complete page images and labels their page provenance", async () => {
+    const dataBase64=Buffer.from([0xff,0xd8,0xff,0xd9]).toString("base64");
+    const result=await ingestSources([{fileName:"scan.pdf",mimeType:"application/pdf",dataBase64:tinyPdf(""),rights:{basis:"owned"},pageImages:[{pageNumber:1,mimeType:"image/jpeg",dataBase64}]}]);
+    expect(result.images).toEqual([{mimeType:"image/jpeg",dataBase64}]);
+    expect(result.text).toContain(`IMAGE 1: SOURCE ${result.sources[0]!.id}, PAGE 1`);
+    expect(result.pages?.[0]?.text).toBe("");
+  });
+
+  it("rejects missing, duplicate and mislabeled PDF page images", async () => {
+    const image={pageNumber:1,mimeType:"image/jpeg" as const,dataBase64:Buffer.from([0xff,0xd8,0xff,0xd9]).toString("base64")};
+    const upload={fileName:"two.pdf",mimeType:"application/pdf" as const,dataBase64:twoPagePdf(),rights:{basis:"owned" as const}};
+    await expect(ingestSources([{...upload,pageImages:[image]}])).rejects.toThrow("Every PDF page");
+    await expect(ingestSources([{...upload,pageImages:[image,image]}])).rejects.toThrow("duplicate");
+    await expect(ingestSources([{...upload,pageImages:[image,{...image,pageNumber:2,dataBase64:"YQ=="}]}])).rejects.toThrow("declared MIME");
+  });
+
   it("loads bundled CMaps when extracting Japanese PDF text", async () => {
     const result = await ingestSources([{ fileName: "japanese.pdf", mimeType: "application/pdf", dataBase64: japanesePdf("二次関数"), rights: { basis: "owned" } }]);
     expect(result.text).toContain("二次関数");
@@ -73,5 +102,26 @@ function japanesePdf(text: string): string {
   objects.forEach((object, index) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
   const xref = Buffer.byteLength(pdf);
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf).toString("base64");
+}
+
+function twoPagePdf(): string {
+  const stream = (text: string) => {
+    const body = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
+    return `<< /Length ${body.length} >>\nstream\n${body}\nendstream`;
+  };
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    stream("First slide"),
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Rotate 90 /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>",
+    stream("Second slide"),
+  ];
+  let pdf = "%PDF-1.4\n"; const offsets = [0];
+  objects.forEach((object, index) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(pdf).toString("base64");
 }

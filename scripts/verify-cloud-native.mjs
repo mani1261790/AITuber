@@ -14,7 +14,7 @@ config.name='aituber-native-test';delete config.account_id;
 config.main=resolve('apps/cloudflare/src/index.ts');
 config.assets.directory=resolve('dist/cloudflare');
 config.alias=Object.fromEntries(Object.entries(config.alias).map(([key,value])=>[key,resolve('apps/cloudflare',value)]));
-config.vars={...config.vars,OPERATOR_PASSWORD:'native-runtime-test-password',FISH_API_KEY:'',FISH_VOICE_ID:'',OPENAI_API_KEY:''};
+config.vars={...config.vars,OPERATOR_PASSWORD:'native-runtime-test-password',FISH_API_KEY:'',FISH_VOICE_ID:'',OPENAI_API_KEY:'',AITUBER_TTS_TEST_MODE:'tone'};
 await writeFile(join(directory,'wrangler.json'),JSON.stringify(config));
 const probe=createServer();probe.listen(0,'127.0.0.1');await once(probe,'listening');const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
 const base=`http://127.0.0.1:${port}`;
@@ -40,7 +40,8 @@ try{
  const joined=await api('/api/classrooms/join',{code:classroom.code});const accessToken=joined.participant.accessToken;
  const socket=new WebSocket(base.replace('http:','ws:')+`/api/classrooms/${classroom.code}/stream?token=${accessToken}`);
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('WebSocket snapshot timeout')),10000);socket.onmessage=event=>{try{assert.equal(JSON.parse(event.data).type,'snapshot');clearTimeout(timer);socket.close();resolve();}catch(error){reject(error);}};socket.onerror=reject;});
- const {job}=await api('/api/authoring/jobs',{durationMinutes:5,sources:[{fileName:'japanese.pdf',mimeType:'application/pdf',dataBase64:japanesePdf('二次関数'),rights:{basis:'owned'}}]});assert.equal(job.sourceCount,1);
+ // Placeholder page image checks upload/persistence only; no live LLM or visual-quality claim.
+ const {job}=await api('/api/authoring/jobs',{durationMinutes:5,sources:[{fileName:'japanese.pdf',mimeType:'application/pdf',dataBase64:japanesePdf('二次関数'),pageImages:[{pageNumber:1,mimeType:'image/png',dataBase64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='}],rights:{basis:'owned'}}]});assert.equal(job.sourceCount,1);
  await stop();await start();
  const restored=await api('/api/sessions/current');assert.equal(restored.session.id,session.id);assert.equal(restored.session.status,'PAUSED');assert.equal(restored.classroom.code,classroom.code);assert.ok(restored.session.epoch>session.epoch);
  const reconnected=await api(`/api/classrooms/${classroom.code}/reconnect`,{accessToken});assert.equal(reconnected.participant.id,joined.participant.id);
