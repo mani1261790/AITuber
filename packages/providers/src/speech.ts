@@ -145,7 +145,7 @@ export class FishAudioTtsProvider implements TextToSpeechProvider {
         reference_id: request.voiceId,
         format: "opus",
         sample_rate: 48_000,
-        latency: "balanced",
+        latency: "normal",
         normalize: true,
         chunk_length: 300,
       }),

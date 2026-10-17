@@ -68,7 +68,7 @@ describe("FishAudioTtsProvider", () => {
     expect(result.synthesisMs).toBeGreaterThanOrEqual(result.firstAudioMs);
     expect(captured?.signal).toBe(controller.signal);
     expect(captured?.headers).toMatchObject({ authorization: "Bearer secret", model: "s2.1-pro-free" });
-    expect(JSON.parse(String(captured?.body))).toMatchObject({ format: "opus", sample_rate: 48_000 });
+    expect(JSON.parse(String(captured?.body))).toMatchObject({ format: "opus", sample_rate: 48_000, latency: "normal", reference_id: request.voiceId });
   });
 });
 

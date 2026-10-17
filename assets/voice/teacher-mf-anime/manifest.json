@@ -1,0 +1,9 @@
+{
+  "voiceId": "af85cdf4121b4ec59243afe7b90748d4",
+  "state": "trained",
+  "visibility": "private",
+  "model": "s2.1-pro-free",
+  "referenceSha256": "498432f0267ffd5049d60bc80ff44136c970cace931841ad1049510509ab9502",
+  "source": "Irodori MF / Anime reference, approved Fish preview 2026-10-18",
+  "enhanceAudioQuality": false
+}
