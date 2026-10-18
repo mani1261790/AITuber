@@ -88,3 +88,23 @@ KVによるカウンター保存・alarmの書き込みはSQLの2万行に含め
 - https://developers.cloudflare.com/durable-objects/platform/pricing/
 - https://developers.cloudflare.com/durable-objects/observability/metrics-and-analytics/
 - https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
+
+## 本番反映と残存する旧アクセス
+
+修正コード `6d66800` を本番に反映した。
+https://github.com/mani1261790/AITuber/actions/runs/39142733894
+ビルド、型検査、認証・プロバイダテスト、ネイティブ結合テスト、使用量と保護停止テスト、本番へのデプロイ、公開/非公開境界検証は成功。
+最後の認証済み正常応答検証はCloudflareの日次上限のため失敗しており、ワークフロー全体の成功とは扱わない。
+本番ブラウザでは状態取得が1回だけ発生し、上限応答後は仮想時計を65秒進めても再取得しないことを確認した。教材読み込みの復旧は未確認。
+
+再集計（日本時間0:57:35）でAITuberのHTTPリクエストは85,790回となり、0:40:56から1,223回増えた。読み取り行数は5,125,770のまま。
+これは上限で止まっている状態での集計であり、修正後の通常負荷が小さくなった証拠にはしない。
+
+さらにこちらからAPIを呼ばずに30秒間tailを観測し、旧4APIの503応答を28件確認した。
+`/api/settings/llm` 7件、`/api/authoring/jobs` 7件、`/api/courses` 8件、`/api/sessions/current` 6件。
+同じtailにはDurable Object内部例外イベントも25件あり、HTTPリクエスト28件と重複するため合算しない。
+新しい `/api/operator/snapshot` はこの観測に含まれない。
+旧クライアント方式の反復アクセスが残っていることは確認できたが、個人情報・Cookie・IP等は収集しておらず、具体的な端末・タブまでは特定していない。
+旧版の管理画面・受講画面を再読み込み、または閉じる必要がある。
+観測ジョブ: https://github.com/mani1261790/AITuber/actions/runs/39143009676
+原票: `output/cloudflare-usage/traffic.json`（URLのクエリ・認証情報・本文は保存しない）。
