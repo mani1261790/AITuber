@@ -22,6 +22,15 @@ describe("CourseAuthoringService", () => {
     expect(result.course!.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(result.course!.sources[0]!.contentHash).toBe('sha256:'+createHash('sha256').update(Buffer.from(source.dataBase64,'base64')).digest('hex'));
   });
+  it('accepts passed reviews without redundant empty repair instructions', async () => {
+    const source=upload('Quadratic source');const candidate=remapSource(quadraticFunctionsFixture,sourceId(source));
+    const review=JSON.parse(JSON.stringify(passingReview()));for(const gate of review.gates)delete gate.repairInstruction;
+    const provider=new FixedResponseLlmProvider([candidate,review]);
+    const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-review-default-')),llm:()=>provider});
+    const result=await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).toBe('available');expect(result.attempts).toBe(1);
+    expect(result.review!.gates.every(gate=>gate.passed && gate.repairInstruction==='')).toBe(true);
+  });
   it.each(fixtures.map((fixture) => [fixture.targetLevel, fixture] as const))("makes the %s verification material available after independent review", async (_level, fixture) => {
     const source = upload(`Source notes for ${fixture.title}`);
     const candidate = remapSource(fixture, sourceId(source));
