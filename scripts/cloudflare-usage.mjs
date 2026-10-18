@@ -17,6 +17,19 @@ for(const [label,path] of [['workers',`accounts/${account}/workers/scripts`],['n
 }
 const schema=await request('graphql',{query:'{__schema{types{name fields{name type{kind name ofType{kind name ofType{kind name}}}} inputFields{name type{kind name ofType{kind name}}}}}}'});
 report.schema={status:schema.status,errors:schema.errors,types:schema.data?.__schema?.types.filter(type=>/Account(DurableObjects|WorkersInvocations)/.test(type.name))};
+const start=new Date();start.setUTCHours(0,0,0,0);
+const end=new Date();
+report.window={start:start.toISOString(),end:end.toISOString()};
+report.analytics={};
+const filter=`{datetime_geq:${JSON.stringify(report.window.start)},datetime_lt:${JSON.stringify(report.window.end)}}`;
+for(const [label,selection] of Object.entries({
+ workers:`workersInvocationsAdaptive(limit:1000,filter:${filter}){dimensions{scriptName}sum{requests errors subrequests}}`,
+ storage:`durableObjectsPeriodicGroups(limit:1000,filter:${filter}){dimensions{namespaceId}sum{rowsRead rowsWritten storageReadUnits storageWriteUnits duration}}`,
+ hourlyStorage:`durableObjectsPeriodicGroups(limit:1000,filter:${filter}){dimensions{namespaceId datetimeHour}sum{rowsRead rowsWritten}}`,
+ invocations:`durableObjectsInvocationsAdaptiveGroups(limit:1000,filter:${filter}){dimensions{namespaceId scriptName}sum{requests errors}}`,
+ stored:`durableObjectsSqlStorageGroups(limit:1000,filter:${filter}){dimensions{namespaceId}max{storedBytes}}`,
+}))report.analytics[label]=await request('graphql',{query:`{viewer{accounts(filter:{accountTag:"${account}"}){${selection}}}}`});
 await mkdir('output/cloudflare-usage',{recursive:true});
 await writeFile('output/cloudflare-usage/report.json',JSON.stringify(report,null,2));
 console.log(JSON.stringify({capturedAt:report.capturedAt,workers:report.workers,namespaces:report.namespaces,schema:{status:report.schema.status,errors:report.schema.errors,types:report.schema.types?.map(t=>t.name)}}));
+console.log(JSON.stringify({window:report.window,analytics:report.analytics}));
