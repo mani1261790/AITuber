@@ -1,0 +1,24 @@
+name: Read Cloudflare account usage
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  usage:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read account inventory and analytics schema
+        run: node scripts/cloudflare-usage.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-usage
+          path: output/cloudflare-usage/report.json
+          retention-days: 7
