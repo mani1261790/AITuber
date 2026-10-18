@@ -7,6 +7,7 @@ import { audioResponse } from './audio-response';
 import { DurableObject } from 'cloudflare:workers';
 import type { AppEnv } from './index';
 import { runtimeContext } from './platform/context';
+import {StorageBudget,StorageSafetyLimit} from './platform/storage-budget';
 import { initializeFiles, existsSync, readFileSync, writeFileSync, unlinkSync, flushSourceFiles } from './platform/files';
 import { createServices } from './platform/services';
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from '../../server/src/classroom-registry';
@@ -17,12 +18,15 @@ export class LectureRoom extends DurableObject<AppEnv> {
   private classrooms = new ClassroomRegistry();
   private needsResume = false;
   private context;
+  private budget:StorageBudget;
   private savedLecture = "";
   private savedRooms = "";
   private lastRequestError: { stage: string; name: string; message: string } | null = null;
   constructor(ctx: DurableObjectState, env: AppEnv) {
     super(ctx, env);
-    this.context = { storage: ctx.storage, bucket: env.STATE, assets: env.ASSETS };
+    this.budget=new StorageBudget(ctx.storage.kv,()=>Date.now(),()=>this.services?.lecture.close());
+    this.budget.check();
+    this.context = { storage: this.budget.wrap(ctx.storage), bucket: env.STATE, assets: env.ASSETS };
     runtimeContext.run(this.context, () => {
       initializeFiles();
       this.services = createServices({
@@ -36,16 +40,25 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(existsSync('/data/rooms.json')) this.classrooms.restoreState(JSON.parse(readFileSync('/data/rooms.json','utf8')));
       if(existsSync('/data/lecture.json')) this.savedLecture=readFileSync('/data/lecture.json','utf8');
       if(this.savedLecture) this.needsResume=this.services.lecture.restoreCheckpoint(JSON.parse(readFileSync('/data/lecture.json','utf8'))) || ctx.storage.kv.get<boolean>('resumeNeeded')===true;
+      this.recoverSafetyStop();
       if(this.needsResume)ctx.storage.kv.put('resumeNeeded',true);
       this.services.lecture.subscribe((id)=>this.publish(id));
       this.services.questions.subscribe((id)=>this.publish(id));
       // Interrupted classifiers must not leave questions permanently pending.
-      ctx.storage.sql.exec("UPDATE question_threads SET triage='later',status='accepted',disposition='after-class' WHERE triage='pending' OR status='answering'");
+      this.context.storage.sql.exec("UPDATE question_threads SET triage='later',status='accepted',disposition='after-class' WHERE triage='pending' OR status='answering'");
       if(this.needsResume || this.services.lecture.getCurrentSession()?.status==='FINISHED' || this.services.authoring.list().some(job=>job.status==='running')) this.schedule(1000);
     });
   }
   private schedule(delay:number) {
     this.ctx.waitUntil((async()=>{ const at=Date.now()+delay; const previous=await this.ctx.storage.getAlarm(); if(previous===null || previous>at) await this.ctx.storage.setAlarm(at); })());
+  }
+  private recoverSafetyStop(){
+    if(!this.budget.needsRecovery())return;
+    this.needsResume=false;this.ctx.storage.kv.delete('resumeNeeded');
+    const session=this.services.lecture.getCurrentSession();
+    if(session && !['PAUSED','FINISHED'].includes(session.status))this.services.lecture.command(session.id,{command:'pause'});
+    for(const job of this.services.authoring.list())if(job.status==='running')this.services.authoring.stop(job.id);
+    this.persist();this.budget.recovered();
   }
   private persist() {
     const checkpoint=this.services.lecture.exportCheckpoint();
@@ -63,14 +76,16 @@ export class LectureRoom extends DurableObject<AppEnv> {
     for(const socket of this.ctx.getWebSockets(id)) {try{socket.send(JSON.stringify(message));}catch{/* Closed clients reconnect using their persisted token. */}}
   }
   override async alarm() {
+    try{this.budget.request();}catch(error){if(error instanceof StorageSafetyLimit)return;throw error;}
     return runtimeContext.run(this.context,async()=>{
+      this.recoverSafetyStop();
       // Schedule a watchdog before external calls, so an interrupted alarm can recover.
       await this.ctx.storage.setAlarm(Date.now()+60000);
       if(this.needsResume) {this.needsResume=false;const current=this.services.lecture.getCurrentSession();if(current?.status==='PAUSED')this.services.lecture.command(current.id,{command:'resume'});this.ctx.storage.kv.delete('resumeNeeded');}
       await this.services.authoring.runPendingStep();
       const lastPurge=await this.ctx.storage.get<number>('lastPurge')??0;
       if(Date.now()-lastPurge>86400000){await this.services.dataRetention.purgeNow();
-        const ids=new Set(this.ctx.storage.sql.exec<{id:string}>('SELECT id FROM lecture_sessions').toArray().map(row=>row.id));
+        const ids=new Set(this.context.storage.sql.exec<{id:string}>('SELECT id FROM lecture_sessions').toArray().map(row=>row.id));
         this.services.lecture.forgetSessionsExcept(ids);this.classrooms.forgetSessionsExcept(ids);
         await this.ctx.storage.put('lastPurge',Date.now());}
       await flushSourceFiles(); this.persist();
@@ -78,13 +93,17 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(current?.status==='FINISHED'){this.services.afterClass.consider(current.id);await this.services.afterClass.drain(current.id);}
       if(this.services.authoring.list().some(job=>job.status==='running') || current && ['TEACHING','RECOVERING'].includes(current.status)) await this.ctx.storage.setAlarm(Date.now()+15000);
       else {const alarm=await this.ctx.storage.getAlarm();if(alarm===null || alarm>Date.now()+30000)await this.ctx.storage.setAlarm(Date.now()+86400000);}
-    });
+    }).finally(()=>this.budget.flush());
   }
   override async fetch(request:Request):Promise<Response> {
     return runtimeContext.run(this.context,async()=>{
       if(new URL(request.url).pathname==='/api/diagnostics/last-error' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,{failure:this.lastRequestError});
       let stage='route';
+      let admitted=false;
       try {
+        this.budget.request();
+        admitted=true;
+        this.recoverSafetyStop();
         const response=await this.route(request);
         stage='source-flush'; if(request.method!=='GET' && request.method!=='HEAD') await flushSourceFiles();
         stage='checkpoint'; this.persist();return response;
@@ -98,12 +117,16 @@ export class LectureRoom extends DurableObject<AppEnv> {
         this.lastRequestError={stage,name:error instanceof Error?error.name:'Unknown',message:error instanceof Error?error.message:'unknown'};
         console.error('lecture_request_failed',stage,this.lastRequestError.message);
         return json(500,{error:'internal_error'});
-      }
+      } finally {if(admitted)this.budget.flush();}
     });
   }
   private async route(request:Request):Promise<Response> {
     const url=new URL(request.url), path=url.pathname;
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
+    if(path==='/api/operator/snapshot' && request.method==='GET') {
+      const session=lecture.getCurrentSession();
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),settings:settings.get()});
+    }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
       await this.services.chatgpt.importLocal(await read<{clientId:string;nonce:string;tokens:Record<string,unknown>;savedAt:number}>());
@@ -147,8 +170,8 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const job=path.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart|stop))?$/);
     if(job){
       if(request.method==='GET'&&!job[2])return json(200,{job:authoring.get(job[1])});
-      if(request.method==='POST'&&job[2]==='stop')return json(200,{job:authoring.stop(job[1])});
-      if(request.method==='POST'&&job[2]==='restart')return json(202,{job:authoring.beginRestart(job[1])});
+      if(request.method==='POST'&&job[2]==='stop'){await readJson(request,64*1024,true);return json(200,{job:authoring.stop(job[1])});}
+      if(request.method==='POST'&&job[2]==='restart'){await readJson(request,64*1024,true);return json(202,{job:authoring.beginRestart(job[1])});}
       if(request.method==='POST'&&job[2]==='resume'){return json(202,{job:authoring.beginResume(job[1],await readJson<ResumeAuthoringRequest>(request,64*1024,true))});}
     }
     if(path==='/api/courses'&&request.method==='GET')return json(200,{courses:lecture.listCourses()});

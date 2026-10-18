@@ -61,27 +61,28 @@ function OperatorApp() {
   useEffect(() => {
     const controller = new AbortController();
     let timer: number;
+    let inFlight = false;
+    let quotaStopped = false;
     async function poll() {
+      if (inFlight || document.hidden || quotaStopped || controller.signal.aborted) return;
+      inFlight = true;
       const version = revision.current;
       let retryDelay = 10000;
       try {
-        const [courseResult, sessionResult, jobResult, settingsResult] = await Promise.all([
-          fetchJson<{courses: CourseSummary[]}>("/api/courses", {signal: controller.signal}),
-          fetchJson<{session: FixedSessionView | null; classroom: ClassroomRoomView | null}>("/api/sessions/current", {signal: controller.signal}),
-          fetchJson<{jobs: AuthoringJobView[]}>("/api/authoring/jobs", {signal: controller.signal}),
-          fetchJson<{settings: LlmSettingsView}>("/api/settings/llm", {signal: controller.signal}),
-        ]);
+        const snapshot = await fetchJson<{courses: CourseSummary[]; session: FixedSessionView | null; classroom: ClassroomRoomView | null; jobs: AuthoringJobView[]; settings: LlmSettingsView}>("/api/operator/snapshot", {signal: controller.signal});
         if (controller.signal.aborted || version !== revision.current || locks.current.size) return;
-        setCourses(courseResult.courses);
-        if (!seededCourse.current && courseResult.courses[0]) { seededCourse.current = true; setCourseId(courseResult.courses[0].id); setDuration(courseResult.courses[0].durationMinutes); }
-        setSession(sessionResult.session); setClassroom(sessionResult.classroom); setJobs(jobResult.jobs); setSettings(settingsResult.settings);
+        setCourses(snapshot.courses);
+        if (!seededCourse.current && snapshot.courses[0]) { seededCourse.current = true; setCourseId(snapshot.courses[0].id); setDuration(snapshot.courses[0].durationMinutes); }
+        setSession(snapshot.session); setClassroom(snapshot.classroom); setJobs(snapshot.jobs); setSettings(snapshot.settings);
         setLoaded(true); setSyncError(null);
-        retryDelay = jobResult.jobs.some(job => job.status === "running") || sessionResult.session && !["PAUSED", "FINISHED"].includes(sessionResult.session.status) ? 3000 : 15000;
-      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); retryDelay = reason instanceof ApiError && reason.code === "storage_quota_exceeded" ? 0 : 30000; }
-      finally { if (!controller.signal.aborted && retryDelay) timer = window.setTimeout(() => void poll(), document.hidden ? 60000 : retryDelay); }
+        retryDelay = snapshot.jobs.some(job => job.status === "running") || snapshot.session && !["PAUSED", "FINISHED"].includes(snapshot.session.status) ? 5000 : 30000;
+      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); quotaStopped = reason instanceof ApiError && reason.code === "storage_quota_exceeded"; retryDelay = quotaStopped ? 0 : 30000; }
+      finally { inFlight = false; if (!controller.signal.aborted && retryDelay && !document.hidden) timer = window.setTimeout(() => void poll(), retryDelay); }
     }
+    const visibility = () => { window.clearTimeout(timer); if (!document.hidden) void poll(); };
+    document.addEventListener("visibilitychange", visibility);
     void poll();
-    return () => { controller.abort(); window.clearTimeout(timer); };
+    return () => { controller.abort(); window.clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
   }, [refresh]);
 
   async function perform(scope: Scope, action: () => Promise<void>) {

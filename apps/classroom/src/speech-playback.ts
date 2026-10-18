@@ -13,7 +13,7 @@ export function trackSpeechPlayback(audio: HTMLMediaElement, estimatedDurationMs
   for(const event of ["waiting","pause","seeking"]) audio.addEventListener(event,wait);
   for(const event of ["ended","error"]) audio.addEventListener(event,update);
   update();
-  const timer=setInterval(update,500);
+  const timer=setInterval(update,2000);
   return ()=>{
     clearInterval(timer);
     audio.removeEventListener("playing",start);

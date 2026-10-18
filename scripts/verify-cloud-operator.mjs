@@ -12,7 +12,7 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   const response = await fetch(`${base}/api/authoring/jobs/${probe}/stop`, {method:'POST',headers:{cookie,origin:base},signal:AbortSignal.timeout(20000)});
   const value = await response.json();
   if (response.status === 404 && value.message === 'Unknown authoring job') {
-    for (const path of ['/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
+    for (const path of ['/api/operator/snapshot','/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
       const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
       const body = await result.json();
       if(body.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');

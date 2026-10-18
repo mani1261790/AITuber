@@ -120,9 +120,13 @@ describe("server boundary", () => {
       stop: (id: string) => { calls.push(`stop:${id}`); return job; },
       beginRestart: (id: string) => { calls.push(`restart:${id}`); return job; },
     };
-    const server = createApp(undefined, undefined, authoring);
+    const settings={apiKeyConfigured:false,model:'gpt-6-luna',baseUrl:''};
+    const server = createApp(undefined, {get:()=>settings,save:()=>settings}, authoring);
     servers.add(server); server.listen(0, "127.0.0.1"); await once(server, "listening");
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`; const operator = { "x-aituber-surface": "operator" };
+
+    expect((await fetch(`${origin}/api/operator/snapshot`,{headers:{'x-aituber-surface':'classroom'}})).status).toBe(403);
+    expect(await (await fetch(`${origin}/api/operator/snapshot`,{headers:operator})).json()).toMatchObject({jobs:[job],settings,session:null,classroom:null});
 
     expect((await fetch(`${origin}/api/authoring/jobs`, { headers: { "x-aituber-surface": "classroom" } })).status).toBe(403);
     expect((await fetch(`${origin}/api/authoring/jobs`, { headers: operator })).status).toBe(200);

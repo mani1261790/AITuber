@@ -74,6 +74,7 @@ function ClassroomApp() {
     let disposed = false;
     let socket: WebSocket | null = null;
     let reconnectTimer = 0;
+    let reconnectAttempts = 0;
     const connect = () => {
       if (disposed) return;
       setConnection(latestSeqRef.current ? "reconnecting" : "connecting");
@@ -82,11 +83,12 @@ function ClassroomApp() {
       socket.onopen = () => setConnection("live");
       socket.onmessage = (event) => {
         const message = JSON.parse(String(event.data)) as ClassroomStreamMessage;
+        reconnectAttempts = 0;
         if (message.snapshot.seq < latestSeqRef.current) return;
         latestSeqRef.current = message.snapshot.seq;
         setSession(message.snapshot.session); setRoom(message.room); setQuestions(message.questions); setAudioFloorMs(message.snapshot.audioOffsetMs); setError(null);
       };
-      socket.onclose = () => { if (!disposed) reconnectTimer = window.setTimeout(connect, 600); };
+      socket.onclose = () => { if (!disposed) reconnectTimer = window.setTimeout(connect, Math.min(60000, 1000 * 2 ** Math.min(reconnectAttempts++, 6))); };
       socket.onerror = () => socket?.close();
     };
     connect();

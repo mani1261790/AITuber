@@ -35,6 +35,7 @@ try{
  const login=await fetch(base+'/login',{method:'POST',headers:{origin:base,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({password:config.vars.OPERATOR_PASSWORD}),redirect:'manual'});assert.equal(login.status,303);cookie=login.headers.get('set-cookie').split(';')[0];
  assert.equal((await fetch(base+'/api/sessions',{method:'POST',headers:{cookie,origin:'https://untrusted.example'},body:'{}'})).status,403);
  const {courses}=await api('/api/courses');assert.ok(courses.length>0);
+ const snapshot=await api('/api/operator/snapshot');assert.deepEqual(snapshot.courses,courses);assert.ok(Array.isArray(snapshot.jobs));assert.ok(snapshot.settings);
  const {session,classroom}=await api('/api/sessions',{coursePackageId:courses[0].id,durationMinutes:5});
  await api(`/api/sessions/${session.id}/commands`,{command:'pause'});
  const joined=await api('/api/classrooms/join',{code:classroom.code});const accessToken=joined.participant.accessToken;
