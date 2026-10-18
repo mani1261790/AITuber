@@ -42,10 +42,11 @@ try{
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('WebSocket snapshot timeout')),10000);socket.onmessage=event=>{try{assert.equal(JSON.parse(event.data).type,'snapshot');clearTimeout(timer);socket.close();resolve();}catch(error){reject(error);}};socket.onerror=reject;});
  // Placeholder page image checks upload/persistence only; no live LLM or visual-quality claim.
  const {job}=await api('/api/authoring/jobs',{durationMinutes:5,sources:[{fileName:'japanese.pdf',mimeType:'application/pdf',dataBase64:japanesePdf('二次関数'),pageImages:[{pageNumber:1,mimeType:'image/png',dataBase64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='}],rights:{basis:'owned'}}]});assert.equal(job.sourceCount,1);
+ assert.equal((await api(`/api/authoring/jobs/${job.id}/stop`,{})).job.status,'stopped');
  await stop();await start();
  const restored=await api('/api/sessions/current');assert.equal(restored.session.id,session.id);assert.equal(restored.session.status,'PAUSED');assert.equal(restored.classroom.code,classroom.code);assert.ok(restored.session.epoch>session.epoch);
  const reconnected=await api(`/api/classrooms/${classroom.code}/reconnect`,{accessToken});assert.equal(reconnected.participant.id,joined.participant.id);
- assert.equal((await api(`/api/authoring/jobs/${job.id}`)).job.sourceCount,1);
+ const persistedJob=(await api(`/api/authoring/jobs/${job.id}`)).job;assert.equal(persistedJob.sourceCount,1);assert.equal(persistedJob.status,'stopped');
  assert.equal((await fetch(base+`/api/classrooms/${classroom.code}/reconnect`,{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({accessToken:'invalid'})})).status,401);
  console.log('PASS: Worker auth, origin checks, SQLite session, WebSocket, Japanese PDF, job persistence, restart, participant reconnect.');
 } catch(error){console.error(log.slice(-12000));throw error;}

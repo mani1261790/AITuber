@@ -1,5 +1,5 @@
 import { pdfPageImages } from "./pdf-page-images.ts";
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
@@ -9,271 +9,239 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "./styles.css";
 
 declare const __AITUBER_CLASSROOM_ORIGIN__: string;
-
-const statusLabels: Record<FixedSessionView["status"], string> = {
-  PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了",
-};
-const gateLabels: Record<NonNullable<AuthoringJobView["review"]>["gates"][number]["id"], string> = {
-  "source-alignment": "出典と内容", "factual-consistency": "事実・式・数値", "goal-alignment": "学習目標", prerequisites: "前提関係", references: "参照ID", renderability: "描画可能性", "speech-caption": "発話と字幕", "safe-content": "安全な内容", rights: "利用権",
-};
+const sessionLabels: Record<FixedSessionView["status"], string> = { PREPARING: "準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了" };
+const gateLabels = { "source-alignment": "出典と内容", "factual-consistency": "事実・式・数値", "goal-alignment": "学習目標", prerequisites: "前提関係", references: "参照ID", renderability: "描画可能性", "speech-caption": "発話と字幕", "safe-content": "安全な内容", rights: "利用権" };
+type Scope = "authoring" | "session" | "connection";
+type Confirmation = { title: string; description: string; label: string; run(): void };
 
 function OperatorApp() {
-  const [courses, setCourses] = useState<readonly CourseSummary[]>([]);
+  const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [courseId, setCourseId] = useState("");
   const [duration, setDuration] = useState(6);
+  const [authoringDuration, setAuthoringDuration] = useState(15);
   const [session, setSession] = useState<FixedSessionView | null>(null);
   const [classroom, setClassroom] = useState<ClassroomRoomView | null>(null);
   const [classroomOrigin, setClassroomOrigin] = useState(__AITUBER_CLASSROOM_ORIGIN__);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [llmSettings, setLlmSettings] = useState<LlmSettingsView | null>(null);
-  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<AuthoringJobView[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [settings, setSettings] = useState<LlmSettingsView | null>(null);
   const [llmKey, setLlmKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmBaseUrl, setLlmBaseUrl] = useState("");
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [sourceNote, setSourceNote] = useState("");
-  const [sourceRights, setSourceRights] = useState<AuthoringSourceUpload["rights"]["basis"]>("owned");
+  const [sourceRights, setSourceRights] = useState<AuthoringSourceUpload["rights"]["basis"] | "">("");
   const [targetLevel, setTargetLevel] = useState("");
   const [learningGoals, setLearningGoals] = useState("");
-  const [authoringJob, setAuthoringJob] = useState<AuthoringJobView | null>(null);
-  const selectedCourse = courses.find((course) => course.id === courseId) ?? null;
+  const [timeBudget, setTimeBudget] = useState(15);
+  const [costBudget, setCostBudget] = useState(2);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [busy, setBusy] = useState<Partial<Record<Scope, boolean>>>({});
+  const locks = useRef(new Set<Scope>());
+  const revision = useRef(0);
+  const seededSettings = useRef(false);
+  const seededCourse = useRef(false);
+  const [refresh, setRefresh] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const activeJob = jobs.find(job => job.status === "running");
+  const job = jobs.find(item => item.id === selectedJobId) ?? activeJob ?? jobs[0];
+  const activeSession = Boolean(session && session.status !== "FINISHED");
+  const connected = Boolean(settings && (settings.chatgpt ? settings.chatgpt.status === "connected" : settings.apiKeyConfigured || isLocalLlmUrl(settings.baseUrl)));
+  const selectedCourse = courses.find(course => course.id === courseId);
 
   useEffect(() => {
-    void fetchJson<{ classroomOrigin: string }>("/aituber-runtime-config.json").then((config) => setClassroomOrigin(config.classroomOrigin)).catch(() => undefined);
+    const controller = new AbortController();
+    void fetchJson<{ classroomOrigin: string }>("/aituber-runtime-config.json", {signal: controller.signal}).then(config => setClassroomOrigin(config.classroomOrigin)).catch(() => undefined);
+    if (new URLSearchParams(window.location.search).get("chatgpt") === "failed") setError("ChatGPT認証を完了できませんでした。接続設定から状態を確認してください。");
+    return () => controller.abort();
   }, []);
 
+  // Serial polling prevents slow responses from overlapping; action revisions reject stale snapshots.
   useEffect(() => {
-    void Promise.all([fetchJson<{ courses: CourseSummary[] }>("/api/courses"), fetchJson<{ session: FixedSessionView | null; classroom: ClassroomRoomView | null }>("/api/sessions/current")])
-      .then(([courseResult, sessionResult]) => {
+    const controller = new AbortController();
+    let timer: number;
+    async function poll() {
+      const version = revision.current;
+      try {
+        const [courseResult, sessionResult, jobResult, settingsResult] = await Promise.all([
+          fetchJson<{courses: CourseSummary[]}>("/api/courses", {signal: controller.signal}),
+          fetchJson<{session: FixedSessionView | null; classroom: ClassroomRoomView | null}>("/api/sessions/current", {signal: controller.signal}),
+          fetchJson<{jobs: AuthoringJobView[]}>("/api/authoring/jobs", {signal: controller.signal}),
+          fetchJson<{settings: LlmSettingsView}>("/api/settings/llm", {signal: controller.signal}),
+        ]);
+        if (controller.signal.aborted || version !== revision.current || locks.current.size) return;
         setCourses(courseResult.courses);
-        const first = courseResult.courses[0];
-        if (first) { setCourseId(first.id); setDuration(first.durationMinutes); }
-        setSession(sessionResult.session);
-        setClassroom(sessionResult.classroom);
-      })
-      .catch((reason: unknown) => setError(errorMessage(reason)));
-  }, []);
+        if (!seededCourse.current && courseResult.courses[0]) { seededCourse.current = true; setCourseId(courseResult.courses[0].id); setDuration(courseResult.courses[0].durationMinutes); }
+        setSession(sessionResult.session); setClassroom(sessionResult.classroom); setJobs(jobResult.jobs); setSettings(settingsResult.settings);
+        if (!seededSettings.current) { seededSettings.current = true; setLlmModel(settingsResult.settings.model); setLlmBaseUrl(settingsResult.settings.baseUrl); }
+        setLoaded(true); setLastSync(new Date()); setSyncError(null);
+      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); }
+      finally { if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 3000); }
+    }
+    void poll();
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [refresh]);
 
-  useEffect(() => {
-    void fetchJson<{ jobs: AuthoringJobView[] }>("/api/authoring/jobs").then(({ jobs }) => setAuthoringJob(jobs[0] ?? null)).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    if (!authoringJob || authoringJob.status !== "running") return;
-    const timer = window.setInterval(() => void fetchJson<{ job: AuthoringJobView }>(`/api/authoring/jobs/${encodeURIComponent(authoringJob.id)}`).then(({ job }) => {
-      setAuthoringJob(job);
-      if (job.status === "available" && job.course) void refreshCourses(job.course.id);
-    }).catch((reason: unknown) => setError(errorMessage(reason))), 500);
-    return () => window.clearInterval(timer);
-  }, [authoringJob?.id, authoringJob?.status]);
-
-  useEffect(() => {
-    if (!authoringJob?.course) return;
-    setTargetLevel(authoringJob.course.targetLevel);
-    setLearningGoals(authoringJob.course.learningGoals.map((goal) => goal.description).join("\n"));
-  }, [authoringJob?.course]);
-
-  useEffect(() => {
-    if(new URLSearchParams(window.location.search).get("chatgpt")==="failed") setError("ChatGPT認証を完了できませんでした。AITuberへのプラン利用許可と6 Lunaの利用可否を確認し、再接続してください。");
-    void fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm").then(({ settings }) => {
-      setLlmSettings(settings); setLlmModel(settings.model); setLlmBaseUrl(settings.baseUrl);
-    }).catch((reason: unknown) => setError(errorMessage(reason)));
-  }, []);
-
-  useEffect(() => {
-    if (!session || session.status === "FINISHED") return;
-    let active = true;
-    const timer = window.setInterval(() => {
-      void fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>(`/api/sessions/${encodeURIComponent(session.id)}`)
-        .then((result) => { if (active) { setSession(result.session); setClassroom(result.classroom); } })
-        .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
-    }, 100);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [session?.id, session?.status]);
-
-  async function startLecture() {
-    setBusy(true); setError(null);
-    try {
-      const result = await fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>("/api/sessions", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coursePackageId: courseId, durationMinutes: duration }),
-      });
-      setSession(result.session);
-      setClassroom(result.classroom);
-    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  async function perform(scope: Scope, action: () => Promise<void>) {
+    if (locks.current.has(scope)) return;
+    locks.current.add(scope); revision.current++; setBusy(value => ({...value, [scope]: true})); setError(null); setNotice(null);
+    try { await action(); } catch (reason) { setError(errorMessage(reason)); }
+    finally { locks.current.delete(scope); revision.current++; setBusy(value => ({...value, [scope]: false})); setRefresh(value => value + 1); }
   }
-
-  async function command(request: SessionCommandRequest) {
-    if (!session) return;
-    setBusy(true); setError(null);
-    try {
-      const result = await fetchJson<{ session: FixedSessionView; classroom: ClassroomRoomView }>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
-      });
-      setSession(result.session);
-      setClassroom(result.classroom);
-    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  function updateJob(next: AuthoringJobView) { setJobs(values => [next, ...values.filter(value => value.id !== next.id)]); setSelectedJobId(next.id); }
+  async function controlJob(action: "stop" | "resume" | "restart") {
+    if (!job) return;
+    await perform("authoring", async () => {
+      const {job: next} = await fetchJson<{job: AuthoringJobView}>(`/api/authoring/jobs/${encodeURIComponent(job.id)}/${action}`, post(action === "resume" ? { additionalTimeBudgetMs: 300_000, additionalCostBudgetUsd: 2 } : undefined));
+      updateJob(next); setNotice(action === "stop" ? "教材作成を停止しました。元資料と途中結果は保存されています。" : "教材作成を開始しました。");
+    });
   }
-
-  async function connectChatGpt() {
-    setBusy(true); setError(null);
-    try {
-      const result = await fetchJson<{url:string}>("/api/settings/llm/chatgpt/start", {method:"POST"});
-      window.location.assign(result.url);
-    } catch (reason) { setError(errorMessage(reason)); setBusy(false); }
-  }
-  async function checkChatGpt(disconnect=false) {
-    setBusy(true); setError(null); setConnectionNotice(null);
-    try {
-      const result = await fetchJson<{settings:LlmSettingsView;revoked?:boolean}>(`/api/settings/llm/chatgpt/${disconnect ? "disconnect" : "check"}`, {method:"POST"});
-      setLlmSettings(result.settings);
-      setConnectionNotice(disconnect ? "ChatGPTから切断しました。" : "6 Lunaで実際の文章生成が完了しました。教材を登録できます。");
-      if(result.revoked===false) setError("AITuberから切断しました。OpenAI側の解除を確認できなかったため、ChatGPTの利用状況から接続を解除してください。");
-    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
-  }
-
-  async function saveLlmSettings() {
-    setBusy(true); setError(null);
-    try {
-      const result = await fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...(llmKey ? { apiKey: llmKey } : {}), model: llmModel, baseUrl: llmBaseUrl }) });
-      setLlmSettings(result.settings); setLlmKey("");
-    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
-  }
-
-  async function refreshCourses(preferredId?: string) {
-    const result = await fetchJson<{ courses: CourseSummary[] }>("/api/courses"); setCourses(result.courses);
-    if (preferredId) { setCourseId(preferredId); const course = result.courses.find((item) => item.id === preferredId); if (course) setDuration(course.durationMinutes); }
-  }
-
   async function startAuthoring() {
-    setBusy(true); setError(null);
-    try {
+    if (activeJob || !connected) return;
+    await perform("authoring", async () => {
+      if (!sourceRights) throw new Error("資料の利用権を選択してください。");
+      if (!validDuration(authoringDuration) || !Number.isInteger(timeBudget) || timeBudget < 1 || timeBudget > 60 || !Number.isFinite(costBudget) || costBudget <= 0) throw new Error("講義時間・処理時間・費用上限を確認してください。");
+      if (sourceFiles.length + Number(Boolean(sourceNote.trim())) > 16) throw new Error("資料はノートを含めて16件までです。");
+      let bytes = new TextEncoder().encode(sourceNote.trim()).length;
+      for (const file of sourceFiles) {
+        const type = supportedMimeType(file);
+        if (!file.size || file.size > (type.startsWith("image/") ? 10 : 20) * 1024 * 1024) throw new Error(`${file.name}: 空のファイル、またはサイズ上限超過です。画像10 MiB・その他20 MiBまでです。`);
+        bytes += file.size;
+      }
+      if (bytes > 24 * 1024 * 1024) throw new Error("資料の合計は24 MiBまでです。");
       const sources: AuthoringSourceUpload[] = [];
-      // Render one document at a time; concurrent PDF workers can exhaust browser memory.
-      for (const file of sourceFiles) sources.push({ fileName: file.name, mimeType: supportedMimeType(file), dataBase64: await fileBase64(file), ...(supportedMimeType(file) === "application/pdf" ? {pageImages:await pdfPageImages(file)} : {}), rights: { basis: sourceRights } });
-      if (sourceNote.trim()) sources.push({ fileName: "instructor-note.txt", mimeType: "text/plain", dataBase64: utf8Base64(sourceNote.trim()), rights: { basis: sourceRights } });
-      const result = await fetchJson<{ job: AuthoringJobView }>("/api/authoring/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ durationMinutes: duration, sources, ...(targetLevel.trim() ? { targetLevel: targetLevel.trim() } : {}), ...(learningGoals.trim() ? { learningGoals: learningGoals.split("\n").map((value) => value.trim()).filter(Boolean) } : {}) }) });
-      setAuthoringJob(result.job);
-    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+      for (const [index, file] of sourceFiles.entries()) {
+        setUploadProgress(`資料を準備中 ${index + 1}/${sourceFiles.length} · ${file.name}`);
+        const mimeType = supportedMimeType(file);
+        const pageImages = mimeType === "application/pdf" ? await pdfPageImages(file) : undefined;
+        if (pageImages) bytes += pageImages.reduce((total, image) => total + atob(image.dataBase64).length, 0);
+        if (bytes > 24 * 1024 * 1024) throw new Error("PDFのページ画像を含めると24 MiBを超えます。PDFを分割して登録してください。");
+        sources.push({ fileName: file.name, mimeType, dataBase64: await fileBase64(file), ...(pageImages ? {pageImages} : {}), rights: {basis: sourceRights} });
+      }
+      if (sourceNote.trim()) sources.push({fileName: "instructor-note.txt", mimeType: "text/plain", dataBase64: fileBytesBase64(new TextEncoder().encode(sourceNote.trim())), rights: {basis: sourceRights}});
+      setUploadProgress("資料を送信中…");
+      const result = await fetchJson<{job: AuthoringJobView}>("/api/authoring/jobs", post({ durationMinutes: authoringDuration, sources, timeBudgetMs: timeBudget * 60_000, costBudgetUsd: costBudget, ...(targetLevel.trim() ? {targetLevel: targetLevel.trim()} : {}), ...(learningGoals.trim() ? {learningGoals: learningGoals.split("\n").map(value => value.trim()).filter(Boolean)} : {}) }));
+      updateJob(result.job); setNotice("教材作成を開始しました。処理状況からいつでも停止できます。");
+    });
+    setUploadProgress("");
+  }
+  async function command(command: SessionCommandRequest["command"]) {
+    if (!session) return;
+    await perform("session", async () => {
+      const result = await fetchJson<{session: FixedSessionView; classroom: ClassroomRoomView}>(`/api/sessions/${encodeURIComponent(session.id)}/commands`, post({command}));
+      setSession(result.session); setClassroom(result.classroom);
+    });
+  }
+  async function startLecture() {
+    if (activeSession || !connected || !validDuration(duration)) return;
+    await perform("session", async () => {
+      const result = await fetchJson<{session: FixedSessionView; classroom: ClassroomRoomView}>("/api/sessions", post({coursePackageId: courseId, durationMinutes: duration}));
+      setSession(result.session); setClassroom(result.classroom); setNotice("講義を開始しました。進行パネルから一時停止できます。");
+    });
+  }
+  async function connectionAction(action: "check" | "disconnect" | "connect" | "save") {
+    await perform("connection", async () => {
+      if (action === "connect") { const result = await fetchJson<{url: string}>("/api/settings/llm/chatgpt/start", post()); window.location.assign(result.url); return; }
+      const result = action === "save"
+        ? await fetchJson<{settings: LlmSettingsView}>("/api/settings/llm", {...post({...(llmKey ? {apiKey: llmKey} : {}), model: llmModel, baseUrl: llmBaseUrl}), method: "PUT"})
+        : await fetchJson<{settings: LlmSettingsView}>(`/api/settings/llm/chatgpt/${action}`, post());
+      setSettings(result.settings); setLlmKey("");
+      setNotice(action === "disconnect" ? "ChatGPTから切断しました。" : action === "check" ? "接続テストの文章生成が完了しました。" : "接続設定を保存しました。");
+      if ("revoked" in result && result.revoked === false) setError("AITuberから切断しましたが、OpenAI側の解除を確認できません。ChatGPTの利用状況で接続を確認してください。");
+    });
   }
 
-  async function continueAuthoring(action: "resume" | "restart") {
-    if (!authoringJob) return;
-    setBusy(true); setError(null);
-    try { const result = await fetchJson<{ job: AuthoringJobView }>(`/api/authoring/jobs/${encodeURIComponent(authoringJob.id)}/${action}`, { method: "POST", ...(action === "resume" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ additionalTimeBudgetMs: 300_000, additionalCostBudgetUsd: 2 }) } : {}) }); setAuthoringJob(result.job); }
-    catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
-  }
-
-  return (
-    <main className="operator-shell">
-      <header className="page-header">
-        <div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITUBER</span></div>
-        <p className="page-kicker">LECTURE CONTROL</p>
-        <h1>講義をセットする</h1>
-        <p>教材と時間を決めて開始すると、確認問題まで自動で進みます。</p>
-      </header>
-
-      <div className="operator-grid">
-        <section className="panel setup-panel" aria-labelledby="course-heading">
-          <div className="panel-heading"><span>01</span><div><p>SESSION SETUP</p><h2 id="course-heading">授業設定</h2></div></div>
-          <details className="llm-settings">
-            <summary><span>LLM接続</span><b>{llmSettings?.chatgpt ? `ChatGPT · 6 Luna · ${llmSettings.chatgpt.status === "connected" ? "接続済み" : llmSettings.chatgpt.status === "registration-required" || llmSettings.chatgpt.status === "local-authorization-required" ? "初回認証が必要" : "未接続"}` : llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
-            {llmSettings?.chatgpt ? <div className="llm-fields chatgpt-connection">
-              <strong>ChatGPT · GPT-6 Luna</strong>
-              {connectionNotice && <p role="status">{connectionNotice}</p>}
-              <p>{llmSettings.chatgpt.message}</p>
-              {llmSettings.chatgpt.email && <p>{llmSettings.chatgpt.email}</p>}
-              <p>接続するアカウントのChatGPTプランを、教材・台本・板書の生成に使用します。プランとアプリの利用上限が適用されます。</p>
-              {(llmSettings.chatgpt.status === "registration-required" || llmSettings.chatgpt.status === "local-authorization-required") ? <>
-                <p>Macでプロジェクトを開き、次のコマンドを実行してブラウザで認証してください。</p>
-                <code>pnpm connect:chatgpt</code>
-              </> : <>
-                {llmSettings.chatgpt.status !== "connected" && <button type="button" disabled={busy} onClick={() => void connectChatGpt()}>Continue with ChatGPT</button>}
-                {llmSettings.chatgpt.status === "connected" && <div className="chatgpt-actions"><button type="button" disabled={busy} onClick={() => void checkChatGpt()}>接続をテスト</button><button type="button" disabled={busy} onClick={() => void checkChatGpt(true)}>切断</button></div>}
-              </>}
-              <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況を確認</a>
-            </div> : <div className="llm-fields">
-              <label>APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={(event) => setLlmKey(event.target.value)} placeholder={llmSettings?.apiKeyConfigured ? "設定済み（変更時だけ入力）" : "APIキー"} /></label>
-              <label>モデル<input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="モデル名" /></label>
-              <details><summary>詳細設定</summary><label>Base URL<input value={llmBaseUrl} onChange={(event) => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label></details>
-              <button type="button" disabled={busy || !llmModel.trim()} onClick={() => void saveLlmSettings()}>接続設定を保存</button>
-            </div>}
-          </details>
-          <details className="authoring-settings">
-            <summary><span>教材を作成・取り込む</span><b>{authoringJob ? authoringStatus(authoringJob.status) : "授業前に実行"}</b></summary>
-            <div className="authoring-fields">
-              <label>教材ファイル（PDF・画像・Markdown）<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt,application/pdf,image/png,image/jpeg,image/webp,text/markdown,text/plain" onChange={(event) => setSourceFiles([...event.target.files ?? []])} /></label>
-              <label>任意ノート<textarea value={sourceNote} onChange={(event) => setSourceNote(event.target.value)} placeholder="ファイルに加えたい指示や教材本文" /></label>
-              <label>利用権<select value={sourceRights} onChange={(event) => setSourceRights(event.target.value as typeof sourceRights)}><option value="owned">自分が権利を保有</option><option value="licensed">ライセンス済み</option><option value="public-domain">パブリックドメイン</option><option value="permission">利用許可あり</option></select></label>
-              <details><summary>推定結果を指定・修正する</summary><label>対象レベル<input value={targetLevel} onChange={(event) => setTargetLevel(event.target.value)} placeholder="空欄なら自動推定" /></label><label>学習目標（1行に1件）<textarea value={learningGoals} onChange={(event) => setLearningGoals(event.target.value)} placeholder="空欄なら自動推定" /></label></details>
-              <button type="button" disabled={busy || Boolean(llmSettings?.chatgpt && llmSettings.chatgpt.status !== "connected") || (sourceFiles.length === 0 && !sourceNote.trim())} onClick={() => void startAuthoring()}>自動作成と審査を開始</button>
-              {authoringJob && <AuthoringResult job={authoringJob} onContinue={continueAuthoring} busy={busy} />}
-            </div>
-          </details>
-          <label className="field">教材
-            <select value={courseId} onChange={(event) => {
-              const nextId = event.target.value; setCourseId(nextId);
-              const next = courses.find((course) => course.id === nextId); if (next) setDuration(next.durationMinutes);
-            }} disabled={busy || courses.length === 0}>
-              {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
-            </select>
-          </label>
-          {selectedCourse && <dl className="course-facts">
-            <div><dt>対象レベル</dt><dd>{selectedCourse.targetLevel}</dd></div>
-            <div><dt>学習目標</dt><dd><ul>{selectedCourse.learningGoals.map((goal) => <li key={goal.id}>{goal.description}</li>)}</ul></dd></div>
-          </dl>}
-          <label className="field field--duration">授業時間
-            <span><input type="number" min="1" max="480" value={duration} onChange={(event) => setDuration(event.target.valueAsNumber)} /><b>分</b></span>
-          </label>
-          <button className="primary-button" type="button" disabled={busy || !courseId || !Number.isInteger(duration)} onClick={() => void startLecture()}><span aria-hidden="true" />講義を開始</button>
+  return <div className="app-layout">
+    <aside className="sidebar"><a className="brand" href="#overview"><span className="brand-mark" aria-hidden="true">A</span><span>AITUBER<small>講義スタジオ</small></span></a><nav aria-label="管理メニュー"><a href="#overview">講義の進行<span>01</span></a><a href="#materials">教材の作成<span>02</span></a><a href="#prepare">講義の準備<span>03</span></a><a href="#connection">接続設定<span>04</span></a></nav><div className="sidebar-note"><span className={`dot ${connected ? "green" : "amber"}`} />{connected ? "AI 接続済み" : "AI 未接続"}<p>教材の作成と講義の進行を<br />この画面で管理します。</p></div></aside>
+    <main className="workspace" id="overview">
+      <header className="page-header"><div><p className="eyebrow">LECTURE STUDIO</p><h1>講義管理</h1><p className="muted">準備から進行まで。状態を確かめて、次の操作へ。</p></div><div className="sync-state"><span className={`dot ${syncError ? "amber" : "green"}`} />{syncError ? "更新できていません" : loaded ? "自動更新中" : "読み込み中"}{lastSync && <small>最終確認 {lastSync.toLocaleTimeString("ja-JP", {hour: "2-digit", minute: "2-digit", second: "2-digit"})}</small>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>再取得</button></div></header>
+      {syncError && <div className="message warning" role="alert"><strong>状態を確認できません</strong><p>{syncError} 接続が戻るまで、表示は前回取得時の状態です。</p></div>}
+      {error && <div className="message danger" role="alert"><strong>操作を完了できませんでした</strong><p>{error}</p><button className="text-button" onClick={() => setError(null)}>閉じる</button></div>}
+      {notice && <div className="message success" role="status">{notice}</div>}
+      <div className="overview-strip"><div><span>講義</span><strong>{session ? sessionLabels[session.status] : "未開始"}</strong></div><div><span>教材作成</span><strong>{activeJob ? "実行中" : "待機中"}</strong>{activeJob && <button className="text-button" onClick={() => {setSelectedJobId(activeJob.id); document.getElementById("materials")?.scrollIntoView();}}>停止操作へ ↓</button>}</div><div><span>利用可能な教材</span><strong>{loaded ? courses.length : "—"}<small>件</small></strong></div></div>
+      <section className={`card live-panel ${activeSession ? "is-live" : ""}`} aria-labelledby="live-heading"><SectionTitle number="01" title="講義の進行" id="live-heading" subtitle="授業中に使う操作を、ひとつの場所に。" />
+        {session ? <><div className="live-body"><div><Badge tone={activeSession ? "green" : "neutral"}>{sessionLabels[session.status]}</Badge><h3>{session.course.title}</h3><p className="muted">説明済み {session.progress.completed} / {session.progress.total}</p><progress value={session.progress.completed} max={session.progress.total || 1} aria-label="講義の進行" />{session.speech.mode === "caption-fallback" && <p className="inline-warning">音声合成に失敗したため、字幕で進行しています。</p>}</div>{classroom && <div className="room-card"><span className="eyebrow">教室コード</span><strong>{classroom.code}</strong><p>{classroom.participantCount} / {classroom.capacity} 人が参加</p><a href={`${classroomOrigin}/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer">教室画面を開く ↗</a></div>}</div>{activeSession && <div className="live-controls"><button className="primary" disabled={busy.session || session.status === "RECOVERING" || (session.status === "PAUSED" && (!connected || Boolean(syncError)))} onClick={() => void command(session.status === "PAUSED" ? "resume" : "pause")}>{busy.session ? "操作中…" : session.status === "PAUSED" ? "講義を再開" : "講義を一時停止"}</button><button className="danger-outline" disabled={busy.session} onClick={() => setConfirmation({title: "この講義を終了しますか？", description: "参加者への講義を終了します。この講義の続きからの再開はできません。一時的に止める場合は「一時停止」を使ってください。", label: "講義を終了する", run: () => void command("finish")})}>講義を終了</button><span className="muted">{session.status === "PAUSED" && !connected ? "再開するにはAI接続が必要です。" : "一時停止後は、続きから再開できます。"}</span></div>}{!activeSession && <p className="muted">完了 {session.completedUnitIds.length} 項目 · 未完了 {session.unfinishedUnitIds.length} 項目</p>}</> : <div className="empty-state"><span className="empty-icon" aria-hidden="true">▶</span><div><h3>まだ講義は始まっていません</h3><p>利用する教材と時間を確認してから、講義を開始できます。</p><a href="#prepare">講義の準備へ ↓</a></div></div>}
+      </section>
+      <div className="content-grid">
+        <section className="card" id="materials" aria-labelledby="materials-heading"><SectionTitle number="02" title="教材を作成する" id="materials-heading" subtitle="資料を取り込み、講義用の教材を自動作成・審査します。" />
+          {job && <AuthoringResult job={job} busy={Boolean(busy.authoring)} canResume={connected && !activeJob && !syncError} onAction={action => action === "stop" ? void controlJob(action) : setConfirmation({title: action === "restart" ? "最初から作り直しますか？" : "教材作成を再開しますか？", description: action === "restart" ? "途中の生成結果を破棄し、保存済みの元資料から作り直します。AIを再度利用します。" : "保存済みの資料・途中結果を使います。処理時間を5分、概算費用の上限を$2追加し、最大5回試行します。", label: action === "restart" ? "作り直す" : "上限を追加して再開", run: () => void controlJob(action)})} />}
+          {jobs.length > 1 && <label className="field history-field">作成履歴<select value={job?.id ?? ""} disabled={busy.authoring} onChange={event => setSelectedJobId(event.target.value)}>{jobs.map(item => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleString("ja-JP")} · {authoringStatus(item.status)} · {item.course?.title ?? `${item.sourceCount}資料`}</option>)}</select></label>}
+          {activeJob && activeJob.id !== job?.id && <div className="message warning">別の教材を作成中です。<button className="text-button" onClick={() => setSelectedJobId(activeJob.id)}>実行中の処理を表示</button></div>}
+          <details className="creation-form" open={!jobs.length}><summary>{jobs.length ? "新しい教材を作成" : "資料と作成条件"}<span>＋</span></summary><fieldset disabled={busy.authoring || Boolean(activeJob)}>
+            <label className="upload-zone"><span className="upload-symbol" aria-hidden="true">↑</span><strong>教材ファイルを選択</strong><span>PDF・画像・Markdown・テキスト</span><input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt" onChange={event => setSourceFiles([...event.target.files ?? []])} /></label>
+            {sourceFiles.length > 0 && <ul className="file-list">{sourceFiles.map((file, index) => <li key={`${file.name}-${index}`}><span>{file.name}<small>{(file.size / 1024 / 1024).toFixed(1)} MiB</small></span><button className="text-button" onClick={() => setSourceFiles(files => files.filter((_, i) => i !== index))} aria-label={`${file.name}を取り除く`}>削除</button></li>)}</ul>}
+            <p className="help">最大16資料。画像は各10 MiB、その他は各20 MiB。PDFのページ画像を含め合計24 MiBまで。</p>
+            <label className="field">教材本文・補足ノート<textarea value={sourceNote} onChange={event => setSourceNote(event.target.value)} placeholder="テキストだけでも作成できます。" rows={3} /></label>
+            <label className="field">資料の利用権 <span className="required">必須</span><select value={sourceRights} onChange={event => setSourceRights(event.target.value as typeof sourceRights)}><option value="">確認して選択してください</option><option value="owned">自分が権利を保有</option><option value="licensed">ライセンス済み</option><option value="public-domain">パブリックドメイン</option><option value="permission">利用許可あり</option></select></label>
+            <div className="form-row"><label className="field">作成する講義の時間<NumberField value={authoringDuration} onChange={setAuthoringDuration} min={1} max={480} unit="分" /></label><label className="field">対象レベル<input value={targetLevel} onChange={event => setTargetLevel(event.target.value)} placeholder="例：高校1年生（空欄で推定）" /></label></div>
+            <label className="field">学習目標 <span className="optional">任意・1行に1件</span><textarea value={learningGoals} onChange={event => setLearningGoals(event.target.value)} placeholder="この講義で理解してほしいこと" rows={2} /></label>
+            <div className="budget-box"><strong>自動処理の上限</strong><div className="form-row"><label className="field">処理時間<NumberField value={timeBudget} onChange={setTimeBudget} min={1} max={60} unit="分" /></label><label className="field">概算費用<NumberField value={costBudget} onChange={setCostBudget} min={0.01} step={0.5} unit="USD" /></label></div><p>最大5回まで試行。同じ問題が3回続くと停止します。</p><p className="help">費用は取得できた利用情報からの概算です。ChatGPTプランの残量や実際の請求額を示すものではありません。</p></div>
+            {!connected && <p className="inline-warning">作成にはAI接続が必要です。<a href="#connection">接続設定へ</a></p>}
+            {activeJob && <p className="inline-warning">実行中の教材作成を停止または完了してから、新しく作成できます。</p>}
+            <button className="primary full" disabled={!loaded || Boolean(syncError) || !connected || !sourceRights || !validDuration(authoringDuration) || !Number.isInteger(timeBudget) || timeBudget < 1 || timeBudget > 60 || !Number.isFinite(costBudget) || costBudget <= 0 || (!sourceFiles.length && !sourceNote.trim())} onClick={() => void startAuthoring()}>{busy.authoring ? "準備中…" : "この条件で作成を開始"}</button>
+          </fieldset>{uploadProgress && <p role="status">{uploadProgress}</p>}</details>
         </section>
-
-        <div className="monitor-column">
-          {error && <p className="error" role="alert">{error}</p>}
-          {session ? <section className="panel session-panel" aria-labelledby="session-heading">
-            <div className="panel-heading"><span>02</span><div><p>LIVE MONITOR</p><h2>進行状況</h2></div></div>
-            <div className="session-heading"><div><p className={`status status--${session.status.toLowerCase()}`}><span aria-hidden="true" />{statusLabels[session.status]}</p><h3 id="session-heading">{session.course.title}</h3></div><strong><span>進行</span>{session.progress.completed}<b>/</b>{session.progress.total}</strong></div>
-            <progress value={session.progress.completed} max={session.progress.total}>{session.progress.completed} / {session.progress.total}</progress>
-            {session.speech.mode === "caption-fallback" && <p className="speech-warning">音声合成に失敗したため、字幕で講義を続けています。</p>}
-            {classroom && <div className="classroom-access"><div><span>教室コード</span><strong>{classroom.code}</strong></div><p>{classroom.participantCount} / {classroom.capacity} 人参加</p></div>}
-            {classroom && <a className="classroom-link" href={`${classroomOrigin}/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer"><span>教室画面を開く</span><b aria-hidden="true">↗</b></a>}
-            {session.status !== "FINISHED" && <div className="actions">
-              {session.status === "PAUSED"
-                ? <button type="button" disabled={busy} onClick={() => void command({ command: "resume" })}>再開</button>
-                : <button type="button" disabled={busy || session.status === "RECOVERING"} onClick={() => void command({ command: "pause" })}>一時停止</button>}
-              <button className="quiet-button" type="button" disabled={busy} onClick={() => void command({ command: "finish" })}>ここで終了</button>
-            </div>}
-            {session.status === "FINISHED" && <div className="result" aria-label="講義結果">
-              <p><span>説明完了</span><strong>{session.completedUnitIds.length}</strong></p>
-              <p><span>未完了</span><strong>{session.unfinishedUnitIds.length}</strong></p>
-            </div>}
-          </section> : <section className="monitor-empty" aria-label="進行状況"><span>02</span><div><p>LIVE MONITOR</p><h2>開始すると、ここに進行状況が表示されます。</h2></div></section>}
-        </div>
-      </div>
-    </main>
-  );
+        <div className="right-column"><section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle number="03" title="講義を準備する" id="prepare-heading" subtitle="利用可能な教材から選択します。" />
+          <label className="field">使用する教材<select value={courseId} disabled={!courses.length || activeSession || busy.session} onChange={event => {setCourseId(event.target.value); const next = courses.find(item => item.id === event.target.value); if (next) setDuration(next.durationMinutes);}}>{!courses.length && <option value="">教材がありません</option>}{courses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+          {selectedCourse && <div className="course-preview"><Badge tone="green">利用可能</Badge><h3>{selectedCourse.title}</h3><p className="muted">{selectedCourse.targetLevel} · 標準 {selectedCourse.durationMinutes}分</p><strong>学習目標</strong><ul>{selectedCourse.learningGoals.map(goal => <li key={goal.id}>{goal.description}</li>)}</ul></div>}
+          <label className="field">今回の講義時間<NumberField value={duration} onChange={setDuration} min={1} max={480} unit="分" disabled={activeSession || Boolean(busy.session)} /></label>
+          <div className="readiness"><p><span>{selectedCourse ? "✓" : "○"}</span>教材を選択</p><p><span>{connected ? "✓" : "○"}</span>AI 接続{!connected && <a href="#connection">設定へ</a>}</p><p><span>{!activeSession ? "✓" : "○"}</span>{activeSession ? "進行中の講義を終了してください" : "他の講義は進行していません"}</p></div>
+          <button className="primary full" disabled={!loaded || Boolean(syncError) || busy.session || !selectedCourse || !validDuration(duration) || !connected || activeSession} onClick={() => setConfirmation({title: "講義を開始しますか？", description: `「${selectedCourse?.title}」を${duration}分で開始します。開始後、AIと音声生成を利用して講義が進みます。`, label: "講義を開始する", run: () => void startLecture()})}>{busy.session ? "操作中…" : "講義を開始"}</button>
+        </section>
+        <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle number="04" title="AI 接続" id="connection-heading" subtitle="教材作成・講義で使う接続を管理します。" /><div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "接続を設定してください"}</strong></div>
+          {settings?.chatgpt ? <><p className="help">{settings.chatgpt.message}</p>{settings.chatgpt.email && <p className="account">{settings.chatgpt.email}</p>}{settings.chatgpt.status === "registration-required" || settings.chatgpt.status === "local-authorization-required" ? <div className="message warning"><p>Macのプロジェクトで認証し、この画面を再取得してください。</p><code>pnpm connect:chatgpt</code></div> : connected ? <><div className="button-row"><button disabled={busy.connection} onClick={() => void connectionAction("check")}>接続テスト</button><button className="text-button" disabled={busy.connection || Boolean(activeJob) || activeSession} onClick={() => setConfirmation({title: "ChatGPTから切断しますか？", description: "再接続するまで、新しい教材作成とAIを使う講義を開始できなくなります。", label: "接続を解除", run: () => void connectionAction("disconnect")})}>切断</button></div><p className="help">接続テストは短い文章を生成します。切断するには、先に教材作成を停止し、講義を終了してください。</p></> : <button className="primary full" disabled={busy.connection} onClick={() => void connectionAction("connect")}>ChatGPTに接続</button>}<a className="external-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況 ↗</a></> : <details className="settings-details"><summary>接続設定を編集</summary><fieldset disabled={busy.connection || Boolean(activeJob) || activeSession}><label className="field">APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={event => setLlmKey(event.target.value)} placeholder={settings?.apiKeyConfigured ? "変更する場合だけ入力" : "APIキー"} /></label><label className="field">モデル<input value={llmModel} onChange={event => setLlmModel(event.target.value)} /></label><label className="field">Base URL<input value={llmBaseUrl} onChange={event => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label><button disabled={!llmModel.trim()} onClick={() => void connectionAction("save")}>接続設定を保存</button></fieldset></details>}
+        </section></div>
+      </div><footer>作成・進行の停止は、それぞれの操作パネルから行えます。画面を閉じてもサーバー上の処理は続きます。</footer>
+    </main>{confirmation && <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />}
+  </div>;
 }
 
-function AuthoringResult({ job, onContinue, busy }: { job: AuthoringJobView; onContinue(action: "resume" | "restart"): Promise<void>; busy: boolean }) {
-  return <section className={`authoring-result authoring-result--${job.status}`} aria-live="polite"><div><strong>{authoringStatus(job.status)}</strong><span>{job.attempts}回試行 · {job.sourceCount}資料</span></div>{job.course && <><h3>{job.course.title}</h3><p>{job.course.targetLevel} · {job.course.durationMinutes}分</p><ul>{job.course.learningGoals.map((goal) => <li key={goal.id}>{goal.description}</li>)}</ul></>}{job.review && <details><summary>審査結果 {job.review.gates.filter((gate) => gate.passed).length}/9</summary><ul>{job.review.gates.map((gate) => <li key={gate.id} className={gate.passed ? "passed" : "failed"}><b>{gate.passed ? "合格" : "不合格"}</b> {gateLabels[gate.id]}: {gate.rationale}{!gate.passed && gate.locations.length > 0 && <small>箇所: {gate.locations.join(", ")}</small>}{!gate.passed && gate.repairInstruction && <small>修正: {gate.repairInstruction}</small>}</li>)}</ul></details>}{job.error && <p>{job.error}</p>}{(job.status === "budget-exhausted" || job.status === "failed") && <div className="authoring-actions"><button type="button" disabled={busy} onClick={() => void onContinue("resume")}>checkpointから再開</button><button type="button" disabled={busy} onClick={() => void onContinue("restart")}>最初から作り直す</button></div>}</section>;
+function AuthoringResult({job, busy, canResume, onAction}: {job: AuthoringJobView; busy: boolean; canResume: boolean; onAction(action: "stop" | "resume" | "restart"): void}) {
+  const gates = job.review?.gates ?? [];
+  const reviewed = gates.filter(gate => gate.evaluated !== false);
+  const passed = reviewed.filter(gate => gate.passed).length;
+  const failed = reviewed.filter(gate => !gate.passed);
+  const running = job.status === "running";
+  return <div className="job-panel"><div className="job-header"><Badge tone={running ? "blue" : job.status === "available" ? "green" : "amber"}>{authoringStatus(job.status)}</Badge>{running && <button className="danger-outline" disabled={busy} onClick={() => onAction("stop")}>{busy ? "停止中…" : "作成を停止"}</button>}</div>
+    <h3>{job.course?.title ?? `${job.sourceCount}資料から教材を作成`}</h3><div className="job-metrics"><div><span>試行</span><strong>{job.attempts}<small>{job.attemptLimit === undefined ? "回" : ` / ${job.attemptLimit}回`}</small></strong></div><div><span>処理時間</span><strong>{Math.floor(job.elapsedMs / 60_000)}<small> / {Math.round(job.request.timeBudgetMs / 60_000)}分</small></strong></div><div><span>記録された概算費用</span><strong>${job.estimatedCostUsd.toFixed(3)}</strong></div></div>
+    {running && <p className="help" role="status">自動作成・審査を進めています。停止すると元資料と途中結果を保存します。</p>}{job.error && <p className="inline-warning">{job.error}</p>}
+    {job.review && <><div className="review-summary"><strong>{running ? "直前の審査結果" : "審査状況"}</strong><span>{passed} 合格 · {failed.length} 不合格 · {9 - reviewed.length} 未実施</span></div>{reviewed.length < 9 && <p className="help">形式の問題があるため、内容の審査は完了していません。</p>}<details className="review-details"><summary>審査の内訳を見る</summary><ul>{gates.map(gate => {const pending = gate.evaluated === false; return <li key={gate.id}><div><span>{gateLabels[gate.id]}</span><Badge tone={pending ? "neutral" : gate.passed ? "green" : "amber"}>{pending ? "未実施" : gate.passed ? "合格" : "不合格"}</Badge></div>{!pending && !gate.passed && <details><summary>問題の詳細</summary><p>{gate.rationale}</p>{gate.locations.length > 0 && <p>箇所: {gate.locations.join(", ")}</p>}</details>}</li>;})}</ul></details></>}
+    {!running && job.status !== "available" && <div className="job-recovery"><p className="help">再開は途中結果を保持します。作り直しは途中結果を破棄します。どちらもAIを再度利用します。</p><div className="button-row"><button disabled={busy || !canResume} onClick={() => onAction("resume")}>途中から再開</button><button className="text-button" disabled={busy || !canResume} onClick={() => onAction("restart")}>最初から作り直す</button></div>{!canResume && <p className="help">接続状態と、他の教材が作成中でないことを確認してください。</p>}</div>}
+  </div>;
 }
-
-function authoringStatus(status: AuthoringJobView["status"]) { return status === "running" ? "自動作成・審査中" : status === "available" ? "講義に利用可能" : status === "budget-exhausted" ? "上限で一時停止" : "作成失敗"; }
-function isLocalLlmUrl(value: string) { return /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value); }
-function supportedMimeType(file: File): AuthoringSourceUpload["mimeType"] { const byExtension: Record<string, AuthoringSourceUpload["mimeType"]> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", md: "text/markdown", txt: "text/plain" }; const value = (file.type || byExtension[file.name.split(".").at(-1)?.toLowerCase() ?? ""]) as AuthoringSourceUpload["mimeType"] | undefined; if (!value || !Object.values(byExtension).includes(value)) throw new TypeError(`${file.name} は対応していない形式です。`); return value; }
-async function fileBase64(file: File): Promise<string> { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary); }
-function utf8Base64(value: string): string { return fileBytesBase64(new TextEncoder().encode(value)); }
-function fileBytesBase64(bytes: Uint8Array): string { let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary); }
-
+function SectionTitle({number, title, subtitle, id}: {number: string; title: string; subtitle: string; id: string}) { return <div className="section-title"><span>{number}</span><div><h2 id={id}>{title}</h2><p>{subtitle}</p></div></div>; }
+function Badge({tone, children}: {tone: "neutral" | "green" | "amber" | "blue"; children: ReactNode}) {return <span className={`badge badge--${tone}`}>{children}</span>;}
+function NumberField({value, onChange, min, max, step, unit, disabled}: {value: number; onChange(value: number): void; min: number; max?: number; step?: number; unit: string; disabled?: boolean}) {return <span className="number-field"><input type="number" value={Number.isNaN(value) ? "" : value} min={min} max={max} step={step ?? 1} disabled={disabled} onChange={event => onChange(event.target.valueAsNumber)} /><span>{unit}</span></span>;}
+function ConfirmDialog({confirmation, onClose}: {confirmation: Confirmation; onClose(): void}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {const dialog = ref.current; dialog?.showModal(); return () => dialog?.close();}, []);
+  return <dialog ref={ref} aria-labelledby="confirm-title" aria-describedby="confirm-description" onCancel={onClose}><h2 id="confirm-title">{confirmation.title}</h2><p id="confirm-description">{confirmation.description}</p><div className="button-row"><button autoFocus onClick={onClose}>戻る</button><button className="primary" onClick={() => {onClose(); confirmation.run();}}>{confirmation.label}</button></div></dialog>;
+}
+function authoringStatus(status: AuthoringJobView["status"]) {return {running: "作成・審査中", stopped: "作成停止", available: "利用可能", "budget-exhausted": "上限で停止", failed: "作成失敗"}[status];}
+function validDuration(value: number) {return Number.isInteger(value) && value >= 1 && value <= 480;}
+function isLocalLlmUrl(value: string) {return /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value);}
+function post(body?: unknown): RequestInit {return {method: "POST", ...(body === undefined ? {} : {headers: {"content-type": "application/json"}, body: JSON.stringify(body)})};}
+function supportedMimeType(file: File): AuthoringSourceUpload["mimeType"] {
+  const types: Record<string, AuthoringSourceUpload["mimeType"]> = {pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", md: "text/markdown", txt: "text/plain"};
+  const type = (file.type || types[file.name.split(".").at(-1)?.toLowerCase() ?? ""]) as AuthoringSourceUpload["mimeType"] | undefined;
+  if (!type || !Object.values(types).includes(type)) throw new Error(`${file.name} は対応していない形式です。`);
+  return type;
+}
+async function fileBase64(file: File) {return fileBytesBase64(new Uint8Array(await file.arrayBuffer()));}
+function fileBytesBase64(bytes: Uint8Array) {let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary);}
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
-  const value = await response.json() as T & { message?: string };
-  if (!response.ok) throw new Error(value.message ?? `HTTP ${response.status}`);
+  if (response.status === 401 || response.redirected || !response.headers.get("content-type")?.includes("application/json")) throw new Error("管理画面へのログインを確認し、ページを再読み込みしてください。");
+  const value = await response.json() as T & {message?: string};
+  if (!response.ok) throw new Error(value.message ?? `操作に失敗しました（HTTP ${response.status}）`);
   return value;
 }
-
-function errorMessage(reason: unknown) { return reason instanceof Error ? reason.message : "処理に失敗しました。"; }
-
+function errorMessage(reason: unknown) {return reason instanceof Error ? reason.message : "処理に失敗しました。";}
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Operator root element was not found");
 createRoot(root).render(<StrictMode><OperatorApp /></StrictMode>);

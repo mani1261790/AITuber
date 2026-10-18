@@ -283,7 +283,7 @@ export interface UpdateLlmSettingsRequest {
 }
 
 export type AuthoringGateId = "source-alignment" | "factual-consistency" | "goal-alignment" | "prerequisites" | "references" | "renderability" | "speech-caption" | "safe-content" | "rights";
-export interface AuthoringReviewGate { readonly id: AuthoringGateId; readonly passed: boolean; readonly rationale: string; readonly locations: readonly string[]; readonly repairInstruction: string }
+export interface AuthoringReviewGate { readonly id: AuthoringGateId; readonly passed: boolean; readonly evaluated?: boolean; readonly rationale: string; readonly locations: readonly string[]; readonly repairInstruction: string }
 export interface AuthoringReview { readonly gates: readonly AuthoringReviewGate[]; readonly repairMode: "local" | "regenerate"; readonly summary: string }
 export interface AuthoringSourceUpload {
   readonly pageImages?: readonly { readonly pageNumber: number; readonly mimeType: "image/jpeg" | "image/png"; readonly dataBase64: string }[];
@@ -295,10 +295,10 @@ export interface AuthoringSourceUpload {
 export interface CreateAuthoringRequest { readonly durationMinutes: number; readonly sources: readonly AuthoringSourceUpload[]; readonly targetLevel?: string; readonly learningGoals?: readonly string[]; readonly timeBudgetMs?: number; readonly costBudgetUsd?: number }
 export interface AuthoringJobView {
   readonly id: string;
-  readonly status: "running" | "available" | "budget-exhausted" | "failed";
+  readonly status: "running" | "available" | "budget-exhausted" | "failed" | "stopped";
   readonly createdAt: string; readonly updatedAt: string;
   readonly request: { readonly durationMinutes: number; readonly targetLevel?: string; readonly learningGoals?: readonly string[]; readonly timeBudgetMs: number; readonly costBudgetUsd: number };
-  readonly review: AuthoringReview | null; readonly attempts: number; readonly elapsedMs: number; readonly estimatedCostUsd: number; readonly error: string | null;
+  readonly attemptLimit?: number; readonly review: AuthoringReview | null; readonly attempts: number; readonly elapsedMs: number; readonly estimatedCostUsd: number; readonly error: string | null;
   readonly sourceCount: number; readonly course: ReadonlyCoursePackage | null;
 }
 export interface ResumeAuthoringRequest { readonly additionalTimeBudgetMs?: number; readonly additionalCostBudgetUsd?: number }

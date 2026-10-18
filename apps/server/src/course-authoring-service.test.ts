@@ -169,3 +169,118 @@ it('runs one persisted authoring iteration per alarm and resumes after a new ser
   expect(second.get(job.id).status).toBe('available');expect(second.get(job.id).attempts).toBe(2);
   await second.runPendingStep();expect(provider.calls).toHaveLength(3);
 });
+
+it('persists a stop before a deferred step and does not resume it after restart', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-stop-'));
+  const provider = new FixedResponseLlmProvider([]);
+  const service = new CourseAuthoringService({ directory, llm: () => provider, defer: () => undefined });
+  const job = await service.begin({ durationMinutes: 5, sources: [upload('Keep this original')] });
+  expect(service.stop(job.id).status).toBe('stopped');
+  expect(service.stop(job.id).status).toBe('stopped');
+  const restored = new CourseAuthoringService({ directory, llm: () => provider, defer: () => undefined });
+  await restored.runPendingStep();
+  expect(restored.get(job.id).status).toBe('stopped');
+  expect(restored.get(job.id).sourceCount).toBe(1);
+  expect(provider.calls).toHaveLength(0);
+});
+
+it.each(['generation', 'review'] as const)('aborts active %s and ignores a late response after stop', async (phase) => {
+  const source = upload('Preserve source');
+  const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+  const fixture = new FixedResponseLlmProvider([candidate, passingReview()]);
+  let signal: AbortSignal | undefined;
+  let release!: () => void;
+  let started!: () => void;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const purposes: string[] = [];
+  const provider: LlmProvider = { createContext(options) {
+    purposes.push(options.purpose);
+    const context = fixture.createContext(options);
+    return { purpose: options.purpose, async generate(request) {
+      const result = await context.generate(request);
+      if (options.purpose === phase) { signal = request.signal; started(); await held; }
+      return result;
+    } };
+  } };
+  let available = false;
+  const service = new CourseAuthoringService({ directory: mkdtempSync(join(tmpdir(), 'aituber-stop-active-')), llm: () => provider, defer: () => undefined, onAvailable: () => { available = true; } });
+  const job = await service.begin({ durationMinutes: 5, sources: [source] });
+  const running = service.runPendingStep();
+  await entered;
+  expect(service.stop(job.id).status).toBe('stopped');
+  expect(signal?.aborted).toBe(true);
+  release(); await running;
+  await service.runPendingStep();
+  expect(service.get(job.id).status).toBe('stopped');
+  expect(service.get(job.id).course).toBeNull();
+  expect(available).toBe(false);
+  expect(purposes).toEqual(phase === 'generation' ? ['generation'] : ['generation', 'review']);
+});
+
+it('marks unexecuted checks pending and stops after three identical output failures across restarts', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-repeated-'));
+  const provider = new FixedResponseLlmProvider([{}, {}, {}, {}]);
+  let service = new CourseAuthoringService({directory, llm: () => provider, defer: () => undefined});
+  const job = await service.begin({durationMinutes: 5, sources: [upload('Source')]});
+  for (let i = 0; i < 3; i++) {
+    await service.runPendingStep();
+    service = new CourseAuthoringService({directory, llm: () => provider, defer: () => undefined});
+  }
+  const stopped = service.get(job.id);
+  expect(stopped.status).toBe('stopped');
+  expect(stopped.attempts).toBe(3);
+  expect(stopped.review!.gates.filter(gate => gate.passed)).toHaveLength(0);
+  expect(stopped.review!.gates.filter(gate => gate.evaluated === false)).toHaveLength(7);
+  expect(stopped.error).toContain('3回');
+  await service.runPendingStep(); expect(provider.calls).toHaveLength(3);
+});
+
+it('caps differing failed attempts at five and resets the allowance only on explicit resume', async () => {
+  const source = upload('Source');
+  const valid = remapSource(quadraticFunctionsFixture, sourceId(source));
+  const invalids = Array.from({length: 5}, (_, i) => { const candidate = structuredClone(valid); candidate.schedule.orderedUnitIds = [`unit.missing${i}`]; return candidate; });
+  const provider = new FixedResponseLlmProvider([...invalids, valid, passingReview()]);
+  const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-limit-')), llm: () => provider});
+  const stopped = await service.create({durationMinutes: 5, sources: [source]});
+  expect(stopped.status).toBe('stopped'); expect(stopped.attempts).toBe(5);
+  const resumed = await service.resume(stopped.id);
+  expect(resumed.status).toBe('available'); expect(resumed.attempts).toBe(6); expect(resumed.attemptLimit).toBe(10);
+});
+
+it('rejects duplicate creation during ingestion and while another deferred job runs', async () => {
+  const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-duplicate-')), llm: () => new FixedResponseLlmProvider([]), defer: () => undefined});
+  const request = {durationMinutes: 5, sources: [upload('Source')]};
+  const first = service.begin(request);
+  await expect(service.begin(request)).rejects.toThrow('実行中');
+  const job = await first;
+  await expect(service.begin(request)).rejects.toThrow('実行中');
+  service.stop(job.id);
+  const next = await service.begin(request);
+  expect(() => service.beginResume(job.id)).toThrow('実行中');
+  expect(service.get(next.id).status).toBe('running');
+});
+
+it('does not extend or reset a deferred running job through repeated resume/restart calls', async () => {
+  const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-running-budget-')), llm: () => new FixedResponseLlmProvider([]), defer: () => undefined});
+  const job = await service.begin({durationMinutes: 5, sources: [upload('Source')]});
+  expect(service.beginResume(job.id).request).toEqual(job.request);
+  expect(service.beginRestart(job.id).attemptLimit).toBe(job.attemptLimit);
+  expect((await service.resume(job.id)).request).toEqual(job.request);
+  expect((await service.restart(job.id)).createdAt).toBe(job.createdAt);
+});
+
+it('corrects legacy synthetic passes without changing actual completed review decisions', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-legacy-review-'));
+  const service = new CourseAuthoringService({directory, llm: () => new FixedResponseLlmProvider([]), defer: () => undefined});
+  const job = await service.begin({durationMinutes: 5, sources: [upload('Source')]});
+  const file = join(directory, `${job.id}.json`);
+  const checkpoint = JSON.parse(readFileSync(file, 'utf8'));
+  checkpoint.review = {...passingReview(), summary: '生成結果が所定の形式を満たしていません'};
+  checkpoint.review.gates.forEach((gate: {rationale: string}) => { gate.rationale = 'この検査では問題なし'; });
+  writeFileSync(file, JSON.stringify(checkpoint));
+  expect(service.get(job.id).review!.gates.every(gate => !gate.passed && gate.evaluated === false)).toBe(true);
+  checkpoint.review.summary = '全項目の審査を完了';
+  writeFileSync(file, JSON.stringify(checkpoint));
+  expect(service.get(job.id).review!.gates.every(gate => gate.passed)).toBe(true);
+});

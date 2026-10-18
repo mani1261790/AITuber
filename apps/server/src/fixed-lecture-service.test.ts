@@ -204,6 +204,15 @@ describe("FixedLectureService", () => {
     expect(service.getSession(started.id).progress.completed).toBe(1);
   });
 
+  it("rejects a new lecture without ending the current lecture", () => {
+    const first = service.createSession({coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6});
+    expect(() => service.createSession({coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6})).toThrow("進行中の講義");
+    expect(service.getCurrentSession()?.id).toBe(first.id);
+    expect(service.getSession(first.id).status).not.toBe("FINISHED");
+    service.command(first.id, {command: "finish"});
+    expect(service.createSession({coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6}).id).not.toBe(first.id);
+  });
+
   it("registers only reviewed available Course Packages for lecture use", () => {
     expect(service.listCourses().some((course) => course.id === vaeReparameterizationFixture.id)).toBe(false);
     service.registerCourse(vaeReparameterizationFixture);

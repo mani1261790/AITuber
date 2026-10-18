@@ -203,7 +203,7 @@ export class FixedLectureService {
 
     if (this.#currentSessionId) {
       const previous = this.#sessions.get(this.#currentSessionId);
-      if (previous && previous.state.status !== "FINISHED") this.command(previous.id, { command: "finish" });
+      if (previous && previous.state.status !== "FINISHED") throw new TypeError("進行中の講義があります。現在の講義を終了してから新しい講義を開始してください。");
     }
 
     const id = `session.${randomUUID()}`;

@@ -52,7 +52,7 @@ describe("server boundary", () => {
     const bytes=Buffer.from("%PDF-1.4 original source bytes");
     const readSource=vi.fn(()=>bytes);
     const job=authoringJob();
-    const server=createApp(service,undefined,{list:()=>[],get:()=>job,begin:async()=>job,beginResume:()=>job,beginRestart:()=>job,readSource});
+    const server=createApp(service,undefined,{list:()=>[],get:()=>job,begin:async()=>job,beginResume:()=>job,beginRestart:()=>job,stop:()=>job,readSource});
     servers.add(server);server.listen(0,"127.0.0.1");await once(server,"listening");
     const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const post=async(path:string,body:unknown,surface="classroom")=>fetch(origin+path,{method:"POST",headers:{"content-type":"application/json","x-aituber-surface":surface},body:JSON.stringify(body)});
@@ -117,6 +117,7 @@ describe("server boundary", () => {
       list: () => [job], get: (id: string) => { calls.push(`get:${id}`); return job; },
       begin: async (request: CreateAuthoringRequest) => { calls.push(`begin:${request.durationMinutes}:${request.sources.length}`); return job; },
       beginResume: (id: string, request?: ResumeAuthoringRequest) => { calls.push(`resume:${id}:${request?.additionalTimeBudgetMs ?? "default"}`); return job; },
+      stop: (id: string) => { calls.push(`stop:${id}`); return job; },
       beginRestart: (id: string) => { calls.push(`restart:${id}`); return job; },
     };
     const server = createApp(undefined, undefined, authoring);
@@ -130,7 +131,9 @@ describe("server boundary", () => {
     expect((await fetch(`${origin}/api/authoring/jobs/${job.id}`, { headers: operator })).status).toBe(200);
     expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/resume`, { method: "POST", headers: operator })).status).toBe(202);
     expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/restart`, { method: "POST", headers: operator })).status).toBe(202);
-    expect(calls).toEqual(["begin:15:1", `get:${job.id}`, `resume:${job.id}:default`, `restart:${job.id}`]);
+    expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/stop`, { method: "POST", headers: { "x-aituber-surface": "classroom" } })).status).toBe(403);
+    expect((await fetch(`${origin}/api/authoring/jobs/${job.id}/stop`, { method: "POST", headers: operator })).status).toBe(200);
+    expect(calls).toEqual(["begin:15:1", `get:${job.id}`, `resume:${job.id}:default`, `restart:${job.id}`, `stop:${job.id}`]);
   });
 
   it("starts and controls a fixed lecture through JSON endpoints", async () => {

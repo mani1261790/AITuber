@@ -6,7 +6,7 @@ import { sendAudio } from "./audio-response.ts";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
-export interface AuthoringApi { readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView }
+export interface AuthoringApi { readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView; stop(id: string): AuthoringJobView }
 export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 export interface PedagogyApi { answer(input: { sessionId: string; participantId: string; answer: string }): FixedSessionView; submitEvidence(input: { sessionId: string; participantId: string; request: SubmitLearningEvidenceRequest }): FixedSessionView }
 export interface AfterClassApi { submitSurvey(input: { sessionId: string; participantId: string; request: SubmitAfterClassSurveyRequest }): unknown }
@@ -55,11 +55,12 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
       }
       if (url.pathname === "/api/authoring/jobs" && request.method === "GET") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 200, { jobs: authoring.list() }); }
       if (url.pathname === "/api/authoring/jobs" && request.method === "POST") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 202, { job: await authoring.begin(await readJson<CreateAuthoringRequest>(request, 36 * 1024 * 1024)) }); }
-      const authoringMatch = url.pathname.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart))?$/);
+      const authoringMatch = url.pathname.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart|stop))?$/);
       if (authoringMatch) {
         requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable");
         if (request.method === "GET" && !authoringMatch[2]) return json(response, 200, { job: authoring.get(authoringMatch[1]!) });
         if (request.method === "POST" && authoringMatch[2] === "resume") return json(response, 202, { job: authoring.beginResume(authoringMatch[1]!, await readOptionalJson<ResumeAuthoringRequest>(request)) });
+        if (request.method === "POST" && authoringMatch[2] === "stop") return json(response, 200, { job: authoring.stop(authoringMatch[1]!) });
         if (request.method === "POST" && authoringMatch[2] === "restart") return json(response, 202, { job: authoring.beginRestart(authoringMatch[1]!) });
       }
       if (request.method === "POST" && url.pathname === "/api/classrooms/join") {

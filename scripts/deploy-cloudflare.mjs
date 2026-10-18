@@ -27,7 +27,7 @@ try {
       cwd: root, encoding: "utf8", timeout: 30_000, env: { ...process.env, CI: "true" },
     });
     // Never forward credential command output: stdout may contain a secret.
-    if (result.error || result.status !== 0) throw new Error("AITuber credentials are missing. Authenticate the aituber-personal profile or set CLOUDFLARE_API_TOKEN securely.");
+    if (result.error || result.status !== 0) throw new Error("Local AITuber credentials are missing. Use pnpm cloudflare:check to verify the GitHub Actions credential, then publish the intended changes to main and run pnpm cloudflare:deploy. For direct deployment, configure aituber-personal or CLOUDFLARE_API_TOKEN securely.");
     try { token = JSON.parse(result.stdout).token; } catch { /* Reject unexpected output without logging it. */ }
   }
   if (!token) throw new Error("AITuber token is unavailable; default-account fallback is disabled.");

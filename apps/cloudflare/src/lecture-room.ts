@@ -137,9 +137,10 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(request.method==='GET')return json(200,{jobs:authoring.list()});
       if(request.method==='POST')return json(202,{job:await authoring.begin(await read<CreateAuthoringRequest>())});
     }
-    const job=path.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart))?$/);
+    const job=path.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart|stop))?$/);
     if(job){
       if(request.method==='GET'&&!job[2])return json(200,{job:authoring.get(job[1])});
+      if(request.method==='POST'&&job[2]==='stop')return json(200,{job:authoring.stop(job[1])});
       if(request.method==='POST'&&job[2]==='restart')return json(202,{job:authoring.beginRestart(job[1])});
       if(request.method==='POST'&&job[2]==='resume'){return json(202,{job:authoring.beginResume(job[1],await readJson<ResumeAuthoringRequest>(request,64*1024,true))});}
     }
