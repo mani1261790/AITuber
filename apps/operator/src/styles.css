@@ -23,7 +23,6 @@ small, .help, .muted, .optional, footer, .sync-state, .section-title p { font-si
 nav { display: grid; gap: 8px; }
 nav a { padding: 12px 16px; border-radius: 6px; text-decoration: none; color: #3c4e42; }
 nav a[aria-current="page"] { background: white; font-weight: 700; color: #204c34; }
-.sidebar-note { margin: 32px 12px; font-size: 14px; color: #5d6861; }
 .workspace { width: 100%; max-width: 1160px; margin: 0 auto; padding: 40px 48px; min-width: 0; }
 .page-header { display: flex; justify-content: space-between; gap: 32px; margin-bottom: 32px; }
 .page-header .muted { font-size: 16px; max-width: 620px; }
@@ -99,7 +98,7 @@ footer { margin: 32px 0 12px; }
 dialog { width: min(540px, calc(100% - 32px)); padding: 32px; border: 1px solid #aab4ad; border-radius: 10px; color: #202923; }
 dialog::backdrop { background: #18251b80; }
 @media (max-width: 1000px) { .workspace { padding: 32px 24px; } .app-layout { grid-template-columns: 170px minmax(0, 1fr); } .sidebar { padding: 28px 12px; } .live-body { grid-template-columns: 1fr; } .room-card { max-width: none; } .course-list li { display: block; } .course-list li a { display: inline-block; margin-top: 14px; } }
-@media (max-width: 700px) { .app-layout { display: block; } .sidebar { position: static; height: auto; padding: 16px; } .brand { margin: 0 0 12px; font-size: 18px; } nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } nav a { padding: 10px 6px; text-align: center; } .sidebar-note { margin: 12px 0 0; } .workspace { padding: 24px 16px; } .page-header { display: block; margin-bottom: 24px; } h1 { font-size: 26px; } .sync-state { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 16px; } .card { padding: 22px 18px; } .form-row { grid-template-columns: 1fr; gap: 0; } .live-body h3 { font-size: 21px; } .live-controls > button { flex: 1 1 100%; } .upload-zone, .budget-box, .course-preview, .room-card { padding: 18px; } .job-metrics { gap: 16px 24px; } .message { padding: 16px; } .page-actions .button { width: 100%; } dialog { padding: 24px; } }
+@media (max-width: 700px) { .app-layout { display: block; } .sidebar { position: static; height: auto; padding: 16px; } .brand { margin: 0 0 12px; font-size: 18px; } nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } nav a { padding: 10px 6px; text-align: center; } .workspace { padding: 24px 16px; } .page-header { display: block; margin-bottom: 24px; } h1 { font-size: 26px; } .sync-state { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 16px; } .card { padding: 22px 18px; } .form-row { grid-template-columns: 1fr; gap: 0; } .live-body h3 { font-size: 21px; } .live-controls > button { flex: 1 1 100%; } .upload-zone, .budget-box, .course-preview, .room-card { padding: 18px; } .job-metrics { gap: 16px 24px; } .message { padding: 16px; } .page-actions .button { width: 100%; } dialog { padding: 24px; } }
 /* Controls share one appearance across browser engines. */
 button, input, textarea { appearance: none; -webkit-appearance: none; }
 input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
@@ -123,3 +122,17 @@ progress::-moz-progress-bar { background: #3b7455; border-radius: 5px; }
 .selection-close { margin-top: 24px; }
 .disclosure-toggle { display: flex; justify-content: space-between; gap: 20px; width: 100%; text-align: left; margin: 12px 0; }
 .disclosure-toggle span { font-weight: 400; flex-shrink: 0; }
+.page-header { align-items: center; margin-bottom: 28px; }
+.page-header h1 { margin: 0; }
+.page-tools { font-size: 14px; color: #5d6861; }
+.material-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; flex-wrap: wrap; }
+.material-nav > a { padding: 10px 16px; }
+.material-nav > a[aria-current="page"] { background: #e3ebe5; }
+.material-nav > .primary { margin-left: auto; color: white; }
+.course-list li { align-items: flex-start; }
+.course-list li > div:first-child { flex: 1; }
+.course-actions { width: 280px; max-width: 100%; }
+.course-actions .disclosure-toggle { margin-top: 0; }
+.course-actions p { font-size: 14px; font-weight: 400; }
+@media(max-width:1000px) { .course-actions { width: 100%; margin-top: 20px; } }
+@media(max-width:700px) { .page-header { display: flex; gap: 12px; flex-wrap: wrap; } .page-tools .text-button { padding: 6px 0; } .material-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .material-nav > .primary { grid-column: 1 / -1; margin: 4px 0 0; } .material-nav > a { text-align: center; padding: 10px 8px; } }

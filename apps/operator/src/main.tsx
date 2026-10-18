@@ -10,11 +10,11 @@ const gateLabels = { "source-alignment": "出典と内容", "factual-consistency
 type Scope = "authoring" | "session" | "connection";
 type Confirmation = { title: string; description: string; label: string; run(): void };
 
-type Page = "lecture" | "materials" | "new" | "connection";
-function currentPage(): Page { const page = window.location.hash.replace("#/", ""); return page === "materials" || page === "new" || page === "connection" ? page : "lecture"; }
+type Page = "lecture" | "materials" | "history" | "new" | "connection";
+function currentPage(): Page { const page = window.location.hash.replace("#/", ""); return page === "materials" || page === "history" || page === "new" || page === "connection" ? page : "lecture"; }
 function OperatorApp() {
   const [page, setPage] = useState<Page>(currentPage);
-  useEffect(() => { const change = () => {setPage(currentPage()); window.scrollTo(0, 0);}; window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
+  useEffect(() => { const change = () => {setPage(currentPage()); setNotice(null); setError(null); window.scrollTo(0, 0);}; window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [courseId, setCourseId] = useState("");
   const [duration, setDuration] = useState(6);
@@ -43,7 +43,6 @@ function OperatorApp() {
   const seededCourse = useRef(false);
   const [refresh, setRefresh] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -79,7 +78,7 @@ function OperatorApp() {
         if (!seededCourse.current && courseResult.courses[0]) { seededCourse.current = true; setCourseId(courseResult.courses[0].id); setDuration(courseResult.courses[0].durationMinutes); }
         setSession(sessionResult.session); setClassroom(sessionResult.classroom); setJobs(jobResult.jobs); setSettings(settingsResult.settings);
         if (!seededSettings.current) { seededSettings.current = true; setLlmModel(settingsResult.settings.model); setLlmBaseUrl(settingsResult.settings.baseUrl); }
-        setLoaded(true); setLastSync(new Date()); setSyncError(null);
+        setLoaded(true); setSyncError(null);
       } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); }
       finally { if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 3000); }
     }
@@ -126,7 +125,7 @@ function OperatorApp() {
       if (sourceNote.trim()) sources.push({fileName: "instructor-note.txt", mimeType: "text/plain", dataBase64: fileBytesBase64(new TextEncoder().encode(sourceNote.trim())), rights: {basis: sourceRights}});
       setUploadProgress("資料を送信中…");
       const result = await fetchJson<{job: AuthoringJobView}>("/api/authoring/jobs", post({ durationMinutes: authoringDuration, sources, timeBudgetMs: timeBudget * 60_000, costBudgetUsd: costBudget, ...(targetLevel.trim() ? {targetLevel: targetLevel.trim()} : {}), ...(learningGoals.trim() ? {learningGoals: learningGoals.split("\n").map(value => value.trim()).filter(Boolean)} : {}) }));
-      updateJob(result.job); window.location.hash = "/materials"; setNotice("教材作成を開始しました。処理状況からいつでも停止できます。");
+      updateJob(result.job); window.location.hash = "/history"; setNotice("教材作成を開始しました。処理状況からいつでも停止できます。");
     });
     setUploadProgress("");
   }
@@ -157,29 +156,31 @@ function OperatorApp() {
   }
 
   return <div className="app-layout">
-    <aside className="sidebar"><a className="brand" href="#/lecture">講義管理</a><nav aria-label="管理メニュー">{([['lecture', '講義'], ['materials', '教材'], ['connection', '接続設定']] as const).map(([target, label]) => <a key={target} href={`#/${target}`} aria-current={(page === target || target === "materials" && page === "new") ? "page" : undefined}>{label}</a>)}</nav><p className="sidebar-note">{connected ? "AI 接続済み" : "AI 未接続"}</p></aside>
+    <aside className="sidebar"><a className="brand" href="#/lecture">講義管理</a><nav aria-label="管理メニュー">{([['lecture', '講義'], ['materials', '教材'], ['connection', '接続設定']] as const).map(([target, label]) => <a key={target} href={`#/${target}`} aria-current={(page === target || target === "materials" && (page === "new" || page === "history")) ? "page" : undefined}>{label}</a>)}</nav></aside>
     <main className="workspace">
-      <header className="page-header"><div><h1>{({lecture: "講義", materials: "教材", new: "教材を作成", connection: "接続設定"})[page]}</h1><p className="muted">{({lecture: "講義の状態を確認して、開始・一時停止・終了を操作できます。", materials: "使える教材と、作成中・停止中の処理を確認できます。", new: "資料と作成条件を指定してください。", connection: "教材作成と講義に使用するAIの接続を管理します。"})[page]}</p></div><div className="sync-state">{syncError ? "更新できていません" : loaded ? "自動更新中" : "読み込み中"}{lastSync && <span>最終確認 {lastSync.toLocaleTimeString("ja-JP", {hour: "2-digit", minute: "2-digit"})}</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>再取得</button></div></header>
+      <header className="page-header"><h1>{({lecture: "講義", materials: "教材", history: "教材の作成履歴", new: "教材を作成", connection: "接続設定"})[page]}</h1><div className="page-tools">{!loaded && <span role="status">読み込み中</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>最新の状態を取得</button></div></header>
+      {(page === "materials" || page === "history") && <nav className="material-nav" aria-label="教材メニュー"><a href="#/materials" aria-current={page === "materials" ? "page" : undefined}>利用できる教材</a><a href="#/history" aria-current={page === "history" ? "page" : undefined}>作成履歴{activeJob ? "（作成中）" : ""}</a><a className="button primary" href="#/new">新しい教材を作成</a></nav>}
+
       {syncError && <div className="message warning" role="alert"><strong>状態を確認できません</strong><p>{syncError} 接続が戻るまで、表示は前回取得時の状態です。</p></div>}
       {error && <div className="message danger" role="alert"><strong>操作を完了できませんでした</strong><p>{error}</p><button className="text-button" onClick={() => setError(null)}>閉じる</button></div>}
       {notice && <div className="message success" role="status">{notice}</div>}
-      {activeJob && page !== "materials" && <div className="message warning">教材を作成しています。画面を閉じても処理は続きます。<a href="#/materials" onClick={() => setSelectedJobId(activeJob.id)}>処理の確認・停止</a></div>}
+      {activeJob && page === "new" && <div className="message warning">教材を作成しています。画面を閉じても処理は続きます。<a href="#/history" onClick={() => setSelectedJobId(activeJob.id)}>処理の確認・停止</a></div>}
       {page === "lecture" && session && <>
-      <section className={`card live-panel ${activeSession ? "is-live" : ""}`} aria-labelledby="live-heading"><SectionTitle title="講義の進行" id="live-heading" subtitle="一時停止すると、続きから再開できます。" />
-        {session ? <><div className="live-body"><div><Badge tone={activeSession ? "green" : "neutral"}>{sessionLabels[session.status]}</Badge><h3>{session.course.title}</h3><p className="muted">説明済み {session.progress.completed} / {session.progress.total}</p><progress value={session.progress.completed} max={session.progress.total || 1} aria-label="講義の進行" />{session.speech.mode === "caption-fallback" && <p className="inline-warning">音声合成に失敗したため、字幕で進行しています。</p>}</div>{classroom && <div className="room-card"><span className="room-label">教室コード</span><strong>{classroom.code}</strong><p>{classroom.participantCount} / {classroom.capacity} 人が参加</p><a href={`${classroomOrigin}/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer">教室画面を開く</a></div>}</div>{activeSession && <div className="live-controls"><button className="primary" disabled={busy.session || session.status === "RECOVERING" || (session.status === "PAUSED" && (!connected || Boolean(syncError)))} onClick={() => void command(session.status === "PAUSED" ? "resume" : "pause")}>{busy.session ? "操作中…" : session.status === "PAUSED" ? "講義を再開" : "講義を一時停止"}</button><button className="danger-outline" disabled={busy.session} onClick={() => setConfirmation({title: "この講義を終了しますか？", description: "参加者への講義を終了します。この講義の続きからの再開はできません。一時的に止める場合は「一時停止」を使ってください。", label: "講義を終了する", run: () => void command("finish")})}>講義を終了</button><span className="muted">{session.status === "PAUSED" && !connected ? "再開するにはAI接続が必要です。" : "一時停止後は、続きから再開できます。"}</span></div>}{!activeSession && <p className="muted">完了 {session.completedUnitIds.length} 項目 · 未完了 {session.unfinishedUnitIds.length} 項目</p>}</> : <div className="empty-state"><div><h3>まだ講義は始まっていません</h3><p>利用する教材と時間を確認してから、講義を開始できます。</p></div></div>}
+      <section className={`card live-panel ${activeSession ? "is-live" : ""}`} aria-labelledby="live-heading"><SectionTitle title={activeSession ? "進行中の講義" : "前回の講義"} id="live-heading"  />
+        {session ? <><div className="live-body"><div><Badge tone={activeSession ? "green" : "neutral"}>{sessionLabels[session.status]}</Badge><h3>{session.course.title}</h3><p className="muted">説明済み {session.progress.completed} / {session.progress.total}</p><progress value={session.progress.completed} max={session.progress.total || 1} aria-label="講義の進行" />{session.speech.mode === "caption-fallback" && <p className="inline-warning">音声合成に失敗したため、字幕で進行しています。</p>}</div>{classroom && <div className="room-card"><span className="room-label">教室コード</span><strong>{classroom.code}</strong><p>{classroom.participantCount} / {classroom.capacity} 人が参加</p><a href={`${classroomOrigin}/?code=${encodeURIComponent(classroom.code)}`} target="_blank" rel="noreferrer">教室画面を開く</a></div>}</div>{activeSession && <div className="live-controls"><button className="primary" disabled={busy.session || session.status === "RECOVERING" || (session.status === "PAUSED" && (!connected || Boolean(syncError)))} onClick={() => void command(session.status === "PAUSED" ? "resume" : "pause")}>{busy.session ? "操作中…" : session.status === "PAUSED" ? "講義を再開" : "講義を一時停止"}</button><button className="danger-outline" disabled={busy.session} onClick={() => setConfirmation({title: "この講義を終了しますか？", description: "参加者への講義を終了します。この講義の続きからの再開はできません。一時的に止める場合は「一時停止」を使ってください。", label: "講義を終了する", run: () => void command("finish")})}>講義を終了</button><span className="muted">{session.status === "PAUSED" && !connected ? <>再開するには<a href="#/connection">接続設定</a>を確認してください。</> : "一時停止後は、続きから再開できます。"}</span></div>}{!activeSession && <p className="muted">完了 {session.completedUnitIds.length} 項目 · 未完了 {session.unfinishedUnitIds.length} 項目</p>}</> : <div className="empty-state"><div><h3>まだ講義は始まっていません</h3><p>利用する教材と時間を確認してから、講義を開始できます。</p></div></div>}
       </section>
       </>}
-      {page === "materials" && <>
-        <div className="page-actions"><a className="button primary" href="#/new">新しい教材を作成</a></div>
-
-        <section className="card" aria-labelledby="materials-heading"><SectionTitle title="作成状況と履歴" id="materials-heading" subtitle="停止した処理も、元資料と途中結果が保存されています。" />
+      {page === "history" && <>
+        <section className="card" aria-labelledby="materials-heading"><SectionTitle title="作成状況" id="materials-heading" />
           {!job && <p>教材の作成履歴はありません。</p>}
           {jobs.length > 1 && <SelectField label="作成履歴" value={job?.id ?? ""} disabled={Boolean(busy.authoring)} onChange={setSelectedJobId} options={jobs.map(item => ({value: item.id, label: `${new Date(item.createdAt).toLocaleString("ja-JP")} · ${authoringStatus(item.status)} · ${item.course?.title ?? `${item.sourceCount}資料`}`}))} />}
           {job && <AuthoringResult job={job} busy={Boolean(busy.authoring)} canResume={connected && !activeJob && !syncError} onAction={action => action === "stop" ? void controlJob(action) : setConfirmation({title: action === "restart" ? "最初から作り直しますか？" : "教材作成を再開しますか？", description: action === "restart" ? "途中の生成結果を破棄し、保存済みの元資料から作り直します。AIを再度利用します。" : "保存済みの資料・途中結果を使います。処理時間を5分、概算費用の上限を$2追加し、最大5回試行します。", label: action === "restart" ? "作り直す" : "上限を追加して再開", run: () => void controlJob(action)})} />}
 
           {activeJob && activeJob.id !== job?.id && <div className="message warning">別の教材を作成中です。<button className="text-button" onClick={() => setSelectedJobId(activeJob.id)}>実行中の処理を表示</button></div>}
         </section>
-        <section className="card"><h2>利用できる教材</h2>{courses.length ? <ul className="course-list">{courses.map(course => <li key={course.id}><div><h3>{course.title}</h3><p className="muted">{course.targetLevel} · {course.durationMinutes}分</p></div><a href="#/lecture" onClick={() => {setCourseId(course.id); setDuration(course.durationMinutes);}}>{activeSession ? "進行中の講義を見る" : "この教材で講義を準備"}</a></li>)}</ul> : <p>利用できる教材はまだありません。資料から教材を作成してください。</p>}</section>
+      </>}
+      {page === "materials" && <>
+        <section className="card"><h2>利用できる教材</h2>{activeSession && <p className="help">講義が進行中です。次の講義を始めるには、<a href="#/lecture">現在の講義</a>を終了してください。</p>}{courses.length ? <ul className="course-list">{courses.map(course => <li key={course.id}><div><h3>{course.title}</h3><p className="muted">{course.targetLevel} · {course.durationMinutes}分</p></div><div className="course-actions"><Disclosure title="学習目標">{course.learningGoals.map(goal => <p key={goal.id}>{goal.description}</p>)}</Disclosure>{!activeSession && <a href="#/lecture" onClick={() => {setCourseId(course.id); setDuration(course.durationMinutes);}}>この教材で講義を準備</a>}</div></li>)}</ul> : <p>利用できる教材はまだありません。資料から教材を作成してください。</p>}</section>
       </>}
       {page === "new" && <section className="card creation-form"><a href="#/materials">教材一覧に戻る</a><h2>資料と作成条件</h2><fieldset disabled={busy.authoring || Boolean(activeJob)}>
             <div className="upload-zone"><strong>教材ファイル</strong><p>PDF・画像・Markdown・テキスト</p><label className="file-picker"><span className="button">ファイルを選ぶ</span><input aria-label="教材ファイルを選択" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt" onChange={event => {setSourceFiles([...event.target.files ?? []]); event.target.value = "";}} /></label><p className="file-selection" role="status">{sourceFiles.length ? `${sourceFiles.length}件のファイルを選択中` : "ファイルは選択されていません"}</p></div>
@@ -194,16 +195,16 @@ function OperatorApp() {
             {activeJob && <p className="inline-warning">実行中の教材作成を停止または完了してから、新しく作成できます。</p>}
             <button className="primary full" disabled={!loaded || Boolean(syncError) || !connected || !sourceRights || !validDuration(authoringDuration) || !Number.isInteger(timeBudget) || timeBudget < 1 || timeBudget > 60 || !Number.isFinite(costBudget) || costBudget <= 0 || (!sourceFiles.length && !sourceNote.trim())} onClick={() => void startAuthoring()}>{busy.authoring ? "準備中…" : "この条件で作成を開始"}</button>
           </fieldset>{uploadProgress && <p role="status">{uploadProgress}</p>}</section>}
-        {page === "lecture" && !activeSession && <section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle title="講義を準備する" id="prepare-heading" subtitle="利用可能な教材から選択します。" />
+        {page === "lecture" && !activeSession && <section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle title="講義を準備する" id="prepare-heading"  />
           <SelectField label="使用する教材" value={courseId} disabled={!courses.length || activeSession || Boolean(busy.session)} onChange={value => {setCourseId(value); const next = courses.find(item => item.id === value); if (next) setDuration(next.durationMinutes);}} options={courses.map(course => ({value: course.id, label: course.title}))} />
-          {selectedCourse && <div className="course-preview"><Badge tone="green">利用可能</Badge><h3>{selectedCourse.title}</h3><p className="muted">{selectedCourse.targetLevel} · 標準 {selectedCourse.durationMinutes}分</p><strong>学習目標</strong><ul>{selectedCourse.learningGoals.map(goal => <li key={goal.id}>{goal.description}</li>)}</ul></div>}
+          {selectedCourse && <div className="course-preview"><h3>{selectedCourse.title}</h3><p className="muted">{selectedCourse.targetLevel} · 標準 {selectedCourse.durationMinutes}分</p><strong>学習目標</strong><ul>{selectedCourse.learningGoals.map(goal => <li key={goal.id}>{goal.description}</li>)}</ul></div>}
           <label className="field">今回の講義時間<NumberField value={duration} onChange={setDuration} min={1} max={480} unit="分" disabled={activeSession || Boolean(busy.session)} /></label>
-          <div className="readiness"><p>{selectedCourse ? "教材を選択済み" : "教材を選択してください"}</p><p>AI {connected ? "接続済み" : "未接続"}{!connected && <a href="#/connection">設定へ</a>}</p><p>{activeSession ? "進行中の講義を終了してください" : "他の講義は進行していません"}</p></div>
+          {loaded && !connected && <p className="inline-warning">講義を開始するには<a href="#/connection">接続設定</a>を確認してください。</p>}
           <button className="primary full" disabled={!loaded || Boolean(syncError) || busy.session || !selectedCourse || !validDuration(duration) || !connected || activeSession} onClick={() => setConfirmation({title: "講義を開始しますか？", description: `「${selectedCourse?.title}」を${duration}分で開始します。開始後、AIと音声生成を利用して講義が進みます。`, label: "講義を開始する", run: () => void startLecture()})}>{busy.session ? "操作中…" : "講義を開始"}</button>
         </section>}
-        {page === "connection" && <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle title="AI 接続" id="connection-heading" subtitle="教材作成・講義で使う接続を管理します。" /><div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "接続を設定してください"}</strong></div>
+        {page === "connection" && <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle title="AI 接続" id="connection-heading"  /><div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "接続を設定してください"}</strong></div>
           {settings?.chatgpt ? <><p className="help">{settings.chatgpt.message}</p>{settings.chatgpt.email && <p className="account">{settings.chatgpt.email}</p>}{settings.chatgpt.status === "registration-required" || settings.chatgpt.status === "local-authorization-required" ? <div className="message warning"><p>Macのプロジェクトで認証し、この画面を再取得してください。</p><code>pnpm connect:chatgpt</code></div> : connected ? <><div className="button-row"><button disabled={busy.connection} onClick={() => void connectionAction("check")}>接続テスト</button><button className="text-button" disabled={busy.connection || Boolean(activeJob) || activeSession} onClick={() => setConfirmation({title: "ChatGPTから切断しますか？", description: "再接続するまで、新しい教材作成とAIを使う講義を開始できなくなります。", label: "接続を解除", run: () => void connectionAction("disconnect")})}>切断</button></div><p className="help">接続テストは短い文章を生成します。切断するには、先に教材作成を停止し、講義を終了してください。</p></> : <button className="primary full" disabled={busy.connection} onClick={() => void connectionAction("connect")}>ChatGPTに接続</button>}<a className="external-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況</a></> : <Disclosure className="settings-details" title="接続設定を編集"><fieldset disabled={busy.connection || Boolean(activeJob) || activeSession}><label className="field">APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={event => setLlmKey(event.target.value)} placeholder={settings?.apiKeyConfigured ? "変更する場合だけ入力" : "APIキー"} /></label><label className="field">モデル<input value={llmModel} onChange={event => setLlmModel(event.target.value)} /></label><label className="field">Base URL<input value={llmBaseUrl} onChange={event => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label><button disabled={!llmModel.trim()} onClick={() => void connectionAction("save")}>接続設定を保存</button></fieldset></Disclosure>}
-        </section>}<footer>作成・進行の停止は、それぞれの操作パネルから行えます。画面を閉じてもサーバー上の処理は続きます。</footer>
+        </section>}{page === "lecture" && activeSession && <p className="help">画面を閉じても講義は終了しません。停止・終了は上のボタンから操作してください。</p>}
     </main>{confirmation && <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />}
   </div>;
 }
@@ -245,7 +246,7 @@ function SelectionDialog({label, value, options, onSelect, onClose}: {label: str
     event.preventDefault(); buttons[next]?.focus();
   }}>{options.map(option => <button key={option.value} aria-pressed={option.value === value} onClick={() => onSelect(option.value)}><span>{option.label}</span>{option.value === value && <span className="selected-label">選択中</span>}</button>)}</div><button className="selection-close" onClick={onClose}>変更せず閉じる</button></dialog>;
 }
-function SectionTitle({title, subtitle, id}: {title: string; subtitle: string; id: string}) { return <div className="section-title"><h2 id={id}>{title}</h2><p>{subtitle}</p></div>; }
+function SectionTitle({title, subtitle, id}: {title: string; subtitle?: string; id: string}) { return <div className="section-title"><h2 id={id}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>; }
 function Badge({tone, children}: {tone: "neutral" | "green" | "amber" | "blue"; children: ReactNode}) {return <span className={`badge badge--${tone}`}>{children}</span>;}
 function NumberField({value, onChange, min, max, step, unit, disabled}: {value: number; onChange(value: number): void; min: number; max?: number; step?: number; unit: string; disabled?: boolean}) {return <span className="number-field"><input type="number" value={Number.isNaN(value) ? "" : value} min={min} max={max} step={step ?? 1} disabled={disabled} onChange={event => onChange(event.target.valueAsNumber)} /><span>{unit}</span></span>;}
 function ConfirmDialog({confirmation, onClose}: {confirmation: Confirmation; onClose(): void}) {
