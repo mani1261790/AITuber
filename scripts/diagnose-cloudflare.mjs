@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-const tail = spawn('pnpm', ['exec', 'wrangler', 'tail', 'aituber', '--format', 'json'], {stdio:['ignore','pipe','pipe']});
+const tail = spawn('pnpm', ['exec', 'wrangler', 'tail', 'aituber', '--format', 'json', '--config', 'apps/cloudflare/wrangler.jsonc'], {stdio:['ignore','pipe','pipe']});
 let output = '';
 tail.stdout.on('data', chunk => { output += chunk; });
-tail.stderr.on('data', () => {});
+let diagnostics = '';
+tail.stderr.on('data', chunk => { diagnostics += chunk; });
 try {
   await new Promise(resolve => setTimeout(resolve, 12000));
   const base = 'https://aituber.mani1261790.workers.dev';
@@ -21,3 +22,10 @@ for (const match of messages) {
   try { const value=JSON.parse(match[1]); if(value[0]==='lecture_request_failed') console.log(JSON.stringify(value)); } catch { /* Ignore incomplete streaming records. */ }
 }
 if (!messages.length) console.log('No application log messages captured.');
+
+if (!messages.length) {
+  let safe = diagnostics;
+  for (const secret of [process.env.CLOUDFLARE_API_TOKEN, process.env.OPERATOR_PASSWORD].filter(Boolean)) safe = safe.split(secret).join('[redacted]');
+  console.log('Tail exit:', tail.exitCode, 'diagnostics:', safe.slice(0,3000));
+  console.log('Tail output bytes:', output.length);
+}
