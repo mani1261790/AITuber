@@ -1,79 +1,42 @@
 # ChatGPTプランによるLLM接続
 
-Cloudflare版のLLM接続はChatGPT認証を使用し、モデルは `gpt-6-luna` に固定する。
-教材作成・審査、授業中の台本と板書、質問対応が同じ接続を使う。
-音声は既存のFish Audio `s2.1-pro-free` のまま。
+Cloudflare版は `gpt-6-luna` を使用する。教材作成・審査、台本・板書、質問対応が同じ接続を使う。音声はFish Audio `s2.1-pro-free` のまま。
 
-## 現在の前提
+## 初回だけMacで認証する
 
-2026-10-18時点で、AITuber用Web OAuthクライアントは未発行。
-本番の認証・Luna推論・実教材生成は未確認。未登録を成功や接続済みとは表示しない。
+プロジェクトのルートで `pnpm connect:chatgpt` を実行し、開いたブラウザでAITuberのChatGPTプラン使用を許可する。管理用パスワードが保存されていなければ、ターミナルで非表示入力する。
 
-公式のWeb向けSIWCは登録済みクライアントが必要。OSS向け自動登録の
-`dynamic_agent_client` はHTTP loopbackコールバック向けなので、CloudflareのURLに流用しない。
-既存のCodex認証ファイルやChatGPTの非公開backend-apiも使わない。
+AITuber専用のローカルOAuthクライアントを初回認証で発行し、その認証を承認済みのCloudflare本番に引き継ぐ。既存Codexの認証ファイルは使わない。個人利用のこの手順にWeb向けクライアントの事前申請は不要。
 
-## 登録に必要な内容
+- コールバックはMacの `127.0.0.1` の一時ポート。認証完了後に終了する。
+- `.data/chatgpt/registration.json` にクライアントIDなどを保存し、次回も同じ登録を使う。
+- 引き継ぎ用の `.data/chatgpt/transfer.json` は権限0600、30分以内のみ有効。引き継ぎ成功時に削除する。失敗時は `node scripts/auth/chatgpt-transfer.mjs` で再試行できる。
+- 本番URLは `https://aituber.mani1261790.workers.dev` に固定。管理者認証と同一OriginのPOSTが必要。
+- Cloudflareがトークン更新と推論を担当する。Macを起動し続ける必要はない。
+- 再認証が必要になった場合は同じコマンドを実行する。
 
-[OpenAIの利用希望フォーム](https://openai.com/form/sign-in-with-chatgpt-interest/)で、
-Webでのサインインだけでなく **ChatGPT plan usage / Responses API** の利用を申し込む。
-本人確認専用のOAuthクライアントでは推論に使えない。
+## 検証
 
-- アプリ名: AITuber
-- アプリURL: `https://aituber.mani1261790.workers.dev/operator/`
-- コールバックURL: `https://aituber.mani1261790.workers.dev/auth/chatgpt/callback`
-- 用途: 運営者本人のChatGPTプランで、アップロードした教材から授業パッケージ、台本、板書を生成する。視聴者はChatGPT認証不要。
-- モデル: `gpt-6-luna`
-- 必要な権限: `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct`
-- バックエンド: Cloudflare Worker + private Durable Object storage
+1. 本番の「LLM接続」が接続済みであることを確認する。
+2. 「接続をテスト」でCloudflareからトークンを更新し、モデル一覧と実際のResponses生成を確認する。
+3. PDFを登録し、自動作成・審査が合格してCourse Packageが登録されることを確認する。
+4. 授業の台本・音声・モーション・板書は新規授業で別途確認する。
 
-OpenAIによる利用許可と発行情報を確認後、リポジトリのGitHub Actions Secretsへ設定する。
+単体テスト、接続テスト、教材生成、授業の成功はそれぞれ別に確認する。
 
-| Secret | 値 |
-| --- | --- |
-| `CHATGPT_CLIENT_ID` | 発行された `oaiapp_...` |
-| `CHATGPT_REDIRECT_URI` | 上記の完全一致URL |
-| `CHATGPT_PLAN_USAGE_ENABLED` | **ホスト型アプリのプラン利用許可を得てから** `true` |
-| `CHATGPT_CLIENT_SECRET` | confidential / client_secret_basicとして発行された場合のみ |
+## 認証と推論
 
-`CHATGPT_PLAN_USAGE_ENABLED` はOpenAIの利用許可を取得する設定ではない。
-発行された契約・認証方式がこの実装と異なる場合は、有効化する前に対応する。
-秘密情報はチャットに貼らず、GitHub Actions Secretsへ直接入力する。
-設定後は通常のCloudflareデプロイワークフローを実行する。
+PKCE・state・nonceを使用し、IDトークンの署名・issuer・audience・有効期限・nonce、プラン利用scopeを検証する。引き継ぎ時にはCloudflareからモデル一覧を取得し、Lunaが利用できる場合だけ有効化する。
 
-## 操作と検証
+認証情報はDOの非公開ストレージに保存し、管理画面へ返さない。Cloudflare自身のhost IDを維持する。更新は直列化し、ローテーションされたrefresh tokenを保存する。切断は保存情報の削除とリモート失効を行う。
 
-1. 管理画面の「LLM接続」で `Continue with ChatGPT` を選ぶ。
-2. アカウントを確認し、AITuberによるChatGPTプラン使用を許可する。
-3. 認証後、署名・issuer・audience・nonce・scopeを検証する。
-4. 同じアクセストークンで `/v1/models` を取得し、Lunaが利用できる場合のみ接続を有効化する。
-5. 「管理画面へ戻る」から「接続をテスト」。実Responses生成が完了することを確認する。
-6. PDFを登録して自動作成・審査が合格し、Course Packageが登録されることを確認する。
-7. 新規授業で台本・Fish Audio・モーション・板書とUnit遷移を別途確認する。
+公開 `/v1/responses` を `store:false, stream:true` で呼び出す。`response.completed` とスキーマ検証を通過してから教材審査へ進む。API従量料金への自動フォールバックはない。ChatGPTプランの利用上限は残る。トークン数は記録するがAPI料金換算はしない。
 
-接続テスト成功だけでは、PDF教材生成や授業全体の成功とはしない。
-ローカルの単体テストは認証とストリームの模擬応答であり、実接続の証明ではない。
-
-## 実装上の扱い
-
-- PKCE、state、nonce、10分で失効する一度限りの認証トランザクション。
-- 管理者だけが接続開始・接続テスト・切断を実行できる。同一OriginのPOSTが必要。
-- コールバックは別のSecure/HttpOnly/SameSite=LaxトランザクションCookieに結び付ける。
-  既存管理ログインCookieのSameSite=Strictは維持する。
-- トークンはDOの非公開ストレージに保存し、ブラウザへ返さない。
-  更新は接続単位で直列化し、ローテーションされたrefresh tokenを保存する。
-- `/v1/responses` へ `store:false, stream:true`。`response.completed` を受信するまで成功扱いにしない。
-  スキーマ検証と既存の教材審査を通す。
-- API従量料金への自動フォールバックはない。プランやアプリの上限は残る。
-  Responsesのトークン数を保持するが、API価格からドル費用を推定しない。
-- 「切断」はローカルの認証情報を破棄し、OpenAIの更新セッションも失効させる。
-  リモート失効が確認できない場合はChatGPT設定で解除するよう表示する。
+登録済みWeb OAuthクライアントによる認証も残しているが、今回の個人用接続では使用しない。第三者向けのホスト型サービスへ認証機能を公開する場合は、その提供形態に適用されるOpenAIの条件を別途確認する。
 
 ## 公式仕様
 
-- https://developers.openai.com/siwc/website
-- https://developers.openai.com/siwc/request-client-id
 - https://developers.openai.com/siwc/token-sharing-open-source/sign-in
+- https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms
 - https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
-- https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
 - https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions

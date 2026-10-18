@@ -9,7 +9,7 @@ const issuer = 'https://auth.openai.com';
 const resource = 'https://api.openai.com/v1';
 const scope = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
-interface Credentials { accessToken: string; refreshToken: string; expiresAt: number; scopes: string[]; subject: string; email: string; clientId: string }
+interface Credentials { mode?: 'local' | 'web'; idToken?: string; accessToken: string; refreshToken: string; expiresAt: number; scopes: string[]; subject: string; email: string; clientId: string }
 interface Attempt { state: string; nonce: string; verifier: string; browserHash: string; expiresAt: number; clientId: string; redirectUri: string }
 interface Saved { hostId: string; credentials?: Credentials; pending?: Attempt }
 export interface ChatGptConfig { clientId: string; redirectUri: string; clientSecret?: string; planUsageEnabled: boolean }
@@ -33,11 +33,30 @@ export class ChatGptConnection {
   }
 
   view(): ChatGptConnectionView {
+    const credentials = this.activeCredentials();
     const configured = this.configured();
-    const credentials = this.saved.credentials?.clientId === this.config.clientId ? this.saved.credentials : undefined;
-    return { status: !configured ? 'registration-required' : credentials && credentials.clientId === this.config.clientId ? 'connected' : 'disconnected',
+    return { status: credentials ? 'connected' : configured ? 'disconnected' : 'local-authorization-required',
       model: CHATGPT_MODEL, email: credentials?.email ?? null,
-      message: !configured ? 'AITuber用OAuthクライアントとChatGPTプラン利用の登録が必要です。' : credentials ? 'ChatGPTプランの利用枠を使用します。' : 'ChatGPTで接続すると、教材・台本・板書を生成できます。' };
+      message: credentials ? 'ChatGPTプランの利用枠を使用します。認証の更新と文章生成はCloudflare側で行います。' : configured ? 'ChatGPTで接続すると、教材・台本・板書を生成できます。' : '初回だけMacで認証します。その後はMacを終了してもCloudflareで生成できます。' };
+  }
+
+  private activeCredentials(): Credentials | undefined {
+    const credentials = this.saved.credentials;
+    return credentials && (credentials.mode === 'local' || this.configured() && credentials.clientId === this.config.clientId) ? credentials : undefined;
+  }
+
+  async importLocal(input: { clientId: string; nonce: string; tokens: Record<string, unknown>; savedAt: number }): Promise<void> {
+    if (!input || !/^oaiapp_[\w-]+$/.test(input.clientId) || typeof input.nonce !== 'string' || input.nonce.length < 32 || !input.tokens || typeof input.tokens.id_token !== 'string' || !Number.isFinite(input.savedAt) || input.savedAt > Date.now() + 30_000 || Date.now() - input.savedAt > 30 * 60_000) throw new ChatGptAuthError('Macで新しく認証した接続情報を使用してください。');
+    const epoch = ++this.epoch;
+    const identity = await this.verify(input.tokens.id_token, input.clientId, input.nonce);
+    if (typeof identity.sub !== 'string' || !identity.sub) throw new ChatGptAuthError('ChatGPTのアカウントを確認できませんでした。');
+    const credentials = this.credentials(input.tokens, { subject: identity.sub, email: typeof identity.email === 'string' ? identity.email : '', clientId: input.clientId });
+    credentials.expiresAt -= Math.max(0, Date.now() - input.savedAt);
+    if (credentials.expiresAt <= Date.now() + 60_000) throw new ChatGptAuthError('認証情報の期限が近いため、Macで認証をやり直してください。');
+    credentials.mode = 'local'; credentials.idToken = input.tokens.id_token;
+    await this.checkModel(credentials.accessToken);
+    if (epoch !== this.epoch) throw new ChatGptAuthError('接続状態が変更されました。再認証してください。');
+    this.saved.credentials = credentials; delete this.saved.pending; this.persist();
   }
 
   private configured(): boolean {
@@ -87,15 +106,15 @@ export class ChatGptConnection {
     if (!Array.isArray(body.models) || !body.models.some((model: unknown) => typeof model === 'object' && model !== null && 'slug' in model && model.slug === CHATGPT_MODEL)) throw new ChatGptAuthError('このChatGPT接続ではgpt-6-lunaが利用できません。別のモデルへの自動切り替えは行いません。');
   }
 
-  async accessToken(): Promise<string> {
-    const credentials = this.saved.credentials;
-    if (!credentials || credentials.clientId !== this.config.clientId || !this.configured()) throw new ChatGptAuthError('ChatGPTに再接続してください。');
-    if (credentials.expiresAt > Date.now() + 60_000) return credentials.accessToken;
+  async accessToken(forceRefresh = false): Promise<string> {
+    const credentials = this.activeCredentials();
+    if (!credentials) throw new ChatGptAuthError('ChatGPTに再接続してください。');
+    if (!forceRefresh && credentials.expiresAt > Date.now() + 60_000) return credentials.accessToken;
     if (this.refreshing) return this.refreshing;
     const epoch = this.epoch;
     this.refreshing = (async () => {
       try {
-        const tokens = await this.tokenRequest({ grant_type: 'refresh_token', refresh_token: credentials.refreshToken });
+        const tokens = await this.tokenRequest({ grant_type: 'refresh_token', refresh_token: credentials.refreshToken }, credentials.clientId, credentials.mode !== 'local');
         const next = this.credentials(tokens, credentials);
         if (epoch !== this.epoch) throw new ChatGptAuthError('ChatGPTの接続状態が変更されました。');
         this.saved.credentials = next; this.persist(); return next.accessToken;
@@ -117,13 +136,13 @@ export class ChatGptConnection {
     } catch { return false; }
   }
 
-  private async tokenRequest(fields: Record<string, string>): Promise<Record<string, unknown>> {
+  private async tokenRequest(fields: Record<string, string>, clientId = this.config.clientId, confidential = true): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded' };
-    if (this.config.clientSecret) {
+    if (confidential && this.config.clientSecret) {
       const encode = (value: string) => new URLSearchParams({ v: value }).toString().slice(2);
-      headers.authorization = `Basic ${Buffer.from(`${encode(this.config.clientId)}:${encode(this.config.clientSecret)}`).toString('base64')}`;
+      headers.authorization = `Basic ${Buffer.from(`${encode(clientId)}:${encode(this.config.clientSecret)}`).toString('base64')}`;
     }
-    const response = await this.fetcher(`${issuer}/api/accounts/oauth/token`, { method: 'POST', headers, body: new URLSearchParams({ ...fields, client_id: this.config.clientId, resource }), signal: AbortSignal.timeout(30_000) });
+    const response = await this.fetcher(`${issuer}/api/accounts/oauth/token`, { method: 'POST', headers, body: new URLSearchParams({ ...fields, client_id: clientId, resource }), signal: AbortSignal.timeout(30_000) });
     const body = await boundedJson(response);
     if (!response.ok) throw new ChatGptAuthError(`ChatGPTの認証に失敗しました（HTTP ${response.status}）。接続をやり直してください。`);
     return body;
@@ -134,7 +153,7 @@ export class ChatGptConnection {
     const refreshToken = typeof tokens.refresh_token === 'string' ? tokens.refresh_token : previous.refreshToken;
     if (!scopes.includes('chatgpt.tokens.use.direct') || !scopes.includes('resource.invoke')) throw new ChatGptAuthError('ChatGPTプラン利用が許可されていません。');
     if (typeof tokens.access_token !== 'string' || !tokens.access_token || !refreshToken || typeof tokens.expires_in !== 'number' || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0 || typeof tokens.token_type !== 'string' || tokens.token_type.toLowerCase() !== 'bearer') throw new ChatGptAuthError('ChatGPTの認証応答が不正です。');
-    return { subject: previous.subject, email: previous.email, clientId: previous.clientId, accessToken: tokens.access_token, refreshToken, expiresAt: Date.now() + tokens.expires_in * 1000, scopes };
+    return { ...(previous.mode ? { mode: previous.mode } : {}), ...(previous.idToken ? { idToken: previous.idToken } : {}), subject: previous.subject, email: previous.email, clientId: previous.clientId, accessToken: tokens.access_token, refreshToken, expiresAt: Date.now() + tokens.expires_in * 1000, scopes };
   }
 
   private persist() {

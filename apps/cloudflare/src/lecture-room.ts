@@ -96,6 +96,10 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const url=new URL(request.url), path=url.pathname;
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
+    if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
+      await this.services.chatgpt.importLocal(await read<{clientId:string;nonce:string;tokens:Record<string,unknown>;savedAt:number}>());
+      return json(200,{settings:settings.get()});
+    }
     if(path==='/api/settings/llm/chatgpt/start' && request.method==='POST') {
       const attempt = await this.services.chatgpt.start(url.origin);
       return Response.json({url:attempt.url},{headers:{'cache-control':'no-store','set-cookie':`__Host-aituber-oauth=${attempt.browserToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`}});
@@ -105,7 +109,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       return json(200,{settings:settings.get(),revoked});
     }
     if(path==='/api/settings/llm/chatgpt/check' && request.method==='POST') {
-      await this.services.chatgpt.checkModel();
+      await this.services.chatgpt.checkModel(await this.services.chatgpt.accessToken(true));
       const result = await settings.createProvider('authoring').createContext({purpose:'generation',systemInstruction:'日本語で答えてください。'}).generate({prompt:'接続確認です。messageに「接続できました」と記載してください。',schemaName:'connection_check',schema:{type:'object',properties:{message:{type:'string'}},required:['message'],additionalProperties:false}});
       return json(200,{model:result.model,latencyMs:result.latencyMs,settings:settings.get()});
     }

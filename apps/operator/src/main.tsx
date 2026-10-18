@@ -177,18 +177,18 @@ function OperatorApp() {
         <section className="panel setup-panel" aria-labelledby="course-heading">
           <div className="panel-heading"><span>01</span><div><p>SESSION SETUP</p><h2 id="course-heading">授業設定</h2></div></div>
           <details className="llm-settings">
-            <summary><span>LLM接続</span><b>{llmSettings?.chatgpt ? `ChatGPT · 6 Luna · ${llmSettings.chatgpt.status === "connected" ? "接続済み" : llmSettings.chatgpt.status === "registration-required" ? "登録待ち" : "未接続"}` : llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
+            <summary><span>LLM接続</span><b>{llmSettings?.chatgpt ? `ChatGPT · 6 Luna · ${llmSettings.chatgpt.status === "connected" ? "接続済み" : llmSettings.chatgpt.status === "registration-required" || llmSettings.chatgpt.status === "local-authorization-required" ? "初回認証が必要" : "未接続"}` : llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
             {llmSettings?.chatgpt ? <div className="llm-fields chatgpt-connection">
               <strong>ChatGPT · GPT-6 Luna</strong>
               {connectionNotice && <p role="status">{connectionNotice}</p>}
               <p>{llmSettings.chatgpt.message}</p>
               {llmSettings.chatgpt.email && <p>{llmSettings.chatgpt.email}</p>}
               <p>接続するアカウントのChatGPTプランを、教材・台本・板書の生成に使用します。プランとアプリの利用上限が適用されます。</p>
-              {llmSettings.chatgpt.status === "registration-required" ? <>
-                <button type="button" disabled>Continue with ChatGPT</button>
-                <a href="https://openai.com/form/sign-in-with-chatgpt-interest/" target="_blank" rel="noreferrer">OpenAIに利用を申し込む</a>
+              {(llmSettings.chatgpt.status === "registration-required" || llmSettings.chatgpt.status === "local-authorization-required") ? <>
+                <p>Macでプロジェクトを開き、次のコマンドを実行してブラウザで認証してください。</p>
+                <code>pnpm connect:chatgpt</code>
               </> : <>
-                <button type="button" disabled={busy} onClick={() => void connectChatGpt()}>{llmSettings.chatgpt.status === "connected" ? "ChatGPTに再接続" : "Continue with ChatGPT"}</button>
+                {llmSettings.chatgpt.status !== "connected" && <button type="button" disabled={busy} onClick={() => void connectChatGpt()}>Continue with ChatGPT</button>}
                 {llmSettings.chatgpt.status === "connected" && <div className="chatgpt-actions"><button type="button" disabled={busy} onClick={() => void checkChatGpt()}>接続をテスト</button><button type="button" disabled={busy} onClick={() => void checkChatGpt(true)}>切断</button></div>}
               </>}
               <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況を確認</a>

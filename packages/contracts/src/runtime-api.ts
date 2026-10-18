@@ -263,7 +263,7 @@ export interface SubmitAfterClassSurveyRequest {
 }
 
 export interface ChatGptConnectionView {
-  readonly status: "registration-required" | "disconnected" | "connected";
+  readonly status: "registration-required" | "local-authorization-required" | "disconnected" | "connected";
   readonly model: string;
   readonly email: string | null;
   readonly message: string;

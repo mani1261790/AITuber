@@ -27,7 +27,7 @@ describe('ChatGPT operator connection', () => {
   it('keeps unregistered clients inactive and never uses dynamic registration on a hosted callback', async () => {
     const { path } = fixture();
     const connection = new ChatGptConnection(path, { ...config, clientId: '' });
-    expect(connection.view().status).toBe('registration-required');
+    expect(connection.view().status).toBe('local-authorization-required');
     await expect(connection.start('https://aituber.example')).rejects.toThrow('登録');
     expect(() => connection.provider()).toThrow('接続');
   });
@@ -72,6 +72,24 @@ describe('ChatGPT operator connection', () => {
     expect(fetcher).toHaveBeenCalledTimes(1); expect(JSON.parse(readFileSync(path, 'utf8')).credentials.refreshToken).toBe('new-refresh');
     fetcher.mockResolvedValue(new Response(null, { status: 200 })); await restored.disconnect();
     await expect(restored.accessToken()).rejects.toThrow('再接続'); expect(JSON.parse(readFileSync(path, 'utf8')).credentials).toBeUndefined();
+  });
+  it('imports a local grant without partner registration and refreshes with its issued client ID', async () => {
+    const { path, fetcher, verify } = fixture();
+    const connection = new ChatGptConnection(path, { clientId: '', redirectUri: '', planUsageEnabled: false }, fetcher, verify);
+    const hostId = JSON.parse(readFileSync(path, 'utf8')).hostId;
+    await connection.importLocal({ clientId: 'oaiapp_local', nonce: 'n'.repeat(32), savedAt: Date.now(), tokens });
+    expect(connection.view().status).toBe('connected');
+    expect(JSON.parse(readFileSync(path, 'utf8')).hostId).toBe(hostId);
+    fetcher.mockClear(); fetcher.mockResolvedValueOnce(Response.json({ ...tokens, access_token: 'rotated' }));
+    expect(await connection.accessToken(true)).toBe('rotated');
+    expect(new URLSearchParams(String(fetcher.mock.calls[0]![1]!.body)).get('client_id')).toBe('oaiapp_local');
+    const restored = new ChatGptConnection(path, { clientId: '', redirectUri: '', planUsageEnabled: false }, fetcher, verify);
+    expect(restored.view().status).toBe('connected'); expect(await restored.accessToken()).toBe('rotated');
+  });
+  it('rejects stale imports before replacing an existing connection', async () => {
+    const { connection } = fixture(); const { attempt, callback } = await authorize(connection); await connection.complete(callback, attempt.browserToken);
+    await expect(connection.importLocal({clientId:'oaiapp_local',nonce:'n'.repeat(32),tokens,savedAt:0})).rejects.toThrow('新しく');
+    expect(connection.view().status).toBe('connected');
   });
   it('verifies signed identity, issuer, audience, expiry and nonce', async () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256');

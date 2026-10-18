@@ -8,7 +8,7 @@ describe('ChatGPT route boundaries', () => {
     const env = { OPERATOR_PASSWORD: 'test', ROOM: { getByName: () => ({ fetch: forwarded }) } } as unknown as AppEnv;
     const base = 'https://aituber.example';
     const cookie = `__Host-aituber=${await issueSession('test')}`;
-    for (const action of ['start', 'disconnect', 'check']) {
+    for (const action of ['start', 'disconnect', 'check', 'import']) {
       const url = `${base}/api/settings/llm/chatgpt/${action}`;
       expect((await worker.fetch(new Request(url, { method: 'POST', headers: { origin: base } }), env)).status).toBe(401);
       expect((await worker.fetch(new Request(url, { method: 'POST', headers: { origin: 'https://other.example', cookie } }), env)).status).toBe(403);

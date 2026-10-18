@@ -46,7 +46,8 @@
     "verify:cloud-account": "node scripts/deploy-cloudflare.mjs --check",
     "cloudflare:check": "node scripts/cloudflare-remote.mjs check",
     "cloudflare:deploy": "node scripts/cloudflare-remote.mjs deploy",
-    "verify:cloud-native": "node scripts/verify-cloud-native.mjs"
+    "verify:cloud-native": "node scripts/verify-cloud-native.mjs",
+    "connect:chatgpt": "node scripts/auth/chatgpt-local.mjs && node scripts/auth/chatgpt-transfer.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
