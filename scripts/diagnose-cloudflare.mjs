@@ -1,41 +1,28 @@
-import { spawn } from 'node:child_process';
-const tail = spawn('pnpm', ['exec', 'wrangler', 'tail', 'aituber', '--format', 'json', '--config', 'apps/cloudflare/wrangler.jsonc'], {stdio:['ignore','pipe','pipe']});
-let output = '';
-tail.stdout.on('data', chunk => { output += chunk; });
-let diagnostics = '';
-tail.stderr.on('data', chunk => { diagnostics += chunk; });
-try {
-  await new Promise(resolve => setTimeout(resolve, 12000));
-  const base = 'https://aituber.mani1261790.workers.dev';
-  const login = await fetch(base + '/login', {method:'POST',redirect:'manual',headers:{origin:base},body:new URLSearchParams({password:process.env.OPERATOR_PASSWORD}),signal:AbortSignal.timeout(15000)});
-  const cookie = login.headers.get('set-cookie')?.split(';')[0];
-  if (!cookie) throw new Error('Operator login failed');
-  for (const path of ['/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
-    const response = await fetch(base+path,{headers:{cookie},signal:AbortSignal.timeout(15000)});
-    console.log(`${path}: ${response.status}`);
-  }
-  await new Promise(resolve => setTimeout(resolve, 5000));
-} finally { tail.kill('SIGTERM'); }
-// Never publish request headers, bodies, cookies, or the raw tail stream.
-const messages = [...output.matchAll(/"message"\s*:\s*(\[[\s\S]*?\])/g)];
-for (const match of messages) {
-  try { const value=JSON.parse(match[1]); if(value[0]==='lecture_request_failed') console.log(JSON.stringify(value)); } catch { /* Ignore incomplete streaming records. */ }
+import {spawn} from 'node:child_process';
+// Observe traffic only. Never send probe requests or print raw events/credentials.
+const tail=spawn('pnpm',['exec','wrangler','tail','aituber','--format','json','--config','apps/cloudflare/wrangler.jsonc'],{detached:true,stdio:['ignore','pipe','pipe']});
+let buffer='',captured=0;const counts=new Map();
+function record(event){
+ const request=event.event?.request;
+ if(!request?.url)return;
+ let path;try{path=new URL(request.url).pathname;}catch{return;}
+ path=path.replace(/\/api\/classrooms\/[^/]+/,'/api/classrooms/[room]').replace(/\/api\/sessions\/(?!current)[^/]+/,'/api/sessions/[id]').replace(/\/api\/authoring\/jobs\/[^/]+/,'/api/authoring/jobs/[id]');
+ const key=JSON.stringify({method:request.method,path,status:event.event?.response?.status??null,outcome:event.outcome??null});
+ counts.set(key,(counts.get(key)??0)+1);captured++;
 }
-if (!messages.length) console.log('No application log messages captured.');
-
-if (!messages.length) {
-  let safe = diagnostics;
-  for (const secret of [process.env.CLOUDFLARE_API_TOKEN, process.env.OPERATOR_PASSWORD].filter(Boolean)) safe = safe.split(secret).join('[redacted]');
-  console.log('Tail exit:', tail.exitCode, 'diagnostics:', safe.slice(0,3000));
-  console.log('Tail output bytes:', output.length);
+function drain(){
+ let start=-1,depth=0,quoted=false,escaped=false,last=0;
+ for(let i=0;i<buffer.length;i++){
+  const ch=buffer[i];
+  if(start<0){if(ch==='{'){start=i;depth=1;}continue;}
+  if(quoted){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')quoted=false;continue;}
+  if(ch==='"')quoted=true;else if(ch==='{')depth++;else if(ch==='}'&&--depth===0){try{record(JSON.parse(buffer.slice(start,i+1)));}catch{/* Incomplete CLI output is not published. */}last=i+1;start=-1;}
+ }
+ if(last)buffer=buffer.slice(last);if(buffer.length>1_000_000)buffer='';
 }
-
-if (!messages.length) {
-  const rows = output.split('\n');
-  for (let i=0; i<rows.length; i++) {
-    if (/lecture_request_failed/.test(rows[i])) console.log(rows.slice(i,i+3).join(' ').slice(0,1000));
-  }
-  console.log('Log field counts:', JSON.stringify(Object.fromEntries(['message','logs','exceptions','error','outcome'].map(key => [key, output.split('"'+key+'"').length-1]))));
-  // Only CLI startup text before the first JSON event, never event request data.
-  console.log('Tail startup:', output.split('{')[0].slice(0,1000));
-}
+tail.stdout.on('data',chunk=>{buffer+=chunk.toString();drain();});
+tail.stderr.on('data',()=>{});
+await new Promise(resolve=>setTimeout(resolve,30000));
+try{process.kill(-tail.pid,'SIGTERM');}catch{/* Already exited. */}
+console.log(JSON.stringify({observedSeconds:30,captured,routes:[...counts].map(([key,count])=>({...JSON.parse(key),count}))},null,2));
+if(!captured)console.log('No request events observed; this does not prove zero traffic.');
