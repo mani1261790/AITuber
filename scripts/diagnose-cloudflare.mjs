@@ -29,3 +29,13 @@ if (!messages.length) {
   console.log('Tail exit:', tail.exitCode, 'diagnostics:', safe.slice(0,3000));
   console.log('Tail output bytes:', output.length);
 }
+
+if (!messages.length) {
+  const rows = output.split('\n');
+  for (let i=0; i<rows.length; i++) {
+    if (/lecture_request_failed/.test(rows[i])) console.log(rows.slice(i,i+3).join(' ').slice(0,1000));
+  }
+  console.log('Log field counts:', JSON.stringify(Object.fromEntries(['message','logs','exceptions','error','outcome'].map(key => [key, output.split('"'+key+'"').length-1]))));
+  // Only CLI startup text before the first JSON event, never event request data.
+  console.log('Tail startup:', output.split('{')[0].slice(0,1000));
+}
