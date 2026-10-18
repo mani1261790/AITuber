@@ -5,7 +5,7 @@ const endpoint = 'https://api.openai.com/v1/responses';
 
 /** Uses a dedicated SIWC grant, never a Codex credential or a ChatGPT backend endpoint. */
 export class ChatGptLlmProvider implements LlmProvider {
-  constructor(private readonly accessToken: () => Promise<string>, private readonly fetcher: typeof fetch = fetch, private readonly timeoutMs = 180_000) {}
+  constructor(private readonly accessToken: () => Promise<string>, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis), private readonly timeoutMs = 180_000) {}
 
   createContext(options: { purpose: LlmContext['purpose']; systemInstruction: string }): LlmContext {
     return { purpose: options.purpose, generate: <T>(request: StructuredGenerationRequest<T>) => this.generate(options.systemInstruction, request) };

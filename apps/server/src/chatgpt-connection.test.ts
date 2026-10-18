@@ -102,3 +102,14 @@ describe('ChatGPT operator connection', () => {
     await expect(verifyChatGptIdentity(token, config.clientId, 'expected', wrongKey)).rejects.toThrow();
   });
 });
+
+it('binds default token/catalog fetch to the Worker global receiver', async () => {
+  const original = globalThis.fetch;
+  const {path} = fixture();
+  globalThis.fetch = async function(this: unknown) {
+    expect(this).toBe(globalThis);
+    return Response.json({models:[{slug:'gpt-6-luna'}]});
+  };
+  try { await new ChatGptConnection(path,config).checkModel('test'); }
+  finally { globalThis.fetch = original; }
+});

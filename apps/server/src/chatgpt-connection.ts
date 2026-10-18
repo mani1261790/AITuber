@@ -26,7 +26,7 @@ export class ChatGptConnection {
   private saved: Saved;
   private refreshing: Promise<string> | null = null;
   private epoch = 0;
-  constructor(private readonly path: string, private readonly config: ChatGptConfig, private readonly fetcher: typeof fetch = fetch,
+  constructor(private readonly path: string, private readonly config: ChatGptConfig, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly verify: Verify = verifyChatGptIdentity) {
     this.saved = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as Saved : { hostId: `urn:uuid:${crypto.randomUUID()}` };
     this.persist();

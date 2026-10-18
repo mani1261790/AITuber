@@ -8,6 +8,15 @@ function stream(frames: string, split = 7): Response {
 }
 const request = { prompt: '二次関数を説明', schemaName: 'test', schema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'], additionalProperties: false } };
 describe('ChatGPT plan Responses provider', () => {
+  it('binds native fetch to the Worker global receiver', async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async function(this: unknown) {
+      expect(this).toBe(globalThis);
+      return stream(event({ type: 'response.output_text.delta', delta: '{"title":"接続"}' }) + event({ type: 'response.completed' }));
+    };
+    try { await new ChatGptLlmProvider(async () => 'test').createContext({purpose:'generation',systemInstruction:'test'}).generate(request); }
+    finally { globalThis.fetch = original; }
+  });
   it('uses Luna, instructions, image input and supported fields; validates completed JSON', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(stream(event({ type: 'response.output_text.delta', delta: '{"title":"平方完成"}' }) + event({ type: 'response.completed', response: { usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 } } })));
     const provider = new ChatGptLlmProvider(async () => 'oauth-test', fetcher);
