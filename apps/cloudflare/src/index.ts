@@ -7,14 +7,17 @@ export default {
   const url=new URL(request.url), path=url.pathname;
   if(path==="/_internal/state")return new Response("Not found",{status:404});
   if(path==="/login") {
+   // Native form POSTs send Origin: null under no-referrer. Preserve the
+   // same-origin check while allowing the browser to identify this page.
+   const loginHeaders={...secureHeaders,"referrer-policy":"same-origin","content-type":"text/html; charset=utf-8"};
    if(!env.OPERATOR_PASSWORD)return new Response("管理ログインの設定中です。",{status:503,headers:secureHeaders});
    if(request.method==="POST") {
-    if(!sameOrigin(request)||Number(request.headers.get("content-length"))>4096)return new Response(null,{status:403});
+    if(!sameOrigin(request)||Number(request.headers.get("content-length"))>4096)return new Response(loginHtml.replace("管理用パスワードを入力してください。","送信元を確認できませんでした。ログイン画面を再読み込みして、もう一度お試しください。"),{status:403,headers:loginHeaders});
     const password=(await request.formData()).get("password");
-    if(typeof password!=="string"||!await sameSecret(password,env.OPERATOR_PASSWORD))return new Response(loginHtml.replace("管理用パスワードを入力してください。","パスワードが違います。"),{status:401,headers:{...secureHeaders,"content-type":"text/html; charset=utf-8"}});
-    return new Response(null,{status:303,headers:{...secureHeaders,location:"/operator/","set-cookie":`__Host-aituber=${await issueSession(env.OPERATOR_PASSWORD)}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=604800`}});
+    if(typeof password!=="string"||!await sameSecret(password,env.OPERATOR_PASSWORD))return new Response(loginHtml.replace("管理用パスワードを入力してください。","パスワードが違います。"),{status:401,headers:loginHeaders});
+    return new Response(null,{status:303,headers:{...loginHeaders,location:"/operator/","set-cookie":`__Host-aituber=${await issueSession(env.OPERATOR_PASSWORD)}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=604800`}});
    }
-   return new Response(loginHtml,{headers:{...secureHeaders,"content-type":"text/html; charset=utf-8"}});
+   return new Response(loginHtml,{headers:loginHeaders});
   }
   const operator=await authenticated(request,env.OPERATOR_PASSWORD);
   const classroomApi=path.startsWith("/api/classrooms/")||/^\/api\/sessions\/[^/]+\/speech\/[a-f0-9]{64}$/.test(path);
