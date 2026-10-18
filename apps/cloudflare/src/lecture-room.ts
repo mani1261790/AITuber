@@ -1,3 +1,4 @@
+import { LlmProviderError } from '@aituber/providers';
 import { ChatGptAuthError } from "../../server/src/chatgpt-connection.ts";
 import { lessonPdfSource, pdfSourceHeaders } from "../../server/src/lesson-pdf-source";
 import { previewBoard } from "../../server/src/board-preview";
@@ -85,6 +86,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       } catch(error) {
         if(error instanceof ClassroomCapacityError)return json(409,{error:'classroom_full',message:'この教室は参加上限の5人に達しています。'});
         if(error instanceof ClassroomAccessError)return json(401,{error:'invalid_participant',message:'教室コードから入り直してください。'});
+        if(error instanceof LlmProviderError)return json(502,{error:error.code,message:error.message});
         if(error instanceof RangeError)return json(404,{error:'not_found',message:error.message});
         if(error instanceof TypeError || error instanceof SyntaxError)return json(400,{error:'invalid_request',message:error.message});
         console.error('lecture_request_failed',error instanceof Error?error.message:'unknown');

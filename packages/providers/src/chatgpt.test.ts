@@ -48,3 +48,11 @@ describe('ChatGPT plan Responses provider', () => {
     await expect(context.generate(request)).rejects.toThrow('許可されていません');
   });
 });
+
+it('accepts only completed JSON Responses envelopes when a gateway buffers the stream', async () => {
+  const result=await readResponsesStream(Response.json({object:'response',status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{"title":"ok"}'}]}],usage:{total_tokens:20}}),1000);
+  expect(result.text).toBe('{"title":"ok"}');expect(result.usage.total_tokens).toBe(20);
+  await expect(readResponsesStream(Response.json({object:'response',status:'incomplete',output:[]}),1000)).rejects.toMatchObject({code:'provider_error'});
+  await expect(readResponsesStream(Response.json({error:{code:'invalid_request'}}),1000)).rejects.toThrow('invalid_request');
+  await expect(readResponsesStream(Response.json({status:'completed',output:[{content:[{type:'output_text',text:'long text'}]}]}),2)).rejects.toMatchObject({code:'response_too_large'});
+});
