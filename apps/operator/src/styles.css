@@ -136,3 +136,7 @@ progress::-moz-progress-bar { background: #3b7455; border-radius: 5px; }
 .course-actions p { font-size: 14px; font-weight: 400; }
 @media(max-width:1000px) { .course-actions { width: 100%; margin-top: 20px; } }
 @media(max-width:700px) { .page-header { display: flex; gap: 12px; flex-wrap: wrap; } .page-tools .text-button { padding: 6px 0; } .material-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .material-nav > .primary { grid-column: 1 / -1; margin: 4px 0 0; } .material-nav > a { text-align: center; padding: 10px 8px; } }
+.heading-icon { width: 1em; height: 1em; flex-shrink: 0; color: #3d6a50; }
+h1, h2 { display: flex; align-items: center; gap: 12px; }
+.creation-form .disclosure-toggle { font-weight: 400; font-size: 14px; min-height: 44px; }
+.creation-form .upload-zone + .disclosure-toggle { margin-bottom: 24px; }
