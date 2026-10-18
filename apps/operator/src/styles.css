@@ -162,3 +162,4 @@ progress::-webkit-progress-value { background: linear-gradient(90deg, var(--live
 .chatgpt-connection a { color: var(--accent, #a84c2e); text-underline-offset: 3px; }
 .chatgpt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .chatgpt-actions button { flex: 1; }
+.llm-fields.chatgpt-connection { grid-template-columns: minmax(0, 1fr); }
