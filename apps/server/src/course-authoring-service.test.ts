@@ -11,6 +11,17 @@ import { CourseAuthoringService } from "./course-authoring-service.ts";
 const fixtures = [quadraticFunctionsFixture, dnaReplicationFixture, vaeReparameterizationFixture];
 
 describe("CourseAuthoringService", () => {
+  it('fills hashes and source provenance itself instead of asking the model to invent them', async () => {
+    const source = upload('Original quadratic source');
+    const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+    const generated = JSON.parse(JSON.stringify(candidate)); delete generated.contentHash; delete generated.sources;
+    const provider = new FixedResponseLlmProvider([generated,passingReview()]);
+    const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-metadata-')),llm:()=>provider});
+    const result = await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).toBe('available');expect(result.attempts).toBe(1);
+    expect(result.course!.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(result.course!.sources[0]!.contentHash).toBe('sha256:'+createHash('sha256').update(Buffer.from(source.dataBase64,'base64')).digest('hex'));
+  });
   it.each(fixtures.map((fixture) => [fixture.targetLevel, fixture] as const))("makes the %s verification material available after independent review", async (_level, fixture) => {
     const source = upload(`Source notes for ${fixture.title}`);
     const candidate = remapSource(fixture, sourceId(source));
