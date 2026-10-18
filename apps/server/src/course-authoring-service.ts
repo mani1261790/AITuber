@@ -27,15 +27,16 @@ export class CourseAuthoringService {
   readonly #running = new Set<string>();
   readonly #active = new Map<string, { checkpoint: AuthoringCheckpoint; controller: AbortController }>();
   #initializing = false;
+  readonly #viewCache: Map<string, AuthoringJobView> | null;
   readonly #defer: (() => void) | undefined;
-  constructor(options: { directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void; defer?: () => void }) { this.#defer = options.defer; this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
+  constructor(options: { directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void; defer?: () => void; cacheViews?: boolean }) { this.#viewCache = options.cacheViews ? new Map() : null; this.#defer = options.defer; this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
 
   async create(request: CreateAuthoringRequest): Promise<AuthoringJobView> {
     return this.#run(await this.#initialize(request), false);
   }
 
   async begin(request: CreateAuthoringRequest): Promise<AuthoringJobView> { const checkpoint = await this.#initialize(request); this.#background(checkpoint, false); return view(checkpoint); }
-  list(): readonly AuthoringJobView[] { return readdirSync(this.#directory).filter((file) => /^authoring\.[a-f0-9-]+\.json$/.test(file)).map((file) => view(JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)); }
+  list(): readonly AuthoringJobView[] { if (this.#viewCache) return structuredClone([...this.#viewCache.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))); return readdirSync(this.#directory).filter((file) => /^authoring\.[a-f0-9-]+\.json$/.test(file)).map((file) => view(JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)); }
 
   readSource(contentHash: string): Uint8Array {
     if (!/^sha256:[a-f0-9]{64}$/.test(contentHash)) throw new TypeError("Invalid source hash");
@@ -145,10 +146,10 @@ export class CourseAuthoringService {
   }
 
   #path(id: string) { if (!/^authoring\.[a-f0-9-]+$/.test(id)) throw new RangeError("Unknown authoring job"); return join(this.#directory, `${id}.json`); }
-  #recoverInterruptedJobs() { for (const file of readdirSync(this.#directory).filter((name) => /^authoring\.[a-f0-9-]+\.json$/.test(name))) { const checkpoint = JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint; if (checkpoint.status === "running" && !this.#defer) { checkpoint.status = "budget-exhausted"; checkpoint.error = "前回の処理が中断されました。チェックポイントから再開できます。"; this.#save(checkpoint); } } }
+  #recoverInterruptedJobs() { for (const file of readdirSync(this.#directory).filter((name) => /^authoring\.[a-f0-9-]+\.json$/.test(name))) { const checkpoint = JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint; if (checkpoint.status === "running" && !this.#defer) { checkpoint.status = "budget-exhausted"; checkpoint.error = "前回の処理が中断されました。チェックポイントから再開できます。"; this.#save(checkpoint); } this.#viewCache?.set(checkpoint.id, structuredClone(view(checkpoint))); } }
   #assertIdle(id: string) { if (this.#running.has(id) || this.#active.has(id)) throw new TypeError("Authoring job is already running"); }
   #load(id: string): AuthoringCheckpoint { const path = this.#path(id); if (!existsSync(path)) throw new RangeError("Unknown authoring job"); return JSON.parse(readFileSync(path, "utf8")) as AuthoringCheckpoint; }
-  #save(value: AuthoringCheckpoint) { value.updatedAt = new Date().toISOString(); const path = this.#path(value.id); const temp = `${path}.${process.pid}.tmp`; writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); renameSync(temp, path); chmodSync(path, 0o600); }
+  #save(value: AuthoringCheckpoint) { value.updatedAt = new Date().toISOString(); const path = this.#path(value.id); const temp = `${path}.${process.pid}.tmp`; writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); renameSync(temp, path); chmodSync(path, 0o600); this.#viewCache?.set(value.id, structuredClone(view(value))); }
 }
 
 function validateRequest(request: CreateAuthoringRequest) { if (!Number.isInteger(request.durationMinutes) || request.durationMinutes < 1 || request.durationMinutes > 480) throw new TypeError("durationMinutes must be an integer between 1 and 480"); if (request.timeBudgetMs !== undefined && (!Number.isInteger(request.timeBudgetMs) || request.timeBudgetMs < 1_000 || request.timeBudgetMs > 3_600_000)) throw new TypeError("timeBudgetMs must be between 1000 and 3600000"); if (request.costBudgetUsd !== undefined && (!Number.isFinite(request.costBudgetUsd) || request.costBudgetUsd < 0)) throw new TypeError("costBudgetUsd must be non-negative"); }

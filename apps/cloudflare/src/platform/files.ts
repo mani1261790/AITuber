@@ -42,7 +42,7 @@ export async function flushSourceFiles() {
   const context=runtime();
   const previous=sourceFlushes.get(context.storage) ?? Promise.resolve();
   const pending=previous.catch(()=>undefined).then(async()=>{
-    const files=sql().exec<{path:string}>('SELECT DISTINCT path FROM runtime_file_chunks WHERE path LIKE ?', '/data/authoring/sources/%').toArray();
+    const files=sql().exec<{path:string}>('SELECT DISTINCT path FROM runtime_file_chunks WHERE path >= ? AND path < ?', '/data/authoring/sources/', '/data/authoring/sources0').toArray();
     for(const {path} of files){
       await context.bucket.put(`sources/${posix.basename(path)}`,readFileSync(path));
       sql().exec('DELETE FROM runtime_file_chunks WHERE path=?',path);

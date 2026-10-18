@@ -12,13 +12,17 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   const response = await fetch(`${base}/api/authoring/jobs/${probe}/stop`, {method:'POST',headers:{cookie,origin:base},signal:AbortSignal.timeout(20000)});
   const value = await response.json();
   if (response.status === 404 && value.message === 'Unknown authoring job') {
-    const jobs = await fetch(`${base}/api/authoring/jobs`, {headers:{cookie},signal:AbortSignal.timeout(20000)});
-    if (!jobs.ok) throw new Error(`Operator jobs read failed (HTTP ${jobs.status}).`);
-    const {jobs: items} = await jobs.json();
-    if (!Array.isArray(items)) throw new Error('Operator jobs response is invalid.');
+    for (const path of ['/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
+      const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
+      const body = await result.json();
+      if(body.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
+      if(!result.ok) throw new Error(`Operator ${path} failed (HTTP ${result.status}).`);
+      if(path.endsWith('/jobs') && !Array.isArray(body.jobs)) throw new Error('Operator jobs response is invalid.');
+    }
     console.log('PASS: authenticated operator API and Durable Object stop handler are live; no job was created or modified.');
     process.exit(0);
   }
+  if (value.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
   if (response.status !== 404 && response.status !== 503) throw new Error(`Unexpected rollout probe response (HTTP ${response.status}).`);
   if (attempt % 6 === 1) console.log(`Waiting for Durable Object rollout (${attempt}/60).`);
   if (attempt < 60) await new Promise(resolve => setTimeout(resolve, 10000));

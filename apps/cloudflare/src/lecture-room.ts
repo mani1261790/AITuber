@@ -1,3 +1,4 @@
+import { storageQuotaError } from "./storage-error";
 import { LlmProviderError } from '@aituber/providers';
 import { ChatGptAuthError } from "../../server/src/chatgpt-connection.ts";
 import { lessonPdfSource, pdfSourceHeaders } from "../../server/src/lesson-pdf-source";
@@ -85,9 +86,10 @@ export class LectureRoom extends DurableObject<AppEnv> {
       let stage='route';
       try {
         const response=await this.route(request);
-        stage='source-flush'; await flushSourceFiles();
+        stage='source-flush'; if(request.method!=='GET' && request.method!=='HEAD') await flushSourceFiles();
         stage='checkpoint'; this.persist();return response;
       } catch(error) {
+        const quota=storageQuotaError(error); if(quota)return json(503,quota);
         if(error instanceof ClassroomCapacityError)return json(409,{error:'classroom_full',message:'この教室は参加上限の5人に達しています。'});
         if(error instanceof ClassroomAccessError)return json(401,{error:'invalid_participant',message:'教室コードから入り直してください。'});
         if(error instanceof LlmProviderError)return json(502,{error:error.code,message:error.message});

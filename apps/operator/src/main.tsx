@@ -63,6 +63,7 @@ function OperatorApp() {
     let timer: number;
     async function poll() {
       const version = revision.current;
+      let retryDelay = 10000;
       try {
         const [courseResult, sessionResult, jobResult, settingsResult] = await Promise.all([
           fetchJson<{courses: CourseSummary[]}>("/api/courses", {signal: controller.signal}),
@@ -75,8 +76,9 @@ function OperatorApp() {
         if (!seededCourse.current && courseResult.courses[0]) { seededCourse.current = true; setCourseId(courseResult.courses[0].id); setDuration(courseResult.courses[0].durationMinutes); }
         setSession(sessionResult.session); setClassroom(sessionResult.classroom); setJobs(jobResult.jobs); setSettings(settingsResult.settings);
         setLoaded(true); setSyncError(null);
-      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); }
-      finally { if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 3000); }
+        retryDelay = jobResult.jobs.some(job => job.status === "running") || sessionResult.session && !["PAUSED", "FINISHED"].includes(sessionResult.session.status) ? 3000 : 15000;
+      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); retryDelay = reason instanceof ApiError && reason.code === "storage_quota_exceeded" ? 0 : 30000; }
+      finally { if (!controller.signal.aborted && retryDelay) timer = window.setTimeout(() => void poll(), document.hidden ? 60000 : retryDelay); }
     }
     void poll();
     return () => { controller.abort(); window.clearTimeout(timer); };
@@ -276,11 +278,12 @@ function supportedMimeType(file: File): AuthoringSourceUpload["mimeType"] {
 }
 async function fileBase64(file: File) {return fileBytesBase64(new Uint8Array(await file.arrayBuffer()));}
 function fileBytesBase64(bytes: Uint8Array) {let binary = ""; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary);}
+class ApiError extends Error { constructor(message: string, readonly code: string | undefined) {super(message);} }
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   if (response.status === 401 || response.redirected || !response.headers.get("content-type")?.includes("application/json")) throw new Error("管理画面へのログインを確認し、ページを再読み込みしてください。");
-  const value = await response.json() as T & {message?: string};
-  if (!response.ok) throw new Error(value.message ?? `操作に失敗しました（HTTP ${response.status}）`);
+  const value = await response.json() as T & {message?: string; error?: string};
+  if (!response.ok) throw new ApiError(value.message ?? `操作に失敗しました（HTTP ${response.status}）`, value.error);
   return value;
 }
 function errorMessage(reason: unknown) {return reason instanceof Error ? reason.message : "処理に失敗しました。";}

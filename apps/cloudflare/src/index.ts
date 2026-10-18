@@ -1,3 +1,4 @@
+import { storageQuotaError } from "./storage-error";
 import { authenticated, issueSession, loginHtml, sameOrigin, sameSecret } from "./auth.ts";
 export type AppEnv = Env & { OPERATOR_PASSWORD: string; CHATGPT_CLIENT_ID?: string; CHATGPT_CLIENT_SECRET?: string; CHATGPT_REDIRECT_URI?: string; CHATGPT_PLAN_USAGE_ENABLED?: string; FISH_API_KEY?: string; FISH_VOICE_ID?: string; OPENAI_API_KEY?: string; AITUBER_TTS_TEST_MODE?: "tone" | "failure" };
 export { LectureRoom } from "./lecture-room";
@@ -31,7 +32,7 @@ export default {
    if(!classroomApi&&!operator)return Response.json({error:"unauthorized"},{status:401,headers:secureHeaders});
    if(request.method!=="GET"&&request.method!=="HEAD"&&!sameOrigin(request))return new Response(null,{status:403});
    const forwarded=new Request(request);forwarded.headers.set("x-aituber-surface",classroomApi?"classroom":"operator");forwarded.headers.delete("cookie");forwarded.headers.delete("authorization");
-   try {return await env.ROOM.getByName("classroom-v1").fetch(forwarded);}catch (error) { console.error("lecture_startup_failed", error instanceof Error ? error.message : "unknown"); return Response.json({...(operator ? {diagnostic:error instanceof Error ? error.message : "unknown"} : {}),error:"temporarily_unavailable",message:"サーバーを起動しています。少し待って再試行してください。"},{status:503,headers:secureHeaders});}
+   try {return await env.ROOM.getByName("classroom-v1").fetch(forwarded);}catch (error) { const quota=storageQuotaError(error); if(quota) return Response.json(quota,{status:503,headers:secureHeaders}); console.error("lecture_startup_failed", error instanceof Error ? error.message : "unknown"); return Response.json({error:"temporarily_unavailable",message:"サーバーを起動しています。少し待って再試行してください。"},{status:503,headers:secureHeaders});}
   }
   if(path==="/aituber-runtime-config.json")return Response.json({classroomOrigin:url.origin},{headers:secureHeaders});
   if(path==="/operator"||path.startsWith("/operator/")) {

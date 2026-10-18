@@ -1,3 +1,4 @@
+import { ChatGptConnection } from "./chatgpt-connection.ts";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,4 +62,13 @@ it("allows authoring responses beyond five minutes while retaining a bounded loc
  await vi.advanceTimersByTimeAsync(311_000);
  await failure;
  expect((await long).value).toEqual({ok:true});
+});
+
+it("never falls back to an API key when ChatGPT is disconnected", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aituber-chatgpt-only-"));
+  const chatgpt = new ChatGptConnection(join(directory, "chatgpt.json"), {clientId: "", redirectUri: "", planUsageEnabled: false});
+  const store = new LlmSettingsStore(join(directory, "llm.json"), {AITUBER_LLM_API_KEY: "legacy-key", AITUBER_LLM_MODEL: "legacy-model"}, null, chatgpt);
+  expect(store.get()).toMatchObject({apiKeyConfigured: false, model: "gpt-6-luna", chatgpt: {status: "local-authorization-required"}});
+  expect(() => store.createProvider()).toThrow(/ChatGPT/);
+  expect(() => store.save({apiKey: "replacement-key", model: "other"})).toThrow(/APIキーの設定は不要/);
 });
