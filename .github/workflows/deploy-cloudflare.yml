@@ -54,3 +54,7 @@ jobs:
           CHATGPT_PLAN_USAGE_ENABLED: ${{ secrets.CHATGPT_PLAN_USAGE_ENABLED }}
       - name: Verify public and private boundaries
         run: node scripts/verify-cloud-public.mjs
+      - name: Verify authenticated operator rollout
+        run: node scripts/verify-cloud-operator.mjs
+        env:
+          OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}
