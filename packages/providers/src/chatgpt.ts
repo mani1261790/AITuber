@@ -60,13 +60,15 @@ export async function readResponsesStream(response: Response, limit: number): Pr
       }
     } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
     const buffer = new Uint8Array(bytes); let offset = 0; for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
+    const decoded = new TextDecoder().decode(buffer);
+    if (/^(?:event:|data:|:)/.test(decoded.trimStart())) return readResponsesStream(new Response(decoded,{headers:{'content-type':'text/event-stream'}}),limit);
     let envelope: Record<string, unknown>;
-    try { envelope = record(JSON.parse(new TextDecoder().decode(buffer))); }
+    try { envelope = record(JSON.parse(decoded)); }
     catch { throw new LlmProviderError('provider_error', 'ChatGPTからJSONでもイベントストリームでもない応答が返りました。'); }
     const result = envelope.type === 'response.completed' ? record(envelope.response) : envelope;
     if (result.status !== 'completed') {
       const safe = (v: unknown) => typeof v === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(v) ? v : 'unknown';
-      throw new LlmProviderError('provider_error', `ChatGPTの応答が未完了です（type=${safe(envelope.type ?? envelope.object)}, status=${safe(result.status)}, code=${safe(record(result.error).code)}）。`);
+      throw new LlmProviderError('provider_error', `ChatGPTの応答が未完了です（type=${safe(envelope.type ?? envelope.object)}, status=${safe(result.status)}, code=${safe(record(result.error).code)}, fields=${Object.keys(envelope).filter(key=>/^[a-zA-Z0-9_]{1,40}$/.test(key)).slice(0,12).join(',')}）。`);
     }
     const text = (Array.isArray(result.output) ? result.output : []).flatMap(item => Array.isArray(record(item).content) ? record(item).content as unknown[] : []).filter(item => record(item).type === 'output_text').map(item => record(item).text).filter((value): value is string => typeof value === 'string').join('');
     if (new TextEncoder().encode(text).byteLength > limit) throw new LlmProviderError('response_too_large', 'ChatGPTの生成結果がサイズ上限を超えました。');

@@ -56,3 +56,8 @@ it('accepts only completed JSON Responses envelopes when a gateway buffers the s
   await expect(readResponsesStream(Response.json({error:{code:'invalid_request'}}),1000)).rejects.toThrow('invalid_request');
   await expect(readResponsesStream(Response.json({status:'completed',output:[{content:[{type:'output_text',text:'long text'}]}]}),2)).rejects.toMatchObject({code:'response_too_large'});
 });
+
+it('recognizes SSE when an intermediary omits the event-stream content type', async () => {
+  const frames=event({type:'response.output_text.delta',delta:'{}'})+event({type:'response.completed'});
+  expect((await readResponsesStream(new Response(frames),1000)).text).toBe('{}');
+});
