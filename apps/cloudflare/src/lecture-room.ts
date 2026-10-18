@@ -18,6 +18,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
   private context;
   private savedLecture = "";
   private savedRooms = "";
+  private lastRequestError: { stage: string; name: string; message: string } | null = null;
   constructor(ctx: DurableObjectState, env: AppEnv) {
     super(ctx, env);
     this.context = { storage: ctx.storage, bucket: env.STATE, assets: env.ASSETS };
@@ -80,16 +81,20 @@ export class LectureRoom extends DurableObject<AppEnv> {
   }
   override async fetch(request:Request):Promise<Response> {
     return runtimeContext.run(this.context,async()=>{
+      if(new URL(request.url).pathname==='/api/diagnostics/last-error' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,{failure:this.lastRequestError});
+      let stage='route';
       try {
         const response=await this.route(request);
-        await flushSourceFiles();this.persist();return response;
+        stage='source-flush'; await flushSourceFiles();
+        stage='checkpoint'; this.persist();return response;
       } catch(error) {
         if(error instanceof ClassroomCapacityError)return json(409,{error:'classroom_full',message:'この教室は参加上限の5人に達しています。'});
         if(error instanceof ClassroomAccessError)return json(401,{error:'invalid_participant',message:'教室コードから入り直してください。'});
         if(error instanceof LlmProviderError)return json(502,{error:error.code,message:error.message});
         if(error instanceof RangeError)return json(404,{error:'not_found',message:error.message});
         if(error instanceof TypeError || error instanceof SyntaxError)return json(400,{error:'invalid_request',message:error.message});
-        console.error('lecture_request_failed',error instanceof Error?error.message:'unknown');
+        this.lastRequestError={stage,name:error instanceof Error?error.name:'Unknown',message:error instanceof Error?error.message:'unknown'};
+        console.error('lecture_request_failed',stage,this.lastRequestError.message);
         return json(500,{error:'internal_error'});
       }
     });

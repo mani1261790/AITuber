@@ -25,9 +25,6 @@ function OperatorApp() {
   const [jobs, setJobs] = useState<AuthoringJobView[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [settings, setSettings] = useState<LlmSettingsView | null>(null);
-  const [llmKey, setLlmKey] = useState("");
-  const [llmModel, setLlmModel] = useState("");
-  const [llmBaseUrl, setLlmBaseUrl] = useState("");
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [sourceNote, setSourceNote] = useState("");
   const [sourceRights, setSourceRights] = useState<AuthoringSourceUpload["rights"]["basis"] | "">("");
@@ -39,13 +36,13 @@ function OperatorApp() {
   const [busy, setBusy] = useState<Partial<Record<Scope, boolean>>>({});
   const locks = useRef(new Set<Scope>());
   const revision = useRef(0);
-  const seededSettings = useRef(false);
   const seededCourse = useRef(false);
   const [refresh, setRefresh] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [signInHelp, setSignInHelp] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const activeJob = jobs.find(job => job.status === "running");
   const job = jobs.find(item => item.id === selectedJobId) ?? activeJob ?? jobs[0];
@@ -77,7 +74,6 @@ function OperatorApp() {
         setCourses(courseResult.courses);
         if (!seededCourse.current && courseResult.courses[0]) { seededCourse.current = true; setCourseId(courseResult.courses[0].id); setDuration(courseResult.courses[0].durationMinutes); }
         setSession(sessionResult.session); setClassroom(sessionResult.classroom); setJobs(jobResult.jobs); setSettings(settingsResult.settings);
-        if (!seededSettings.current) { seededSettings.current = true; setLlmModel(settingsResult.settings.model); setLlmBaseUrl(settingsResult.settings.baseUrl); }
         setLoaded(true); setSyncError(null);
       } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); }
       finally { if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), 3000); }
@@ -143,13 +139,11 @@ function OperatorApp() {
       setSession(result.session); setClassroom(result.classroom); setNotice("講義を開始しました。進行パネルから一時停止できます。");
     });
   }
-  async function connectionAction(action: "check" | "disconnect" | "connect" | "save") {
+  async function connectionAction(action: "check" | "disconnect" | "connect") {
     await perform("connection", async () => {
       if (action === "connect") { const result = await fetchJson<{url: string}>("/api/settings/llm/chatgpt/start", post()); window.location.assign(result.url); return; }
-      const result = action === "save"
-        ? await fetchJson<{settings: LlmSettingsView}>("/api/settings/llm", {...post({...(llmKey ? {apiKey: llmKey} : {}), model: llmModel, baseUrl: llmBaseUrl}), method: "PUT"})
-        : await fetchJson<{settings: LlmSettingsView}>(`/api/settings/llm/chatgpt/${action}`, post());
-      setSettings(result.settings); setLlmKey("");
+      const result = await fetchJson<{settings: LlmSettingsView}>(`/api/settings/llm/chatgpt/${action}`, post());
+      setSettings(result.settings);
       setNotice(action === "disconnect" ? "ChatGPTから切断しました。" : action === "check" ? "接続テストの文章生成が完了しました。" : "接続設定を保存しました。");
       if ("revoked" in result && result.revoked === false) setError("AITuberから切断しましたが、OpenAI側の解除を確認できません。ChatGPTの利用状況で接続を確認してください。");
     });
@@ -192,7 +186,7 @@ function OperatorApp() {
             <label className="field">学習目標 <span className="optional">任意・1行に1件</span><textarea value={learningGoals} onChange={event => setLearningGoals(event.target.value)} placeholder="この講義で理解してほしいこと" rows={2} /></label>
             <div className="budget-box"><strong>自動処理の上限</strong><div className="form-row"><label className="field">処理時間<NumberField value={timeBudget} onChange={setTimeBudget} min={1} max={60} unit="分" /></label><label className="field">概算費用<NumberField value={costBudget} onChange={setCostBudget} min={0.01} step={0.5} unit="USD" /></label></div><Disclosure title="停止条件・費用について"><p>最大5回試行。同じ問題が3回続くと停止します。</p><p>費用は記録された利用情報からの推定値です。実際の請求額やプラン残量とは異なります。</p></Disclosure></div>
             {!connected && <p className="inline-warning"><a href="#/connection">作成にはAI接続が必要</a></p>}
-            
+
             <button className="primary full" disabled={!loaded || Boolean(syncError) || !connected || !sourceRights || !validDuration(authoringDuration) || !Number.isInteger(timeBudget) || timeBudget < 1 || timeBudget > 60 || !Number.isFinite(costBudget) || costBudget <= 0 || (!sourceFiles.length && !sourceNote.trim())} onClick={() => void startAuthoring()}>{busy.authoring ? "準備中…" : "この条件で作成を開始"}</button>
           </fieldset>{uploadProgress && <p role="status">{uploadProgress}</p>}</section>}
         {page === "lecture" && !activeSession && <section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle title="講義を準備する" id="prepare-heading"  />
@@ -202,8 +196,8 @@ function OperatorApp() {
           {loaded && !connected && <p className="inline-warning"><a href="#/connection">開始にはAI接続が必要</a></p>}
           <button className="primary full" disabled={!loaded || Boolean(syncError) || busy.session || !selectedCourse || !validDuration(duration) || !connected || activeSession} onClick={() => setConfirmation({title: "講義を開始しますか？", description: `「${selectedCourse?.title}」を${duration}分で開始します。開始後、AIと音声生成を利用して講義が進みます。`, label: "講義を開始する", run: () => void startLecture()})}>{busy.session ? "操作中…" : "講義を開始"}</button>
         </section>}
-        {page === "connection" && <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle title="AI 接続" id="connection-heading"  /><div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "接続を設定してください"}</strong></div>
-          {settings?.chatgpt ? <><Disclosure title="接続の詳細"><p>{settings.chatgpt.message}</p></Disclosure>{settings.chatgpt.email && <p className="account">{settings.chatgpt.email}</p>}{settings.chatgpt.status === "registration-required" || settings.chatgpt.status === "local-authorization-required" ? <div className="message warning"><p>Macで接続後、「更新」を押してください。</p><code>pnpm connect:chatgpt</code></div> : connected ? <><div className="button-row"><button disabled={busy.connection} onClick={() => void connectionAction("check")}>接続テスト（文章生成）</button><button className="text-button" disabled={busy.connection || Boolean(activeJob) || activeSession} onClick={() => setConfirmation({title: "ChatGPTから切断しますか？", description: "再接続するまで、新しい教材作成とAIを使う講義を開始できなくなります。", label: "接続を解除", run: () => void connectionAction("disconnect")})}>切断</button></div>{(activeJob || activeSession) && <p className="help">切断には教材作成と講義の終了が必要です。</p>}</> : <button className="primary full" disabled={busy.connection} onClick={() => void connectionAction("connect")}>ChatGPTに接続</button>}<a className="external-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況</a></> : <Disclosure className="settings-details" title="接続設定を編集"><fieldset disabled={busy.connection || Boolean(activeJob) || activeSession}><label className="field">APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={event => setLlmKey(event.target.value)} placeholder={settings?.apiKeyConfigured ? "変更する場合だけ入力" : "APIキー"} /></label><label className="field">モデル<input value={llmModel} onChange={event => setLlmModel(event.target.value)} /></label><label className="field">Base URL<input value={llmBaseUrl} onChange={event => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label><button disabled={!llmModel.trim()} onClick={() => void connectionAction("save")}>接続設定を保存</button></fieldset></Disclosure>}
+        {page === "connection" && <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle title="AI 接続" id="connection-heading"  />{settings?.chatgpt && <div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "ChatGPT"}</strong></div>}
+          {settings?.chatgpt ? <><Disclosure title="接続の詳細"><p>{settings.chatgpt.message}</p></Disclosure>{settings.chatgpt.email && <p className="account">{settings.chatgpt.email}</p>}{settings.chatgpt.status === "registration-required" || settings.chatgpt.status === "local-authorization-required" ? <><button className="primary full" onClick={() => setSignInHelp(true)}>ChatGPTでサインイン</button>{signInHelp && <LocalSignInDialog onClose={() => setSignInHelp(false)} />}</> : connected ? <><div className="button-row"><button disabled={busy.connection} onClick={() => void connectionAction("check")}>接続テスト（文章生成）</button><button className="text-button" disabled={busy.connection || Boolean(activeJob) || activeSession} onClick={() => setConfirmation({title: "ChatGPTから切断しますか？", description: "再接続するまで、新しい教材作成とAIを使う講義を開始できなくなります。", label: "接続を解除", run: () => void connectionAction("disconnect")})}>切断</button></div>{(activeJob || activeSession) && <p className="help">切断には教材作成と講義の終了が必要です。</p>}</> : <button className="primary full" disabled={busy.connection} onClick={() => void connectionAction("connect")}>ChatGPTでサインイン</button>}<a className="external-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況</a></> : <p role="status">{syncError ? "接続情報を取得できません。復旧後に更新してください。" : "接続情報を読み込み中…"}</p>}
         </section>}
     </main>{confirmation && <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />}
   </div>;
@@ -245,6 +239,12 @@ function SelectionDialog({label, value, options, onSelect, onClose}: {label: str
     const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
     event.preventDefault(); buttons[next]?.focus();
   }}>{options.map(option => <button key={option.value} aria-pressed={option.value === value} onClick={() => onSelect(option.value)}><span>{option.label}</span>{option.value === value && <span className="selected-label">選択中</span>}</button>)}</div><button className="selection-close" onClick={onClose}>変更せず閉じる</button></dialog>;
+}
+function LocalSignInDialog({onClose}: {onClose(): void}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {const dialog = ref.current; dialog?.showModal(); return () => dialog?.close();}, []);
+  return <dialog ref={ref} aria-labelledby="signin-title" onCancel={onClose}><h2 id="signin-title">ChatGPTでサインイン</h2><p>この環境はMacから認証します。AITuberのフォルダで次のコマンドを実行すると、ChatGPTの認証画面が開きます。</p><code>pnpm connect:chatgpt</code><p>認証後、この画面を更新してください。APIキーは不要です。</p><div className="button-row"><button onClick={() => void navigator.clipboard.writeText("pnpm connect:chatgpt").then(() => setCopied(true)).catch(() => setCopied(false))}>{copied ? "コピーしました" : "コマンドをコピー"}</button><button autoFocus onClick={onClose}>閉じる</button></div></dialog>;
 }
 function HeadingIcon({kind}: {kind: string}) {
   const paths: Record<string, ReactNode> = {
