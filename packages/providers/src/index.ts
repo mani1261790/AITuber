@@ -4,3 +4,5 @@ export * from "./llm.ts";
 export * from "./usage-budget.ts";
 export * from "./svg.ts";
 export * from "./omnisvg.ts";
+
+export * from "./chatgpt.ts";

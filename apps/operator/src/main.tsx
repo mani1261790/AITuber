@@ -27,6 +27,7 @@ function OperatorApp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LlmSettingsView | null>(null);
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const [llmKey, setLlmKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmBaseUrl, setLlmBaseUrl] = useState("");
@@ -74,6 +75,7 @@ function OperatorApp() {
   }, [authoringJob?.course]);
 
   useEffect(() => {
+    if(new URLSearchParams(window.location.search).get("chatgpt")==="failed") setError("ChatGPT認証を完了できませんでした。AITuberへのプラン利用許可と6 Lunaの利用可否を確認し、再接続してください。");
     void fetchJson<{ settings: LlmSettingsView }>("/api/settings/llm").then(({ settings }) => {
       setLlmSettings(settings); setLlmModel(settings.model); setLlmBaseUrl(settings.baseUrl);
     }).catch((reason: unknown) => setError(errorMessage(reason)));
@@ -110,6 +112,23 @@ function OperatorApp() {
       });
       setSession(result.session);
       setClassroom(result.classroom);
+    } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+  }
+
+  async function connectChatGpt() {
+    setBusy(true); setError(null);
+    try {
+      const result = await fetchJson<{url:string}>("/api/settings/llm/chatgpt/start", {method:"POST"});
+      window.location.assign(result.url);
+    } catch (reason) { setError(errorMessage(reason)); setBusy(false); }
+  }
+  async function checkChatGpt(disconnect=false) {
+    setBusy(true); setError(null); setConnectionNotice(null);
+    try {
+      const result = await fetchJson<{settings:LlmSettingsView;revoked?:boolean}>(`/api/settings/llm/chatgpt/${disconnect ? "disconnect" : "check"}`, {method:"POST"});
+      setLlmSettings(result.settings);
+      setConnectionNotice(disconnect ? "ChatGPTから切断しました。" : "6 Lunaで実際の文章生成が完了しました。教材を登録できます。");
+      if(result.revoked===false) setError("AITuberから切断しました。OpenAI側の解除を確認できなかったため、ChatGPTの利用状況から接続を解除してください。");
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   }
 
@@ -158,13 +177,27 @@ function OperatorApp() {
         <section className="panel setup-panel" aria-labelledby="course-heading">
           <div className="panel-heading"><span>01</span><div><p>SESSION SETUP</p><h2 id="course-heading">授業設定</h2></div></div>
           <details className="llm-settings">
-            <summary><span>LLM接続</span><b>{llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
-            <div className="llm-fields">
+            <summary><span>LLM接続</span><b>{llmSettings?.chatgpt ? `ChatGPT · 6 Luna · ${llmSettings.chatgpt.status === "connected" ? "接続済み" : llmSettings.chatgpt.status === "registration-required" ? "登録待ち" : "未接続"}` : llmSettings?.model ? `${llmSettings.model} · ${llmSettings.apiKeyConfigured || isLocalLlmUrl(llmSettings.baseUrl) ? "設定済み" : "要確認"}` : "未設定"}</b></summary>
+            {llmSettings?.chatgpt ? <div className="llm-fields chatgpt-connection">
+              <strong>ChatGPT · GPT-6 Luna</strong>
+              {connectionNotice && <p role="status">{connectionNotice}</p>}
+              <p>{llmSettings.chatgpt.message}</p>
+              {llmSettings.chatgpt.email && <p>{llmSettings.chatgpt.email}</p>}
+              <p>接続するアカウントのChatGPTプランを、教材・台本・板書の生成に使用します。プランとアプリの利用上限が適用されます。</p>
+              {llmSettings.chatgpt.status === "registration-required" ? <>
+                <button type="button" disabled>Continue with ChatGPT</button>
+                <a href="https://openai.com/form/sign-in-with-chatgpt-interest/" target="_blank" rel="noreferrer">OpenAIに利用を申し込む</a>
+              </> : <>
+                <button type="button" disabled={busy} onClick={() => void connectChatGpt()}>{llmSettings.chatgpt.status === "connected" ? "ChatGPTに再接続" : "Continue with ChatGPT"}</button>
+                {llmSettings.chatgpt.status === "connected" && <div className="chatgpt-actions"><button type="button" disabled={busy} onClick={() => void checkChatGpt()}>接続をテスト</button><button type="button" disabled={busy} onClick={() => void checkChatGpt(true)}>切断</button></div>}
+              </>}
+              <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況を確認</a>
+            </div> : <div className="llm-fields">
               <label>APIキー<input type="password" autoComplete="new-password" value={llmKey} onChange={(event) => setLlmKey(event.target.value)} placeholder={llmSettings?.apiKeyConfigured ? "設定済み（変更時だけ入力）" : "APIキー"} /></label>
               <label>モデル<input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="モデル名" /></label>
               <details><summary>詳細設定</summary><label>Base URL<input value={llmBaseUrl} onChange={(event) => setLlmBaseUrl(event.target.value)} placeholder="通常は空欄" /></label></details>
               <button type="button" disabled={busy || !llmModel.trim()} onClick={() => void saveLlmSettings()}>接続設定を保存</button>
-            </div>
+            </div>}
           </details>
           <details className="authoring-settings">
             <summary><span>教材を作成・取り込む</span><b>{authoringJob ? authoringStatus(authoringJob.status) : "授業前に実行"}</b></summary>
@@ -173,7 +206,7 @@ function OperatorApp() {
               <label>任意ノート<textarea value={sourceNote} onChange={(event) => setSourceNote(event.target.value)} placeholder="ファイルに加えたい指示や教材本文" /></label>
               <label>利用権<select value={sourceRights} onChange={(event) => setSourceRights(event.target.value as typeof sourceRights)}><option value="owned">自分が権利を保有</option><option value="licensed">ライセンス済み</option><option value="public-domain">パブリックドメイン</option><option value="permission">利用許可あり</option></select></label>
               <details><summary>推定結果を指定・修正する</summary><label>対象レベル<input value={targetLevel} onChange={(event) => setTargetLevel(event.target.value)} placeholder="空欄なら自動推定" /></label><label>学習目標（1行に1件）<textarea value={learningGoals} onChange={(event) => setLearningGoals(event.target.value)} placeholder="空欄なら自動推定" /></label></details>
-              <button type="button" disabled={busy || (sourceFiles.length === 0 && !sourceNote.trim())} onClick={() => void startAuthoring()}>自動作成と審査を開始</button>
+              <button type="button" disabled={busy || Boolean(llmSettings?.chatgpt && llmSettings.chatgpt.status !== "connected") || (sourceFiles.length === 0 && !sourceNote.trim())} onClick={() => void startAuthoring()}>自動作成と審査を開始</button>
               {authoringJob && <AuthoringResult job={authoringJob} onContinue={continueAuthoring} busy={busy} />}
             </div>
           </details>

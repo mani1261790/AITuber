@@ -48,6 +48,10 @@ try {
       if (!process.env[name]) throw new Error(`Missing deployment secret: ${name}`);
       secrets[name] = process.env[name];
     }
+    // Hosted SIWC registration is provisioned by OpenAI; never substitute Codex credentials.
+    for (const name of ["CHATGPT_CLIENT_ID", "CHATGPT_CLIENT_SECRET", "CHATGPT_REDIRECT_URI", "CHATGPT_PLAN_USAGE_ENABLED"]) {
+      if (process.env[name]) secrets[name] = process.env[name];
+    }
     const bucketUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets`;
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     const bucket = await fetch(`${bucketUrl}/aituber-state`, { headers, signal: AbortSignal.timeout(20_000) });

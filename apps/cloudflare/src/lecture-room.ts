@@ -1,3 +1,4 @@
+import { ChatGptAuthError } from "../../server/src/chatgpt-connection.ts";
 import { lessonPdfSource, pdfSourceHeaders } from "../../server/src/lesson-pdf-source";
 import { previewBoard } from "../../server/src/board-preview";
 import { audioResponse } from './audio-response';
@@ -23,6 +24,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       initializeFiles();
       this.services = createServices({
         AITUBER_TTS_TEST_MODE:env.AITUBER_TTS_TEST_MODE,
+        CHATGPT_CLIENT_ID:env.CHATGPT_CLIENT_ID, CHATGPT_CLIENT_SECRET:env.CHATGPT_CLIENT_SECRET, CHATGPT_REDIRECT_URI:env.CHATGPT_REDIRECT_URI, CHATGPT_PLAN_USAGE_ENABLED:env.CHATGPT_PLAN_USAGE_ENABLED,
         AITUBER_LLM_MODEL:env.LLM_MODEL, AITUBER_LLM_BASE_URL:'https://api.openai.com/v1', AITUBER_LLM_API_KEY:env.OPENAI_API_KEY ?? '',
         AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS:env.LLM_INPUT_PRICE, AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS:env.LLM_OUTPUT_PRICE,
         AITUBER_FISH_AUDIO_API_KEY:env.FISH_API_KEY, AITUBER_FISH_AUDIO_VOICE_ID:env.FISH_VOICE_ID, AITUBER_FISH_AUDIO_MODEL:'s2.1-pro-free',
@@ -94,6 +96,29 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const url=new URL(request.url), path=url.pathname;
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
+    if(path==='/api/settings/llm/chatgpt/start' && request.method==='POST') {
+      const attempt = await this.services.chatgpt.start(url.origin);
+      return Response.json({url:attempt.url},{headers:{'cache-control':'no-store','set-cookie':`__Host-aituber-oauth=${attempt.browserToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`}});
+    }
+    if(path==='/api/settings/llm/chatgpt/disconnect' && request.method==='POST') {
+      const revoked = await this.services.chatgpt.disconnect();
+      return json(200,{settings:settings.get(),revoked});
+    }
+    if(path==='/api/settings/llm/chatgpt/check' && request.method==='POST') {
+      await this.services.chatgpt.checkModel();
+      const result = await settings.createProvider('authoring').createContext({purpose:'generation',systemInstruction:'日本語で答えてください。'}).generate({prompt:'接続確認です。messageに「接続できました」と記載してください。',schemaName:'connection_check',schema:{type:'object',properties:{message:{type:'string'}},required:['message'],additionalProperties:false}});
+      return json(200,{model:result.model,latencyMs:result.latencyMs,settings:settings.get()});
+    }
+    if(path==='/auth/chatgpt/callback' && request.method==='GET') {
+      let message='ChatGPTに接続しました。管理画面から教材を作成できます。';
+      try {
+        const token=request.headers.get('cookie')?.split(';').map(value=>value.trim()).find(value=>value.startsWith('__Host-aituber-oauth='))?.slice('__Host-aituber-oauth='.length) ?? '';
+        await this.services.chatgpt.complete(url,token);
+      } catch(error) { message=error instanceof ChatGptAuthError ? error.message : 'ChatGPT認証を完了できませんでした。接続をやり直してください。'; }
+      const safe=message.replace(/[&<>"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[character]!));
+      // End the cross-site redirect chain before returning to the Strict-cookie operator UI.
+      return new Response(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChatGPT接続 | AITuber</title><body><main><h1>ChatGPT接続</h1><p>${safe}</p><a href="/operator/">管理画面へ戻る</a></main></body></html>`,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'",'set-cookie':'__Host-aituber-oauth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}});
+    }
     if(path==='/api/settings/llm/board-preview' && request.method==='POST') {
       const body=await read<{example:number}>();
       return json(200,await previewBoard(settings.createProvider("runtime"),body.example));

@@ -13,7 +13,7 @@ export interface LlmUsage {
 export interface LlmResult<T> {
   readonly value: T;
   readonly model: string;
-  readonly provider: "openai-compatible" | "fixed";
+  readonly provider: "openai-compatible" | "chatgpt" | "fixed";
   readonly usage: LlmUsage;
   readonly latencyMs: number;
 }
@@ -206,7 +206,7 @@ function parseEnvelope(text: string): Envelope {
   return { content: message.content, model: typeof record.model === "string" ? record.model : "", usage: asRecord(record.usage) };
 }
 
-function parseAndValidate<T>(content: string, schema: JsonSchema, custom?: (value: unknown) => value is T): T {
+export function parseAndValidate<T>(content: string, schema: JsonSchema, custom?: (value: unknown) => value is T): T {
   let value: unknown;
   try { value = JSON.parse(content); } catch { throw new LlmProviderError("invalid_response", "LLM message content was not valid JSON"); }
   const validate = compileSchema(schema);
@@ -226,7 +226,7 @@ function usage(value: Envelope["usage"], options: OpenAiCompatibleLlmOptions): L
     ? (inputTokens * options.inputUsdPerMillionTokens + outputTokens * options.outputUsdPerMillionTokens) / 1_000_000 : null;
   return { inputTokens, outputTokens, totalTokens, estimatedCostUsd };
 }
-function validateRequest(request: StructuredGenerationRequest<unknown>) {
+export function validateRequest(request: StructuredGenerationRequest<unknown>) {
   boundedText(request.prompt, 500_000, "prompt");
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(request.schemaName)) throw new TypeError("schemaName must contain 1-64 letters, digits, underscores, or hyphens");
   const maxBytes = request.maxOutputBytes ?? 1_000_000;

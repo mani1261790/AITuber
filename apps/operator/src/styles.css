@@ -157,3 +157,8 @@ progress::-webkit-progress-value { background: linear-gradient(90deg, var(--live
 }
 @media (prefers-reduced-motion: reduce) { .primary-button { transition: none; } }
 @media (forced-colors: active) { .status span { forced-color-adjust: none; } }
+
+.chatgpt-connection p { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+.chatgpt-connection a { color: var(--accent, #a84c2e); text-underline-offset: 3px; }
+.chatgpt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.chatgpt-actions button { flex: 1; }

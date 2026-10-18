@@ -1,3 +1,4 @@
+import type { ChatGptConnection } from "./chatgpt-connection.ts";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "@aituber/runtime-platform/files";
 import { dirname } from "node:path";
 import type { LlmSettingsView, UpdateLlmSettingsRequest } from "@aituber/contracts";
@@ -11,7 +12,7 @@ export class LlmSettingsStore {
   readonly #usageBudget: UsageBudget | null;
   #value: StoredLlmSettings;
 
-  constructor(path: string, env: Readonly<Record<string, string | undefined>> = process.env, usageBudget: UsageBudget | null = null) {
+  constructor(path: string, env: Readonly<Record<string, string | undefined>> = process.env, usageBudget: UsageBudget | null = null, private readonly chatgpt?: ChatGptConnection) {
     this.#path = path;
     const configured = openAiCompatibleOptionsFromEnv(env);
     const inputPrice = optionalNonNegativeNumber(env.AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS, "AITUBER_LLM_INPUT_USD_PER_MILLION_TOKENS"); const outputPrice = optionalNonNegativeNumber(env.AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS, "AITUBER_LLM_OUTPUT_USD_PER_MILLION_TOKENS");
@@ -20,9 +21,10 @@ export class LlmSettingsStore {
     this.#value = existsSync(path) ? parseStored(readFileSync(path, "utf8")) : { apiKey: configured?.apiKey ?? "", model: configured?.model ?? "", baseUrl: configured?.baseUrl ?? "" };
   }
 
-  get(): LlmSettingsView { return { apiKeyConfigured: Boolean(this.#value.apiKey), model: this.#value.model, baseUrl: this.#value.baseUrl }; }
+  get(): LlmSettingsView { if (this.chatgpt) return { apiKeyConfigured: false, model: "gpt-6-luna", baseUrl: "https://api.openai.com/v1", chatgpt: this.chatgpt.view() }; return { apiKeyConfigured: Boolean(this.#value.apiKey), model: this.#value.model, baseUrl: this.#value.baseUrl }; }
 
   save(request: UpdateLlmSettingsRequest): LlmSettingsView {
+    if (this.chatgpt) throw new TypeError("ChatGPT認証を使用しています。APIキーの設定は不要です。");
     const next = { apiKey: request.apiKey?.trim() || this.#value.apiKey, model: request.model.trim(), baseUrl: request.baseUrl?.trim() ?? "" };
     const options = openAiCompatibleOptionsFromEnv({ AITUBER_LLM_API_KEY: next.apiKey, AITUBER_LLM_MODEL: next.model, AITUBER_LLM_BASE_URL: next.baseUrl });
     if (options) new OpenAiCompatibleLlmProvider(options);
@@ -40,6 +42,7 @@ export class LlmSettingsStore {
   }
 
   createProvider(scope: UsageScope = "runtime"): LlmProvider {
+    if (this.chatgpt) return this.chatgpt.provider();
     const options = this.connectionOptions();
     if (!options) throw new TypeError("LLM接続を先に設定してください。");
     const backing = new OpenAiCompatibleLlmProvider({ ...options, timeoutMs: scope === "authoring" ? 3_600_000 : options.baseUrl && isLocalLlmBaseUrl(options.baseUrl) ? 90_000 : 30_000 });

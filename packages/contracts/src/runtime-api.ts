@@ -262,7 +262,15 @@ export interface SubmitAfterClassSurveyRequest {
   readonly comment?: string;
 }
 
+export interface ChatGptConnectionView {
+  readonly status: "registration-required" | "disconnected" | "connected";
+  readonly model: string;
+  readonly email: string | null;
+  readonly message: string;
+}
+
 export interface LlmSettingsView {
+  readonly chatgpt?: ChatGptConnectionView;
   readonly apiKeyConfigured: boolean;
   readonly model: string;
   readonly baseUrl: string;

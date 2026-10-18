@@ -1,3 +1,4 @@
+import { ChatGptConnection } from "../../../server/src/chatgpt-connection.ts";
 
 
 import { AfterClassStore, DataRetentionStore, LearningEvidenceStore, LectureEventStore, LiveSupplementStore, QuestionStore, ResourceBudgetStore } from "@aituber/storage";
@@ -56,7 +57,8 @@ if (ttsTestMode === "tone") {
   const price = model === "s2.1-pro-free" ? 0 : optionalNonNegativeNumber(env.AITUBER_TTS_USD_PER_MILLION_CHARACTERS, "AITUBER_TTS_USD_PER_MILLION_CHARACTERS");
   speechProvider = new CachedSpeechProvider(new BudgetedSpeechProvider({ backing: new FishAudioTtsProvider({ apiKey: fishApiKey, model }), budget: resourceBudgetStore, scope: "runtime", ...(price !== undefined ? { usdPerMillionCharacters: price } : {}) }), ttsCachePath);
 }
-const llmSettings = new LlmSettingsStore(llmSettingsPath, env, resourceBudgetStore);
+const chatgpt = new ChatGptConnection("/data/chatgpt-connection.json", { clientId: env.CHATGPT_CLIENT_ID ?? "", redirectUri: env.CHATGPT_REDIRECT_URI ?? "", planUsageEnabled: env.CHATGPT_PLAN_USAGE_ENABLED === "true", ...(env.CHATGPT_CLIENT_SECRET ? {clientSecret: env.CHATGPT_CLIENT_SECRET} : {}) });
+const llmSettings = new LlmSettingsStore(llmSettingsPath, env, resourceBudgetStore, chatgpt);
 const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }) }) });
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course), defer: schedule });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
@@ -66,7 +68,7 @@ pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 
-return {lecture,settings:llmSettings,authoring,questions,pedagogy,afterClass,supplements,dataRetention};
+return {chatgpt,lecture,settings:llmSettings,authoring,questions,pedagogy,afterClass,supplements,dataRetention};
 }
 function optionalNonNegativeNumber(value: string | undefined, name: string): number | undefined {
   if (!value?.trim()) return undefined; const parsed = Number(value);
