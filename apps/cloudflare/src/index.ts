@@ -31,7 +31,7 @@ export default {
    if(!classroomApi&&!operator)return Response.json({error:"unauthorized"},{status:401,headers:secureHeaders});
    if(request.method!=="GET"&&request.method!=="HEAD"&&!sameOrigin(request))return new Response(null,{status:403});
    const forwarded=new Request(request);forwarded.headers.set("x-aituber-surface",classroomApi?"classroom":"operator");forwarded.headers.delete("cookie");forwarded.headers.delete("authorization");
-   try {return await env.ROOM.getByName("classroom-v1").fetch(forwarded);}catch {return Response.json({error:"temporarily_unavailable",message:"サーバーを起動しています。少し待って再試行してください。"},{status:503,headers:secureHeaders});}
+   try {return await env.ROOM.getByName("classroom-v1").fetch(forwarded);}catch (error) { console.error("lecture_startup_failed", error instanceof Error ? error.message : "unknown"); return Response.json({...(operator ? {diagnostic:error instanceof Error ? error.message : "unknown"} : {}),error:"temporarily_unavailable",message:"サーバーを起動しています。少し待って再試行してください。"},{status:503,headers:secureHeaders});}
   }
   if(path==="/aituber-runtime-config.json")return Response.json({classroomOrigin:url.origin},{headers:secureHeaders});
   if(path==="/operator"||path.startsWith("/operator/")) {
