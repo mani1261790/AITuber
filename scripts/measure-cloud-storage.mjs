@@ -56,7 +56,9 @@ try{
  await api(`/api/sessions/${session.id}/commands`,{command:'resume'});
  await measure('teachingOperator100Polls',async()=>{for(let i=0;i<100;i++)await poll();});
  await api(`/api/sessions/${session.id}/commands`,{command:'pause'});
+ const beforeRestart=await api('/api/diagnostics/storage-budget');
  await stop();await start();
+ const afterRestart=await api('/api/diagnostics/storage-budget');assert.deepEqual(afterRestart.usage,beforeRestart.usage);report.noRestartInflation=true;
  await api('/api/sessions/current');
  report.measurements.restartWith20Jobs=await api('/api/__meter');
  await measure('restoredOperator100Polls',async()=>{for(let i=0;i<100;i++)await poll();});
@@ -67,7 +69,7 @@ try{
  const recovered=await api('/api/operator/snapshot');assert.equal(recovered.jobs.find(job=>job.id===pending.id).status,'stopped');assert.equal(recovered.session.status,'PAUSED');report.resetDoesNotResumeWork=true;
  await api('/api/__trip');await stop();await start();
  const blocked=await fetch(base+'/api/operator/snapshot',{headers:{cookie}});assert.equal(blocked.status,503);
- assert.equal((await blocked.json()).error,'storage_quota_exceeded');report.persistedSafetyStop=true;
+ assert.equal((await blocked.json()).error,'storage_safety_stop');report.persistedSafetyStop=true;
  const diagnostic=await api('/api/diagnostics/storage-budget');assert.deepEqual(diagnostic.exceeded,['reads']);assert.equal(diagnostic.usage.reads,1_000_000);
  const denied=await fetch(base+'/api/diagnostics/storage-budget');assert.equal(denied.status,401);
  await writeFile('output/cloudflare-usage/local-meter.json',JSON.stringify(report,null,2));

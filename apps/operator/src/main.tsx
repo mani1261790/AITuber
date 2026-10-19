@@ -77,7 +77,7 @@ function OperatorApp() {
         setSession(snapshot.session); setClassroom(snapshot.classroom); setJobs(snapshot.jobs); setSettings(snapshot.settings);
         setLoaded(true); setSyncError(null);
         retryDelay = snapshot.jobs.some(job => job.status === "running") || snapshot.session && !["PAUSED", "FINISHED"].includes(snapshot.session.status) ? 5000 : 30000;
-      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); quotaStopped = reason instanceof ApiError && reason.code === "storage_quota_exceeded"; retryDelay = quotaStopped ? 0 : 30000; }
+      } catch (reason) { if (!controller.signal.aborted && version === revision.current && !locks.current.size) setSyncError(errorMessage(reason)); quotaStopped = reason instanceof ApiError && ["storage_quota_exceeded", "storage_safety_stop"].includes(reason.code ?? ""); retryDelay = quotaStopped ? 0 : 30000; }
       finally { inFlight = false; if (!controller.signal.aborted && retryDelay && !document.hidden) timer = window.setTimeout(() => void poll(), retryDelay); }
     }
     const visibility = () => { window.clearTimeout(timer); if (!document.hidden) void poll(); };

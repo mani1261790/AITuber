@@ -1,6 +1,6 @@
 /** Conservative, persisted per-namespace safety limits, well below the free account limits. */
 export const STORAGE_LIMITS={reads:1_000_000,writes:20_000,requests:30_000} as const;
-export const STORAGE_SAFETY_MESSAGE='無料枠を保護するため、本日の処理を停止しました。日本時間の午前9時以降に更新してください。';
+export const STORAGE_SAFETY_MESSAGE='アプリの安全上限に達したため処理を停止しました。CloudflareやChatGPTの利用枠不足を示すものではありません。';
 type Usage={day:string;reads:number;writes:number;requests:number};
 export class StorageSafetyLimit extends Error {
  constructor(){super('AITUBER_STORAGE_SAFETY_LIMIT');}
@@ -12,17 +12,28 @@ export class StorageBudget {
  private recovery=false;
  constructor(private readonly kv:Pick<DurableObjectStorage['kv'],'get'|'put'>,private readonly now=()=>Date.now(),private readonly onStop=()=>{}){this.load();}
  private day(){return new Date(this.now()).toISOString().slice(0,10);}
- private load(){const day=this.day();const saved=this.kv.get<Usage>('storage-safety-budget-v1');this.usage=saved?.day===day?{...saved}:{day,reads:0,writes:0,requests:0};this.reserved={...this.usage};this.recovery=this.kv.get<boolean>('storage-safety-stopped')===true;this.tripped=false;}
+ private load(){const day=this.day();let saved=this.kv.get<Usage>('storage-safety-budget-v1');
+  // One-time reconciliation of the confirmed 2026-10-19 reservation inflation.
+  // Cloudflare run 39243787988 measured 17,679 reads / 4,918 writes / 771 requests.
+  // Keep more than twice those totals; never zero usage or match a different incident.
+  if(day==='2026-10-19' && saved?.day===day && saved.reads===194_000 && saved.writes===20_000 && saved.requests===19_500){
+   const corrected={day,reads:50_000,writes:10_000,requests:2_000};
+   this.kv.put('storage-safety-reconciliation-2026-10-19',{original:saved,corrected,evidenceRun:'39243787988'});
+   this.kv.put('storage-safety-budget-v1',corrected);saved=corrected;
+  }
+  this.usage=saved?.day===day?{...saved}:{day,reads:0,writes:0,requests:0};this.reserved={...this.usage};this.recovery=this.kv.get<boolean>('storage-safety-stopped')===true;this.tripped=false;}
  check(){if(this.usage.day!==this.day())this.load();if(this.usage.reads>=STORAGE_LIMITS.reads||this.usage.writes>=STORAGE_LIMITS.writes||this.usage.requests>=STORAGE_LIMITS.requests){if(!this.tripped){this.kv.put('storage-safety-stopped',true);this.tripped=true;this.onStop();}throw new StorageSafetyLimit();}}
- snapshot(){return {usage:{...this.usage},reserved:{...this.reserved},limits:STORAGE_LIMITS,exceeded:(['reads','writes','requests'] as const).filter(key=>this.usage[key]>=STORAGE_LIMITS[key]),recovery:this.recovery};}
+ snapshot(){return {accountingVersion:2,reconciliation:this.kv.get('storage-safety-reconciliation-2026-10-19')??null,usage:{...this.usage},reserved:{...this.reserved},limits:STORAGE_LIMITS,exceeded:(['reads','writes','requests'] as const).filter(key=>this.usage[key]>=STORAGE_LIMITS[key]),recovery:this.recovery};}
  needsRecovery(){return this.recovery;}
  recovered(){this.kv.put('storage-safety-stopped',false);this.recovery=false;}
  request(){this.check();this.usage.requests++;this.save();}
  record(reads:number,writes:number){this.usage.reads+=reads;this.usage.writes+=writes;this.save();}
  flush(){
   // SQL transaction rollbacks may also roll back an in-transaction reservation.
-  // Recommit the conservative totals outside the operation, once per admitted request.
-  this.kv.put('storage-safety-budget-v1',this.reserved);
+  // A completed operation commits measured usage, not its unused crash reservation.
+  // Otherwise each cold start treats rounded-up capacity as work actually performed.
+  this.kv.put('storage-safety-budget-v1',this.usage);
+  this.reserved={...this.usage};
   if(this.tripped)this.kv.put('storage-safety-stopped',true);
  }
  private save(){

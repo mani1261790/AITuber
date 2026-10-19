@@ -14,6 +14,7 @@ import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from 
 import type { ClassroomStreamMessage, CreateSessionRequest, SessionCommandRequest, UpdateLlmSettingsRequest, CreateAuthoringRequest, ResumeAuthoringRequest, SubmitQuestionRequest, SubmitLearningEvidenceRequest, SubmitAfterClassSurveyRequest } from '@aituber/contracts';
 
 export class LectureRoom extends DurableObject<AppEnv> {
+  private initialized = false;
   private services!: ReturnType<typeof createServices>;
   private classrooms = new ClassroomRegistry();
   private needsResume = false;
@@ -28,7 +29,8 @@ export class LectureRoom extends DurableObject<AppEnv> {
     this.context = { storage: this.budget.wrap(ctx.storage), bucket: env.STATE, assets: env.ASSETS };
   }
   private initialize() {
-    if(this.services)return;
+    if(this.initialized)return;
+    this.services?.lecture.close();
     const ctx=this.ctx,env=this.env;
     runtimeContext.run(this.context, () => {
       initializeFiles();
@@ -50,6 +52,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       // Interrupted classifiers must not leave questions permanently pending.
       this.context.storage.sql.exec("UPDATE question_threads SET triage='later',status='accepted',disposition='after-class' WHERE triage='pending' OR status='answering'");
       if(this.needsResume || this.services.lecture.getCurrentSession()?.status==='FINISHED' || this.services.authoring.list().some(job=>job.status==='running')) this.schedule(1000);
+      this.initialized=true;
     });
   }
   private schedule(delay:number) {
@@ -131,7 +134,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),authoringRevision:2,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:2,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {

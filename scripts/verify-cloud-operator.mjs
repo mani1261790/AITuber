@@ -14,20 +14,20 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   const value = await response.json();
   const snapshot = await fetch(base+'/api/operator/snapshot', {headers:{cookie},signal:AbortSignal.timeout(20000)});
   const state = await snapshot.json();
-  if(state.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; verification blocked by storage quota.');
+  if(['storage_quota_exceeded','storage_safety_stop'].includes(state.error)) throw new Error('Deployment uploaded; verification blocked by storage quota.');
   // An old stop handler also returns 404. Require a field added by this rollout.
-  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 2) {
+  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 2 && state.storageAccountingVersion === 2) {
     for (const path of ['/api/operator/snapshot','/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
       const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
       const body = await result.json();
-      if(body.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
+      if(['storage_quota_exceeded','storage_safety_stop'].includes(body.error)) throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
       if(!result.ok) throw new Error(`Operator ${path} failed (HTTP ${result.status}).`);
       if(path.endsWith('/jobs') && !Array.isArray(body.jobs)) throw new Error('Operator jobs response is invalid.');
     }
     console.log('PASS: authenticated operator API and Durable Object stop handler are live; no job was created or modified.');
     process.exit(0);
   }
-  if (value.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
+  if (['storage_quota_exceeded','storage_safety_stop'].includes(value.error)) throw new Error('Deployment uploaded; live verification blocked by Cloudflare storage quota. Retry after the daily reset.');
   if (response.status !== 404 && response.status !== 503) throw new Error(`Unexpected rollout probe response (HTTP ${response.status}).`);
   } catch(error) { if(error?.name !== 'TimeoutError') throw error; }
   if (attempt % 6 === 1) console.log(`Waiting for Durable Object rollout (${attempt}/60).`);
