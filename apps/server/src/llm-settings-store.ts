@@ -42,7 +42,7 @@ export class LlmSettingsStore {
   }
 
   createProvider(scope: UsageScope = "runtime"): LlmProvider {
-    if (this.chatgpt) return this.chatgpt.provider();
+    if (this.chatgpt) return this.chatgpt.provider(scope === "authoring" ? 3_600_000 : 180_000);
     const options = this.connectionOptions();
     if (!options) throw new TypeError("LLM接続を先に設定してください。");
     const backing = new OpenAiCompatibleLlmProvider({ ...options, timeoutMs: scope === "authoring" ? 3_600_000 : options.baseUrl && isLocalLlmBaseUrl(options.baseUrl) ? 90_000 : 30_000 });

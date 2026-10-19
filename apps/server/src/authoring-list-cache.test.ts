@@ -18,5 +18,5 @@ it('serves cached summaries without rereading source checkpoints and keeps chang
  expect(files.readFileSync).not.toHaveBeenCalled();expect(files.readdirSync).not.toHaveBeenCalled();
  service.stop(job.id);expect(service.list()[0]?.status).toBe('stopped');
  const restored=new CourseAuthoringService(options);expect(restored.list()[0]?.status).toBe('stopped');
- const copy=restored.list();copy[0]!.request.durationMinutes=99;expect(restored.list()[0]?.request.durationMinutes).toBe(5);
+ const copy=restored.list();Reflect.set(copy[0]!.request,"durationMinutes",99);expect(restored.list()[0]?.request.durationMinutes).toBe(5);
 });

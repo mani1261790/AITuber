@@ -72,3 +72,15 @@ it("never falls back to an API key when ChatGPT is disconnected", () => {
   expect(() => store.createProvider()).toThrow(/ChatGPT/);
   expect(() => store.save({apiKey: "replacement-key", model: "other"})).toThrow(/APIキーの設定は不要/);
 });
+
+
+it('passes the authoring timeout through ChatGPT instead of the runtime three-minute limit', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-chatgpt-timeout-'));
+  const connection = new ChatGptConnection(join(directory, 'chatgpt.json'), {clientId: '', redirectUri: '', planUsageEnabled: true});
+  const provider = vi.spyOn(connection, 'provider').mockImplementation(() => {throw new Error('timeout captured');});
+  const store = new LlmSettingsStore(join(directory, 'llm.json'), {}, null, connection);
+  expect(() => store.createProvider('authoring')).toThrow('timeout captured');
+  expect(provider).toHaveBeenLastCalledWith(3_600_000);
+  expect(() => store.createProvider('runtime')).toThrow('timeout captured');
+  expect(provider).toHaveBeenLastCalledWith(180_000);
+});

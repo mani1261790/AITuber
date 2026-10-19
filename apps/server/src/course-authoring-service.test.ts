@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dnaReplicationFixture, quadraticFunctionsFixture, vaeReparameterizationFixture } from "@aituber/content";
 import type { CoursePackage, ReadonlyCoursePackage } from "@aituber/contracts";
 import { type LlmProvider, FixedResponseLlmProvider } from "@aituber/providers";
@@ -283,4 +283,45 @@ it('corrects legacy synthetic passes without changing actual completed review de
   checkpoint.review.summary = '全項目の審査を完了';
   writeFileSync(file, JSON.stringify(checkpoint));
   expect(service.get(job.id).review!.gates.every(gate => gate.passed)).toBe(true);
+});
+
+
+it('removes failed checkpoints, reports a temporary error, and preserves original sources', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-failure-cleanup-'));
+  const options = {directory, cacheViews: true, defer: () => undefined, llm: () => {throw new Error('生成がタイムアウトしました');}};
+  const service = new CourseAuthoringService(options);
+  const source = upload('Original source');
+  const job = await service.begin({durationMinutes: 5, sources: [source]});
+  await service.runPendingStep();
+  expect(service.list()).toEqual([]);
+  expect(existsSync(join(directory, `${job.id}.json`))).toBe(false);
+  expect(service.failure).toEqual({id: job.id, message: '生成がタイムアウトしました'});
+  expect(service.readSource(`sha256:${createHash('sha256').update(Buffer.from(source.dataBase64, 'base64')).digest('hex')}`)).toEqual(Buffer.from(source.dataBase64, 'base64'));
+  const restored = new CourseAuthoringService(options);
+  expect(restored.list()).toEqual([]); expect(restored.failure).toBeNull();
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 300_001);
+  try {expect(service.failure).toBeNull();} finally {vi.restoreAllMocks();}
+});
+
+it('purges legacy failures but retains available materials and deliberate stops', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'aituber-legacy-failure-'));
+  const options = {directory, cacheViews: true, defer: () => undefined, llm: () => new FixedResponseLlmProvider([])};
+  const service = new CourseAuthoringService(options);
+  const job = await service.begin({durationMinutes: 5, sources: [upload('Source')]});
+  service.stop(job.id);
+  const file = join(directory, `${job.id}.json`);
+  const legacy = JSON.parse(readFileSync(file, 'utf8')); legacy.status = 'failed';
+  writeFileSync(file, JSON.stringify(legacy));
+  expect(new CourseAuthoringService(options).list()).toEqual([]);
+  expect(existsSync(file)).toBe(false);
+});
+
+it('retries malformed review output without regenerating valid teaching content', async () => {
+  const source = upload('Quadratic source');
+  const provider = new FixedResponseLlmProvider([remapSource(quadraticFunctionsFixture, sourceId(source)), {invalid: true}, passingReview()]);
+  const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-review-retry-')), llm: () => provider});
+  const result = await service.create({durationMinutes: 5, sources: [source]});
+  expect(result.status).toBe('available');
+  expect(result.attempts).toBe(1);
+  expect(provider.calls.map(call => call.purpose)).toEqual(['generation', 'review', 'review']);
 });

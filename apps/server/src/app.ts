@@ -6,7 +6,7 @@ import { sendAudio } from "./audio-response.ts";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
-export interface AuthoringApi { readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView; stop(id: string): AuthoringJobView }
+export interface AuthoringApi { readonly failure?: {id: string; message: string} | null; readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView; stop(id: string): AuthoringJobView }
 export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 export interface PedagogyApi { answer(input: { sessionId: string; participantId: string; answer: string }): FixedSessionView; submitEvidence(input: { sessionId: string; participantId: string; request: SubmitLearningEvidenceRequest }): FixedSessionView }
 export interface AfterClassApi { submitSurvey(input: { sessionId: string; participantId: string; request: SubmitAfterClassSurveyRequest }): unknown }
@@ -51,7 +51,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "operator");
         if (!settings || !authoring) throw new RangeError("Operator services are unavailable");
         const session=api.getCurrentSession();
-        return json(response,200,{courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),settings:settings.get()});
+        return json(response,200,{courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),authoringFailure:authoring.failure,settings:settings.get()});
       }
       if (url.pathname === "/api/settings/llm") {
         requireSurface(request, "operator");

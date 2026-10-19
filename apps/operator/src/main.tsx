@@ -69,10 +69,11 @@ function OperatorApp() {
       const version = revision.current;
       let retryDelay = 10000;
       try {
-        const snapshot = await fetchJson<{courses: CourseSummary[]; session: FixedSessionView | null; classroom: ClassroomRoomView | null; jobs: AuthoringJobView[]; settings: LlmSettingsView}>("/api/operator/snapshot", {signal: controller.signal});
+        const snapshot = await fetchJson<{courses: CourseSummary[]; session: FixedSessionView | null; classroom: ClassroomRoomView | null; jobs: AuthoringJobView[]; authoringFailure?: {id: string; message: string} | null; settings: LlmSettingsView}>("/api/operator/snapshot", {signal: controller.signal});
         if (controller.signal.aborted || version !== revision.current || locks.current.size) return;
         setCourses(snapshot.courses);
         if (!seededCourse.current && snapshot.courses[0]) { seededCourse.current = true; setCourseId(snapshot.courses[0].id); setDuration(snapshot.courses[0].durationMinutes); }
+        if (snapshot.authoringFailure) setError(snapshot.authoringFailure.message);
         setSession(snapshot.session); setClassroom(snapshot.classroom); setJobs(snapshot.jobs); setSettings(snapshot.settings);
         setLoaded(true); setSyncError(null);
         retryDelay = snapshot.jobs.some(job => job.status === "running") || snapshot.session && !["PAUSED", "FINISHED"].includes(snapshot.session.status) ? 5000 : 30000;
