@@ -11,6 +11,20 @@ import { CourseAuthoringService } from "./course-authoring-service.ts";
 const fixtures = [quadraticFunctionsFixture, dnaReplicationFixture, vaeReparameterizationFixture];
 
 describe("CourseAuthoringService", () => {
+  it('accepts short generated goal IDs in one attempt and preserves their references', async () => {
+    const source = upload('Original quadratic source');
+    const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+    const old = candidate.learningGoals[0]!.id;
+    const generated = JSON.parse(JSON.stringify(candidate).replaceAll(JSON.stringify(old), JSON.stringify('g1')));
+    const provider = new FixedResponseLlmProvider([generated, passingReview()]);
+    const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-short-id-')),llm:()=>provider});
+    const result = await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).toBe('available');
+    expect(result.attempts).toBe(1);
+    expect(result.course!.learningGoals[0]!.id).toBe('generated.g1');
+    expect(result.course!.teachingUnits[0]!.learningGoalIds).toContain('generated.g1');
+  });
+
   it('fills hashes and source provenance itself instead of asking the model to invent them', async () => {
     const source = upload('Original quadratic source');
     const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));

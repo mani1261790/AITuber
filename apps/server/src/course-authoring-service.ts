@@ -1,3 +1,4 @@
+import {allowShortAuthoringIdentifiers, normalizeAuthoringIdentifiers} from "./authoring-identifiers.ts";
 import { validateAuthoredPlan, pdfTeachingInstruction } from "./authoring-plan-validation.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "@aituber/runtime-platform/files";
@@ -14,6 +15,7 @@ authoringGenerationSchema.required = authoringGenerationSchema.required.filter((
 authoringGenerationSchema.properties.contentHash = {type:'string'};
 authoringGenerationSchema.properties.sources = {type:'array',items:{type:'object'}};
 authoringGenerationSchema.properties.teachingUnits.items.required = authoringGenerationSchema.properties.teachingUnits.items.required.filter((key: string) => key !== 'captionText');
+allowShortAuthoringIdentifiers(authoringGenerationSchema);
 const GATE_IDS = ["source-alignment", "factual-consistency", "goal-alignment", "prerequisites", "references", "renderability", "speech-caption", "safe-content", "rights"] as const;
 interface AuthoringCheckpoint {
   id: string; status: "running" | "available" | "budget-exhausted" | "failed" | "stopped"; createdAt: string; updatedAt: string;
@@ -184,7 +186,7 @@ function recordFailure(checkpoint: AuthoringCheckpoint) {
 function addUsage(checkpoint: AuthoringCheckpoint, usage: LlmUsage) { checkpoint.estimatedCostUsd += usage.estimatedCostUsd ?? 0; }
 function budgetReached(checkpoint: AuthoringCheckpoint) { return checkpoint.elapsedMs >= checkpoint.request.timeBudgetMs || checkpoint.estimatedCostUsd >= checkpoint.request.costBudgetUsd; }
 function stopForBudget(checkpoint: AuthoringCheckpoint) { checkpoint.status = "budget-exhausted"; checkpoint.error = "時間または費用の上限に達しました。"; }
-function normalizeCandidate(value: CoursePackage, checkpoint: AuthoringCheckpoint): CoursePackage { const candidate: CoursePackage = { ...value, status: "reviewing", durationMinutes: checkpoint.request.durationMinutes, teachingUnits: value.teachingUnits.map(unit => ({...unit, captionText: unit.speechText})), sources: [...checkpoint.inputs.sources] }; candidate.contentHash = contentHash(candidate); return candidate; }
+function normalizeCandidate(value: CoursePackage, checkpoint: AuthoringCheckpoint): CoursePackage { value = normalizeAuthoringIdentifiers(value); const candidate: CoursePackage = { ...value, status: "reviewing", durationMinutes: checkpoint.request.durationMinutes, teachingUnits: value.teachingUnits.map(unit => ({...unit, captionText: unit.speechText})), sources: [...checkpoint.inputs.sources] }; candidate.contentHash = contentHash(candidate); return candidate; }
 function makeAvailable(value: CoursePackage): CoursePackage { const candidate: CoursePackage = { ...value, status: "available", version: Math.max(1, value.version) }; candidate.contentHash = contentHash(candidate); return parseCoursePackage(candidate) as CoursePackage; }
 function contentHash(value: CoursePackage): `sha256:${string}` { return `sha256:${createHash("sha256").update(JSON.stringify({ ...value, contentHash: "" })).digest("hex")}`; }
 function allGatesPassed(review: ReviewResult): boolean { return GATE_IDS.every((id) => review.gates.some((gate) => gate.id === id && gate.evaluated !== false && gate.passed)); }
