@@ -25,8 +25,11 @@ export class LectureRoom extends DurableObject<AppEnv> {
   constructor(ctx: DurableObjectState, env: AppEnv) {
     super(ctx, env);
     this.budget=new StorageBudget(ctx.storage.kv,()=>Date.now(),()=>this.services?.lecture.close());
-    this.budget.check();
     this.context = { storage: this.budget.wrap(ctx.storage), bucket: env.STATE, assets: env.ASSETS };
+  }
+  private initialize() {
+    if(this.services)return;
+    const ctx=this.ctx,env=this.env;
     runtimeContext.run(this.context, () => {
       initializeFiles();
       this.services = createServices({
@@ -78,6 +81,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
   override async alarm() {
     try{this.budget.request();}catch(error){if(error instanceof StorageSafetyLimit)return;throw error;}
     return runtimeContext.run(this.context,async()=>{
+      this.initialize();
       this.recoverSafetyStop();
       // Schedule a watchdog before external calls, so an interrupted alarm can recover.
       await this.ctx.storage.setAlarm(Date.now()+60000);
@@ -97,12 +101,14 @@ export class LectureRoom extends DurableObject<AppEnv> {
   }
   override async fetch(request:Request):Promise<Response> {
     return runtimeContext.run(this.context,async()=>{
+      if(new URL(request.url).pathname==='/api/diagnostics/storage-budget' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,this.budget.snapshot());
       if(new URL(request.url).pathname==='/api/diagnostics/last-error' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,{failure:this.lastRequestError});
       let stage='route';
       let admitted=false;
       try {
         this.budget.request();
         admitted=true;
+        this.initialize();
         this.recoverSafetyStop();
         const response=await this.route(request);
         stage='source-flush'; if(request.method!=='GET' && request.method!=='HEAD') await flushSourceFiles();

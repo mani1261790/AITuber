@@ -68,6 +68,8 @@ try{
  await api('/api/__trip');await stop();await start();
  const blocked=await fetch(base+'/api/operator/snapshot',{headers:{cookie}});assert.equal(blocked.status,503);
  assert.equal((await blocked.json()).error,'storage_quota_exceeded');report.persistedSafetyStop=true;
+ const diagnostic=await api('/api/diagnostics/storage-budget');assert.deepEqual(diagnostic.exceeded,['reads']);assert.equal(diagnostic.usage.reads,1_000_000);
+ const denied=await fetch(base+'/api/diagnostics/storage-budget');assert.equal(denied.status,401);
  await writeFile('output/cloudflare-usage/local-meter.json',JSON.stringify(report,null,2));
  console.log(JSON.stringify(report,null,2));
 } catch(error){await delay(500);await writeFile('output/cloudflare-usage/meter-error.log',log);console.error(log.slice(-2000));throw error;}

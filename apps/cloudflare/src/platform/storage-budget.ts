@@ -14,6 +14,7 @@ export class StorageBudget {
  private day(){return new Date(this.now()).toISOString().slice(0,10);}
  private load(){const day=this.day();const saved=this.kv.get<Usage>('storage-safety-budget-v1');this.usage=saved?.day===day?{...saved}:{day,reads:0,writes:0,requests:0};this.reserved={...this.usage};this.recovery=this.kv.get<boolean>('storage-safety-stopped')===true;this.tripped=false;}
  check(){if(this.usage.day!==this.day())this.load();if(this.usage.reads>=STORAGE_LIMITS.reads||this.usage.writes>=STORAGE_LIMITS.writes||this.usage.requests>=STORAGE_LIMITS.requests){if(!this.tripped){this.kv.put('storage-safety-stopped',true);this.tripped=true;this.onStop();}throw new StorageSafetyLimit();}}
+ snapshot(){return {usage:{...this.usage},reserved:{...this.reserved},limits:STORAGE_LIMITS,exceeded:(['reads','writes','requests'] as const).filter(key=>this.usage[key]>=STORAGE_LIMITS[key]),recovery:this.recovery};}
  needsRecovery(){return this.recovery;}
  recovered(){this.kv.put('storage-safety-stopped',false);this.recovery=false;}
  request(){this.check();this.usage.requests++;this.save();}
