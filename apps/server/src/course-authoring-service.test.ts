@@ -223,29 +223,31 @@ it('marks unexecuted checks pending and stops after three identical output failu
   const provider = new FixedResponseLlmProvider([{}, {}, {}, {}]);
   let service = new CourseAuthoringService({directory, llm: () => provider, defer: () => undefined});
   const job = await service.begin({durationMinutes: 5, sources: [upload('Source')]});
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 2; i++) {
     await service.runPendingStep();
+    const pending = service.get(job.id);
+    expect(pending.review!.gates.filter(gate => gate.passed)).toHaveLength(0);
+    expect(pending.review!.gates.filter(gate => gate.evaluated === false)).toHaveLength(7);
     service = new CourseAuthoringService({directory, llm: () => provider, defer: () => undefined});
   }
-  const stopped = service.get(job.id);
-  expect(stopped.status).toBe('stopped');
-  expect(stopped.attempts).toBe(3);
-  expect(stopped.review!.gates.filter(gate => gate.passed)).toHaveLength(0);
-  expect(stopped.review!.gates.filter(gate => gate.evaluated === false)).toHaveLength(7);
-  expect(stopped.error).toContain('3回');
+  await service.runPendingStep();
+  expect(service.failure?.message).toContain('3回');
+  expect(service.list()).toEqual([]);
+  expect(existsSync(join(directory, `${job.id}.json`))).toBe(false);
+  service = new CourseAuthoringService({directory, llm: () => provider, defer: () => undefined});
   await service.runPendingStep(); expect(provider.calls).toHaveLength(3);
 });
 
-it('caps differing failed attempts at five and resets the allowance only on explicit resume', async () => {
+it('caps differing failed attempts at five and removes their history', async () => {
   const source = upload('Source');
   const valid = remapSource(quadraticFunctionsFixture, sourceId(source));
   const invalids = Array.from({length: 5}, (_, i) => { const candidate = structuredClone(valid); candidate.schedule.orderedUnitIds = [`unit.missing${i}`]; return candidate; });
-  const provider = new FixedResponseLlmProvider([...invalids, valid, passingReview()]);
+  const provider = new FixedResponseLlmProvider(invalids);
   const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-limit-')), llm: () => provider});
-  const stopped = await service.create({durationMinutes: 5, sources: [source]});
-  expect(stopped.status).toBe('stopped'); expect(stopped.attempts).toBe(5);
-  const resumed = await service.resume(stopped.id);
-  expect(resumed.status).toBe('available'); expect(resumed.attempts).toBe(6); expect(resumed.attemptLimit).toBe(10);
+  const failed = await service.create({durationMinutes: 5, sources: [source]});
+  expect(failed.status).toBe('failed'); expect(failed.attempts).toBe(5);
+  expect(service.list()).toEqual([]);
+  expect(service.failure?.message).toContain('上限');
 });
 
 it('rejects duplicate creation during ingestion and while another deferred job runs', async () => {

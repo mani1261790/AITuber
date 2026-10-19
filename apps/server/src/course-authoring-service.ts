@@ -172,12 +172,12 @@ export class CourseAuthoringService {
 function validateRequest(request: CreateAuthoringRequest) { if (!Number.isInteger(request.durationMinutes) || request.durationMinutes < 1 || request.durationMinutes > 480) throw new TypeError("durationMinutes must be an integer between 1 and 480"); if (request.timeBudgetMs !== undefined && (!Number.isInteger(request.timeBudgetMs) || request.timeBudgetMs < 1_000 || request.timeBudgetMs > 3_600_000)) throw new TypeError("timeBudgetMs must be between 1000 and 3600000"); if (request.costBudgetUsd !== undefined && (!Number.isFinite(request.costBudgetUsd) || request.costBudgetUsd < 0)) throw new TypeError("costBudgetUsd must be non-negative"); }
 function extendBudget(checkpoint: AuthoringCheckpoint, budget: ResumeAuthoringRequest) { const time = budget.additionalTimeBudgetMs ?? 300_000; const cost = budget.additionalCostBudgetUsd ?? 2; if (!Number.isInteger(time) || time < 1_000 || time > 3_600_000 || !Number.isFinite(cost) || cost < 0) throw new TypeError("invalid additional authoring budget"); resetRetryLimit(checkpoint); checkpoint.request.timeBudgetMs += time; checkpoint.request.costBudgetUsd += cost; }
 function resetRetryLimit(checkpoint: AuthoringCheckpoint) { checkpoint.attemptLimit = checkpoint.attempts + 5; delete checkpoint.lastFailure; checkpoint.repeatedFailures = 0; }
-function stopForRetries(checkpoint: AuthoringCheckpoint) { checkpoint.status = "stopped"; checkpoint.error = "自動試行の上限に達したため停止しました。審査結果と資料を確認してから再開してください。"; }
+function stopForRetries(checkpoint: AuthoringCheckpoint) { checkpoint.status = "failed"; checkpoint.error = "自動試行の上限に達したため停止しました。資料や作成条件を見直して、もう一度作成してください。"; }
 function recordFailure(checkpoint: AuthoringCheckpoint) {
   const fingerprint = JSON.stringify(checkpoint.review?.gates.filter(gate => !gate.passed && gate.evaluated !== false).map(gate => [gate.id, gate.rationale]));
   checkpoint.repeatedFailures = checkpoint.lastFailure === fingerprint ? (checkpoint.repeatedFailures ?? 0) + 1 : 1;
   checkpoint.lastFailure = fingerprint;
-  if (checkpoint.repeatedFailures >= 3) { checkpoint.status = "stopped"; checkpoint.error = "同じ問題が3回続いたため停止しました。審査結果を確認し、資料や生成設定を見直してください。"; }
+  if (checkpoint.repeatedFailures >= 3) { checkpoint.status = "failed"; checkpoint.error = "同じ問題が3回続いたため停止しました。審査結果を確認し、資料や生成設定を見直してください。"; }
   else if (checkpoint.attempts >= (checkpoint.attemptLimit ?? 5)) stopForRetries(checkpoint);
 }
 function addUsage(checkpoint: AuthoringCheckpoint, usage: LlmUsage) { checkpoint.estimatedCostUsd += usage.estimatedCostUsd ?? 0; }

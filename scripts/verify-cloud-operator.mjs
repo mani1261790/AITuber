@@ -11,7 +11,11 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   // A nonexistent ID exercises the stop handler without changing persistent state.
   const response = await fetch(`${base}/api/authoring/jobs/${probe}/stop`, {method:'POST',headers:{cookie,origin:base},signal:AbortSignal.timeout(20000)});
   const value = await response.json();
-  if (response.status === 404 && value.message === 'Unknown authoring job') {
+  const snapshot = await fetch(base+'/api/operator/snapshot', {headers:{cookie},signal:AbortSignal.timeout(20000)});
+  const state = await snapshot.json();
+  if(state.error === 'storage_quota_exceeded') throw new Error('Deployment uploaded; verification blocked by storage quota.');
+  // An old stop handler also returns 404. Require a field added by this rollout.
+  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && Object.hasOwn(state, 'authoringFailure')) {
     for (const path of ['/api/operator/snapshot','/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
       const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
       const body = await result.json();
