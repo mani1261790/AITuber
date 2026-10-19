@@ -53,7 +53,7 @@ describe("CourseAuthoringService", () => {
   it("chooses a local repair, checkpoints it, and stops immediately when the repaired version passes", async () => {
     const source = upload("Quadratic function notes"); const id = sourceId(source);
     const valid = remapSource(quadraticFunctionsFixture, id);
-    const invalid = structuredClone(valid); invalid.teachingUnits[0]!.captionText = "different caption";
+    const invalid = structuredClone(valid); delete invalid.teachingUnits[0]!.teachingPlan;
     const provider = new FixedResponseLlmProvider([invalid, valid, passingReview()]);
     const directory = mkdtempSync(join(tmpdir(), "aituber-authoring-"));
     const service = new CourseAuthoringService({ directory, llm: () => provider });
@@ -157,7 +157,7 @@ it("aborts an in-flight generation at the job deadline and keeps it resumable", 
 
 it('runs one persisted authoring iteration per alarm and resumes after a new service instance', async () => {
   const source=upload('Quadratic function notes');const valid=remapSource(quadraticFunctionsFixture,sourceId(source));
-  const invalid=structuredClone(valid);invalid.teachingUnits[0]!.captionText='different caption';
+  const invalid=structuredClone(valid);delete invalid.teachingUnits[0]!.teachingPlan;
   const provider=new FixedResponseLlmProvider([invalid,valid,passingReview()]);
   const directory=mkdtempSync(join(tmpdir(),'aituber-authoring-alarm-'));let scheduled=0;
   const first=new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{scheduled++;}});
@@ -326,4 +326,17 @@ it('retries malformed review output without regenerating valid teaching content'
   expect(result.status).toBe('available');
   expect(result.attempts).toBe(1);
   expect(provider.calls.map(call => call.purpose)).toEqual(['generation', 'review', 'review']);
+});
+
+
+it.each(['omitted', 'different'])('derives %s captions from reference speech without regenerating the material', async (mode) => {
+  const source = upload('Quadratic source');
+  const candidate = JSON.parse(JSON.stringify(remapSource(quadraticFunctionsFixture, sourceId(source))));
+  for (const unit of candidate.teachingUnits) {if (mode === 'omitted') delete unit.captionText; else unit.captionText = '要約された字幕';}
+  const provider = new FixedResponseLlmProvider([candidate, passingReview()]);
+  const service = new CourseAuthoringService({directory: mkdtempSync(join(tmpdir(), 'aituber-derived-captions-')), llm: () => provider});
+  const result = await service.create({durationMinutes: 5, sources: [source]});
+  expect(result.status).toBe('available'); expect(result.attempts).toBe(1);
+  expect(result.course!.teachingUnits.every(unit => unit.captionText === unit.speechText)).toBe(true);
+  expect(provider.calls.map(call => call.purpose)).toEqual(['generation', 'review']);
 });

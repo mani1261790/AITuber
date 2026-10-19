@@ -51,7 +51,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "operator");
         if (!settings || !authoring) throw new RangeError("Operator services are unavailable");
         const session=api.getCurrentSession();
-        return json(response,200,{courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),authoringFailure:authoring.failure,settings:settings.get()});
+        return json(response,200,{courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),authoringRevision:2,authoringFailure:authoring.failure,settings:settings.get()});
       }
       if (url.pathname === "/api/settings/llm") {
         requireSurface(request, "operator");
