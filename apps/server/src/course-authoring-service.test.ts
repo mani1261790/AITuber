@@ -11,6 +11,33 @@ import { CourseAuthoringService } from "./course-authoring-service.ts";
 const fixtures = [quadraticFunctionsFixture, dnaReplicationFixture, vaeReparameterizationFixture];
 
 describe("CourseAuthoringService", () => {
+  it('checks operator-declared permission without asking the model for a permission certificate', async () => {
+    const source = {...upload('Copyright notice. Supplied with permission.'), rights:{basis:'permission' as const}};
+    const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+    const review = passingReview();
+    const rights = review.gates.find(gate => gate.id === 'rights')!;
+    rights.passed = false; rights.rationale = 'The copyrighted PDF does not contain a permission certificate.';
+    const provider = new FixedResponseLlmProvider([candidate, review]);
+    const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-rights-')),llm:()=>provider});
+    const result = await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).toBe('available'); expect(result.attempts).toBe(1);
+    expect(result.course!.sources[0]!.rights.basis).toBe('permission');
+    expect(result.review!.gates.find(gate => gate.id === 'rights')).toMatchObject({passed:true, evaluated:true});
+    expect(result.review!.summary).not.toContain('certificate');
+  });
+  it('does not turn content failures into passes when reconciling rights declarations', async () => {
+    const source = upload('Quadratic notes');
+    const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+    const review = passingReview();
+    review.gates.find(gate => gate.id === 'rights')!.passed = false;
+    review.gates.find(gate => gate.id === 'factual-consistency')!.passed = false;
+    const provider = new FixedResponseLlmProvider([candidate,review,candidate,review,candidate,review]);
+    const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-rights-content-')),llm:()=>provider});
+    const result = await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).not.toBe('available');
+    expect(result.review!.gates.find(gate => gate.id === 'factual-consistency')!.passed).toBe(false);
+  });
+
   it('accepts short generated goal IDs in one attempt and preserves their references', async () => {
     const source = upload('Original quadratic source');
     const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
@@ -149,7 +176,7 @@ describe("CourseAuthoringService", () => {
 });
 
 function upload(text: string) { return { fileName: "notes.md", mimeType: "text/markdown" as const, dataBase64: Buffer.from(text).toString("base64"), rights: { basis: "owned" as const } }; }
-function sourceId(source: ReturnType<typeof upload>) { return `source.${createHash("sha256").update(Buffer.from(source.dataBase64, "base64")).digest("hex").slice(0, 24)}`; }
+function sourceId(source: {dataBase64: string}) { return `source.${createHash("sha256").update(Buffer.from(source.dataBase64, "base64")).digest("hex").slice(0, 24)}`; }
 function remapSource(fixture: ReadonlyCoursePackage, id: string): CoursePackage {
   const value = structuredClone(fixture) as CoursePackage;
   value.semanticTargets.forEach((target) => { target.sourceIds = [id]; }); value.teachingUnits.forEach((unit) => { unit.sourceIds = [id]; unit.captionText = unit.speechText; unit.teachingPlan = {keyPoints:[unit.postconditions[0]!], explanationFlow:[unit.speechText]}; });
