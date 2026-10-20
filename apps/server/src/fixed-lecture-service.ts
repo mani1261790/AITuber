@@ -321,7 +321,9 @@ export class FixedLectureService {
     if (runtime.state.status === "BRANCHING") {
       if (runtime.timer || runtime.speech.playing) this.#cancelSpeech(runtime);
       this.#apply(runtime, { type: "QUESTION_DEFERRED", epoch: runtime.state.epoch });
-      this.#schedule(runtime);
+      // A failed remedial supplement must not skip the unanswered checkpoint.
+      if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch });
+      else this.#schedule(runtime);
     }
     this.#publish(runtime);
   }

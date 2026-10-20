@@ -98,6 +98,19 @@ describe("PedagogyService", () => {
     expect(lecture.getSession(session.id).status).toBe("FINISHED");
   });
 
+  it("keeps the same checkpoint available when remedial preparation fails", async () => {
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
+    const before = lecture.getSession(session.id);
+    await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(3, -4)" });
+    const trigger = questions.list(session.id)[0]!;
+    lecture.deferSupplement(session.id, { id: "supplement.failed", questionId: trigger.id, status: "deferred", attempt: 1, origin: lecture.captureSupplementOrigin(session.id, trigger.semanticTargetId), candidate: null, failure: "provider timeout", adoptedAt: new Date().toISOString(), firstAudioAt: null });
+    const after = lecture.getSession(session.id);
+    expect(after.status).toBe("CHECKPOINT");
+    expect(after.assessment?.id).toBe(before.assessment?.id);
+    expect(after.completedUnitIds).toEqual(before.completedUnitIds);
+    expect((await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" })).lastAssessmentEvaluation?.outcome).toBe("correct");
+  });
+
   it("reports conflicting observed judgments without inventing a mastery score", () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     const base = { sessionId: session.id, participantId: "learner.one", kind: "checkpoint-answer" as const, scopeId: "goal.math.calculate", assessmentId: "assessment.one", semanticTargetId: null, observedValue: "回答", rationale: "fixture", correction: null, linkedSupplementId: null };

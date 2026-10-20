@@ -86,13 +86,31 @@ describe("LiveSupplementService", () => {
     expect(lecture.getSession(session.id).liveSupplement?.status).toBe("deferred");
   });
 
-  it("defers generation at the twenty-second ceiling", async () => {
+  it("allows generation and independent review to complete beyond twenty seconds", async () => {
+    const fixed = new FixedResponseLlmProvider([candidate(), passReview]);
+    const provider: LlmProvider = { createContext: (options) => {
+      const context = fixed.createContext(options);
+      return { purpose: options.purpose, generate: async (request) => {
+        await new Promise((resolve) => setTimeout(resolve, 25_000));
+        request.signal?.throwIfAborted();
+        return context.generate(request);
+      } };
+    } };
+    replaceSupplements(provider);
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(100);
+    questions.submit(questionInput(session.id, "なぜ括弧の符号を反対に読むのですか。"));
+    await vi.advanceTimersByTimeAsync(50_200); await supplements.drain(session.id);
+    expect(supplementStore.list(session.id)[0]).toMatchObject({ status: "completed", attempt: 1 });
+    expect(questions.list(session.id)[0]?.resolution).toBe("answered");
+  });
+
+  it("defers generation at the bounded preparation ceiling", async () => {
     const provider: LlmProvider = { createContext: ({ purpose }) => ({ purpose, generate: (request) => new Promise((_resolve, reject) => request.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true })) }) };
     replaceSupplements(provider);
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(200);
     questions.submit(questionInput(session.id, "時間上限を確認したい")); await Promise.resolve(); await Promise.resolve();
-    vi.advanceTimersByTime(20_001); await supplements.drain(session.id);
-    expect(supplementStore.list(session.id)[0]).toMatchObject({ status: "deferred", failure: expect.stringContaining("20秒") });
+    vi.advanceTimersByTime(90_001); await supplements.drain(session.id);
+    expect(supplementStore.list(session.id)[0]).toMatchObject({ status: "deferred", failure: expect.stringContaining("90秒") });
     expect(questions.list(session.id)[0]).toMatchObject({ resolution: "deferred" });
   });
 
