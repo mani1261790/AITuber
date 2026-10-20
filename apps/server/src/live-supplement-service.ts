@@ -146,7 +146,15 @@ function hardGateResults(course: ReadonlyCoursePackage, question: ClassroomQuest
 }
 
 function generationPrompt(course: ReadonlyCoursePackage, question: ClassroomQuestionView, priorFailure: string) { return `Question: ${question.text}\nFrozen scene: ${question.sceneId}\nFrozen semantic target: ${question.semanticTargetId}\nCourse evidence:\n${evidence(course, question)}\n${priorFailure ? `Previous attempt failure. Repair it once: ${priorFailure}` : "This is the first attempt."}`; }
-function evidence(course: ReadonlyCoursePackage, question: ClassroomQuestionView): string { const scene = course.scenes.find((item) => item.id === question.sceneId); const targets = course.semanticTargets.filter((target) => target.id === question.semanticTargetId || scene?.targetIds.includes(target.id)); const sourceSet = new Set(targets.flatMap((target) => target.sourceIds)); const units = course.teachingUnits.filter((unit) => unit.sceneId === question.sceneId || unit.focusTargetIds.includes(question.semanticTargetId)); return JSON.stringify({ course: { id: course.id, version: course.version, title: course.title, targetLevel: course.targetLevel }, scene, targets, units, sources: course.sources.filter((source) => sourceSet.has(source.id)), concepts: course.concepts }); }
+function evidence(course: ReadonlyCoursePackage, question: ClassroomQuestionView): string {
+  const scene = course.scenes.find((item) => item.id === question.sceneId);
+  const units = course.teachingUnits.filter((unit) => unit.sceneId === question.sceneId || unit.focusTargetIds.includes(question.semanticTargetId));
+  const assessments = question.origin === "pedagogy-trigger" ? course.assessments.filter((assessment) => units.some((unit) => unit.id === assessment.afterUnitId)) : [];
+  const relatedUnits = assessments.length ? course.teachingUnits.filter((unit) => assessments.some((assessment) => assessment.learningGoalIds.some((goal) => unit.learningGoalIds.includes(goal)))) : [];
+  const targets = course.semanticTargets.filter((target) => target.id === question.semanticTargetId || scene?.targetIds.includes(target.id) || relatedUnits.some((unit) => unit.sceneId === target.sceneId));
+  const sourceSet = new Set(targets.flatMap((target) => target.sourceIds));
+  return JSON.stringify({ course: { id: course.id, version: course.version, title: course.title, targetLevel: course.targetLevel }, scene, targets, units, assessments, relatedUnits, sources: course.sources.filter((source) => sourceSet.has(source.id)), concepts: course.concepts });
+}
 
 function chooseBridge(course: ReadonlyCoursePackage, question: string): { readonly text: string; readonly targetIds: readonly string[] } { const normalized = normalizeIntent(question); for (const supplement of course.preGeneratedSupplements) { if (!supplement.autoPlayEligible || !supplement.triggerQuestions.some((item) => sameIntent(normalizeIntent(item), normalized))) continue; const unit = course.teachingUnits.find((item) => item.id === supplement.unitIds[0]); if (unit) return { text: unit.speechText, targetIds: unit.focusTargetIds }; } return { text: "質問を受け付けました。関係する教材を確認している間、ここまでの要点を保っておきましょう。", targetIds: [] }; }
 function gate(id: SupplementGateId, passed: boolean, failure: string) { return { id, passed, rationale: passed ? "サーバー検査に合格" : failure }; }

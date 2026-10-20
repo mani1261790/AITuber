@@ -111,6 +111,18 @@ describe("PedagogyService", () => {
     expect((await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" })).lastAssessmentEvaluation?.outcome).toBe("correct");
   });
 
+  it("creates remedial support for PDF units without pointing targets", async () => {
+    const course = { ...quadraticFunctionsFixture, teachingUnits: quadraticFunctionsFixture.teachingUnits.map((unit) => ({ ...unit, focusTargetIds: [] })) };
+    lecture.registerCourse(course);
+    const session = lecture.createSession({ coursePackageId: course.id, durationMinutes: 6 }); advanceToAssessment();
+    const result = await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(3, -4)" });
+    expect(result.lastAssessmentEvaluation?.outcome).toBe("incorrect");
+    const trigger = questions.list(session.id)[0]!;
+    const unit = course.teachingUnits.find((item) => item.id === course.assessments[0]!.afterUnitId)!;
+    expect(trigger.semanticTargetId).toBe(course.scenes.find((scene) => scene.id === unit.sceneId)!.targetIds[0]);
+    expect(trigger.origin).toBe("pedagogy-trigger");
+  });
+
   it("reports conflicting observed judgments without inventing a mastery score", () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     const base = { sessionId: session.id, participantId: "learner.one", kind: "checkpoint-answer" as const, scopeId: "goal.math.calculate", assessmentId: "assessment.one", semanticTargetId: null, observedValue: "回答", rationale: "fixture", correction: null, linkedSupplementId: null };

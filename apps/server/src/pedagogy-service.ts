@@ -43,11 +43,12 @@ export class PedagogyService {
       const result = this.#evaluator ? await this.#evaluator({ course: session.course, assessment, answer: input.answer.trim() }) : evaluate(assessment, input.answer);
       const current = this.#lecture.getSession(input.sessionId);
       if (current.status !== "CHECKPOINT" || current.epoch !== session.epoch || current.assessment?.id !== assessment.id) throw new TypeError("採点中に講義の状態が変わりました。現在の画面を確認してください。");
-      const linkedSupplementId = session.liveSupplement?.status === "completed" ? session.liveSupplement.id : null;
+      const completedSupplement = session.liveSupplement?.status === "completed" ? session.liveSupplement : null;
+      const linkedSupplementId = completedSupplement && completedSupplement.origin.displayUnitId === assessment.afterUnitId && this.#questions.list(session.id).some((question) => question.id === completedSupplement.questionId && question.origin === "pedagogy-trigger") ? completedSupplement.id : null;
       const records = assessment.learningGoalIds.map((scopeId) => this.#store.record({ sessionId: input.sessionId, participantId: input.participantId, kind: "checkpoint-answer", scopeId, assessmentId: assessment.id, semanticTargetId: null, observedValue: input.answer.trim(), automaticJudgment: result.judgment, finalJudgment: result.judgment, rationale: result.rationale, correction: null, linkedSupplementId }));
       const evaluation: AssessmentEvaluationView = { evidenceId: records[0]!.id, assessmentId: assessment.id, answer: input.answer.trim(), outcome: result.judgment === "confirmed" ? "correct" : result.judgment === "struggle" ? "incorrect" : "unknown", rationale: result.rationale, automaticJudgment: publicJudgment(result.judgment), finalJudgment: publicJudgment(result.judgment), correction: null, linkedSupplementId, recordedAt: records[0]!.recordedAt };
       if (result.judgment === "struggle") {
-        const unit = session.course.teachingUnits.find((item) => item.id === assessment.afterUnitId)!; const targetId = unit.focusTargetIds[0]!;
+        const unit = session.course.teachingUnits.find((item) => item.id === assessment.afterUnitId)!; const targetId = unit.focusTargetIds[0] ?? session.course.scenes.find((scene) => scene.id === unit.sceneId)!.targetIds[0]!;
         this.#questions.submitPedagogyTrigger({ sessionId: input.sessionId, sceneId: unit.sceneId, semanticTargetId: targetId, text: `確認問題「${assessment.prompt}」への回答「${input.answer.trim()}」にはつまずきがありました。${assessment.rubric.commonMistakes.join("、")}を避け、教材に沿って考え方を補足してください。` });
       }
       this.#lecture.updateLearningEvidence(input.sessionId, this.#summaries(session), evaluation);
