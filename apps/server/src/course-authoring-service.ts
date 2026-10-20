@@ -108,21 +108,25 @@ export class CourseAuthoringService {
         markElapsed();
         if (budgetReached(checkpoint)) { stopForBudget(checkpoint); break; }
         if (checkpoint.attempts >= (checkpoint.attemptLimit ?? 5)) { stopForRetries(checkpoint); break; }
-        checkpoint.attempts += 1;
         const mode = forceRegenerate || !checkpoint.candidate || checkpoint.review?.repairMode === "regenerate" ? "regenerate" : "local";
-        const generation = this.#llm().createContext({ purpose: "generation", systemInstruction: generationSystemInstruction(mode) });
-        let generated;
-        try {
-          generated = await generation.generate<CoursePackage>({ signal, prompt: generationPrompt(checkpoint, mode), images: checkpoint.inputs.images, schemaName: "course_package", schema: authoringGenerationSchema, maxOutputTokens: 32_000, maxOutputBytes: 8_000_000 });
-        } catch (error) {
+        // Recheck a saved candidate after a validator fix instead of discarding it.
+        const recheckSaved = !forceRegenerate && checkpoint.candidate && checkpoint.review?.summary === "決定的検査で不合格" && !deterministicReview(checkpoint.candidate).length && !validateAuthoredPlan(checkpoint.candidate).length;
+        if (!recheckSaved) {
+          checkpoint.attempts += 1;
+          const generation = this.#llm().createContext({ purpose: "generation", systemInstruction: generationSystemInstruction(mode) });
+          let generated;
+          try {
+            generated = await generation.generate<CoursePackage>({ signal, prompt: generationPrompt(checkpoint, mode), images: checkpoint.inputs.images, schemaName: "course_package", schema: authoringGenerationSchema, maxOutputTokens: 32_000, maxOutputBytes: 8_000_000 });
+          } catch (error) {
+            signal.throwIfAborted();
+            if (!isRepairableOutputError(error)) throw error;
+            checkpoint.review = failedValidationReview(outputIssues(error), ["references", "renderability"], "regenerate", "生成結果が所定の形式を満たしていません");
+            checkpoint.error = null; recordFailure(checkpoint); markElapsed(); this.#save(checkpoint); forceRegenerate = true; continue;
+          }
+          addUsage(checkpoint, generated.usage);
           signal.throwIfAborted();
-          if (!isRepairableOutputError(error)) throw error;
-          checkpoint.review = failedValidationReview(outputIssues(error), ["references", "renderability"], "regenerate", "生成結果が所定の形式を満たしていません");
-          checkpoint.error = null; recordFailure(checkpoint); markElapsed(); this.#save(checkpoint); forceRegenerate = true; continue;
+          checkpoint.candidate = normalizeCandidate(generated.value, checkpoint); markElapsed(); this.#save(checkpoint);
         }
-        addUsage(checkpoint, generated.usage);
-        signal.throwIfAborted();
-        checkpoint.candidate = normalizeCandidate(generated.value, checkpoint); markElapsed(); this.#save(checkpoint);
         if (budgetReached(checkpoint)) { stopForBudget(checkpoint); break; }
         try { checkpoint.candidate = parseCoursePackage(checkpoint.candidate) as CoursePackage; }
         catch (error) {
@@ -201,7 +205,9 @@ function reconcileRightsReview(review: ReviewResult, checkpoint: AuthoringCheckp
 function makeAvailable(value: CoursePackage): CoursePackage { const candidate: CoursePackage = { ...value, status: "available", version: Math.max(1, value.version) }; candidate.contentHash = contentHash(candidate); return parseCoursePackage(candidate) as CoursePackage; }
 function contentHash(value: CoursePackage): `sha256:${string}` { return `sha256:${createHash("sha256").update(JSON.stringify({ ...value, contentHash: "" })).digest("hex")}`; }
 function allGatesPassed(review: ReviewResult): boolean { return GATE_IDS.every((id) => review.gates.some((gate) => gate.id === id && gate.evaluated !== false && gate.passed)); }
-function deterministicReview(candidate: CoursePackage): ValidationIssue[] { const issues: ValidationIssue[] = []; candidate.teachingUnits.forEach((unit, index) => { if (unit.speechText !== unit.captionText) issues.push({ path: `/teachingUnits/${index}`, message: "speech and caption must match" }); }); const forbidden = /<(?:script|iframe|svg|object)\b|https?:\/\//i; candidate.semanticTargets.forEach((target, index) => { if (forbidden.test(target.content)) issues.push({ path: `/semanticTargets/${index}/content`, message: "forbidden active or external content" }); }); return issues; }
+// Target content is escaped text; a written URL does not load an external resource.
+// Active markup and unsafe formula commands remain rejected.
+function deterministicReview(candidate: CoursePackage): ValidationIssue[] { const issues: ValidationIssue[] = []; candidate.teachingUnits.forEach((unit, index) => { if (unit.speechText !== unit.captionText) issues.push({ path: `/teachingUnits/${index}`, message: "speech and caption must match" }); }); const forbidden = /<(?:script|iframe|svg|object)\b/i; candidate.semanticTargets.forEach((target, index) => { if (forbidden.test(target.content)) issues.push({ path: `/semanticTargets/${index}/content`, message: "forbidden active content" }); }); return issues; }
 function failedDeterministicReview(issues: ValidationIssue[]): ReviewResult {
   const failed: AuthoringGateId[] = ["renderability"];
   if (issues.some((issue) => issue.message.includes("speech and caption"))) failed.push("speech-caption");

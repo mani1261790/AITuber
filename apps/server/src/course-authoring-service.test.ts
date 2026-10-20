@@ -11,6 +11,39 @@ import { CourseAuthoringService } from "./course-authoring-service.ts";
 const fixtures = [quadraticFunctionsFixture, dnaReplicationFixture, vaeReparameterizationFixture];
 
 describe("CourseAuthoringService", () => {
+  it('allows teaching URLs as text while continuing to reject active markup', async () => {
+    const source = upload('HTTP teaching notes');
+    const good = remapSource(quadraticFunctionsFixture, sourceId(source));
+    good.semanticTargets[0]!.kind = 'text';
+    good.semanticTargets[0]!.content = 'curl http://localhost:11434/api/chat -d \'{"model":"example"}\'; documentation: https://ollama.com';
+    const bad = structuredClone(good); bad.semanticTargets[0]!.content = '<script>alert(1)</script>';
+    const provider = new FixedResponseLlmProvider([bad,good,passingReview()]);
+    const service = new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-url-text-')),llm:()=>provider});
+    const result = await service.create({durationMinutes:5,sources:[source]});
+    expect(result.status).toBe('available');expect(result.attempts).toBe(2);
+    expect(result.course!.semanticTargets[0]!.content).toContain('http://localhost:11434');
+  });
+  it('rechecks a saved candidate after a deterministic validator fix without generating it again', async () => {
+    const source = upload('HTTP teaching notes');
+    const directory = mkdtempSync(join(tmpdir(),'aituber-recheck-'));
+    const provider = new FixedResponseLlmProvider([passingReview()]);
+    const service = new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{}});
+    const job = await service.begin({durationMinutes:5,sources:[source]});
+    const path = join(directory, `${job.id}.json`);
+    const checkpoint = JSON.parse(readFileSync(path,'utf8'));
+    const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
+    candidate.sources = checkpoint.inputs.sources;
+    candidate.teachingUnits.forEach(unit=>unit.captionText=unit.speechText);
+    candidate.semanticTargets[0]!.kind='text';candidate.semanticTargets[0]!.content='http://localhost:11434';
+    checkpoint.candidate=candidate;checkpoint.status='stopped';checkpoint.attempts=1;
+    checkpoint.review=passingReview();checkpoint.review.summary='決定的検査で不合格';
+    checkpoint.review.gates.forEach((gate: {passed:boolean})=>gate.passed=false);
+    writeFileSync(path,JSON.stringify(checkpoint));
+    const result=await service.resume(job.id);
+    expect(result.status).toBe('available');expect(result.attempts).toBe(1);
+    expect(result.course!.semanticTargets[0]!.content).toBe('http://localhost:11434');
+  });
+
   it('checks operator-declared permission without asking the model for a permission certificate', async () => {
     const source = {...upload('Copyright notice. Supplied with permission.'), rights:{basis:'permission' as const}};
     const candidate = remapSource(quadraticFunctionsFixture, sourceId(source));
