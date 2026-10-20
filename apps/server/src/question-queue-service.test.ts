@@ -47,6 +47,15 @@ describe("QuestionQueueService", () => {
     store.close();
   });
 
+  it("prioritizes required checkpoint remediation even after the planned duration", () => {
+    const { service, store } = setup(0);
+    const learner = service.submit(input("learner.one", "target.math.h-term", "scene.math.form", "符号について教えて", "2026-09-14T00:00:00.000Z"));
+    const remedial = service.submitPedagogyTrigger({ sessionId: "session.questions", sceneId: "scene.math.form", semanticTargetId: "target.math.vertex-form", text: "誤答した確認問題を補足してください。" });
+    expect(remedial.disposition).toBe("answer-now");
+    expect(service.list("session.questions").find(question => question.id === learner.question.id)?.disposition).toBe("after-class");
+    store.close();
+  });
+
   it("defers every question when less than twenty seconds remain", () => {
     const { service, store } = setup(19_999);
     const result = service.submit(input("learner.one", "target.math.h-term", "scene.math.form", "符号を説明して", "2026-09-14T00:00:00.000Z"));

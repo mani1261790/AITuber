@@ -83,10 +83,12 @@ export class QuestionQueueService {
       const score = (prerequisiteForNext ? 50 : 0) + (currentGoalRelated ? 30 : 0) + question.supporterCount * 12 + Math.min(30, waitedMs / 60_000) - repeatPenalty;
       return { question, priority: { score: Math.round(score * 100) / 100, currentGoalRelated, prerequisiteForNext, supporterCount: question.supporterCount, waitedMs, remainingMs: context.remainingMs } };
     }).sort((left, right) => right.priority.score - left.priority.score || left.question.submittedAt.localeCompare(right.question.submittedAt) || left.question.id.localeCompare(right.question.id));
-    const canAnswerNow = context.session.status !== "FINISHED" && context.remainingMs >= 20_000;
+    const eligible = ranked.filter(item => !item.question.triage || item.question.triage === "immediate");
+    // A checkpoint cannot advance until its remedial branch has resolved, even after the planned duration.
+    const selected = eligible.find(item => item.question.origin === "pedagogy-trigger") ?? eligible[0];
+    const canAnswerNow = context.session.status !== "FINISHED" && (context.remainingMs >= 20_000 || selected?.question.origin === "pedagogy-trigger");
     this.#store.updateClassifications(ranked.map(({ question, priority }, index) => {
-      const eligible = ranked.filter(item => !item.question.triage || item.question.triage === "immediate");
-      const disposition = canAnswerNow && eligible[0]?.question.id === question.id ? "answer-now" as const : "after-class" as const;
+      const disposition = canAnswerNow && selected?.question.id === question.id ? "answer-now" as const : "after-class" as const;
       const reason = disposition === "answer-now" ? answerNowReason(priority) : afterClassReason(canAnswerNow, context.session.status === "FINISHED", index, priority);
       return { id: question.id, disposition, reason, priority, updatedAt: now };
     }));
