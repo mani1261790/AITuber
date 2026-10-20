@@ -46,6 +46,28 @@ describe("LiveSupplementService", () => {
     const stored = supplementStore.list(session.id)[0]!; expect(Date.parse(stored.firstAudioAt!) - Date.parse(stored.adoptedAt)).toBeLessThan(8_000);
   });
 
+  it("reviews cross-scene remediation with every related scene and keeps the board unchanged", async () => {
+    const course = { ...quadraticFunctionsFixture, assessments: [{ ...quadraticFunctionsFixture.assessments[0]!, afterUnitId: "unit.math.parts", learningGoalIds: [...new Set(quadraticFunctionsFixture.teachingUnits.flatMap(unit => unit.learningGoalIds))] }] };
+    lecture.registerCourse(course);
+    const safe = { ...candidate(), blackboardMarkdown: null, boardPatches: [], corrections: [] };
+    const provider = new FixedResponseLlmProvider([candidate(), passReview, safe, passReview]); replaceSupplements(provider);
+    const session = lecture.createSession({ coursePackageId: course.id, durationMinutes: 6 }); vi.advanceTimersByTime(100);
+    questions.submitPedagogyTrigger({ sessionId: session.id, sceneId: "scene.math.form", semanticTargetId: "target.math.h-term", text: "確認問題で複数の学習目標を取り違えました。" });
+    await supplements.drain(session.id);
+    const record = supplementStore.list(session.id)[0]!;
+    const attempts = supplementStore.listAttempts(record.id);
+    expect(attempts[0]?.review?.gates.find(gate => gate.id === "board")?.passed).toBe(false);
+    expect(attempts[1]?.review?.passed).toBe(true);
+    for (const call of provider.calls) {
+      const context = JSON.parse(call.prompt.split("Course evidence:\n")[1]!.split("\nCandidate:")[0]!.split("\nPrevious attempt failure.")[0]!.split("\nThis is the first attempt.")[0]!);
+      expect(context.questionOrigin).toBe("pedagogy-trigger");
+      expect(context.assessments[0].id).toBe(course.assessments[0]!.id);
+      const expectedScenes = course.scenes.filter(scene => course.teachingUnits.some(unit => unit.sceneId === scene.id));
+      expect(context.relatedScenes.map((scene: { id: string }) => scene.id)).toEqual(expectedScenes.map(scene => scene.id));
+      expect(context.relatedUnits.length).toBeGreaterThan(context.units.length);
+    }
+  });
+
   it("regenerates only once and retains both independent review attempts", async () => {
     const provider = new FixedResponseLlmProvider([candidate(), failReview, candidate("修正版です。"), passReview]); replaceSupplements(provider);
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(200);
