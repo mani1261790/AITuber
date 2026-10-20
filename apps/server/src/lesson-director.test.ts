@@ -402,3 +402,16 @@ it("keeps a previous board visible when the next unit explicitly continues expla
   expect(plan.actions).toContainEqual({type:"point_at",targetId:drawing.id});
  }finally{runtime.close();}
 });
+
+it("repairs schema output once with the actual field errors",async()=>{
+ const runtime=setup();
+ try{
+  const unit=quadraticFunctionsFixture.teachingUnits[0]!;
+  const beat={text:unit.speechText,targetId:null,camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:null};
+  const llm=new FixedResponseLlmProvider([{beats:[beat]},{beats:[{...beat,surface:"slides"}]}]);
+  const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
+  expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(2);
+  expect(llm.calls[1]?.prompt).toContain("surface");
+  expect(llm.calls[1]?.prompt).toContain("Repair the previous candidate once");
+ }finally{runtime.close();}
+});
