@@ -442,11 +442,15 @@ export class FixedLectureService {
       // Prefetch runs before this plan's moves. The next unit starts at the plan's
       // ending position, not at the teacher's current position before execution.
       let endingPosition = base.position;
+      let endingSurface = base.surface ?? "slides";
+      let endingDrawing = base.drawing ?? null;
       for (const action of plan.actions) {
         if (action.type === "move_to" || (action.type === "speak" && action.position)) endingPosition = action.position!;
+        if (action.type === "show_blackboard") { endingSurface = "board"; endingDrawing = action.drawing; }
+        if (action.type === "show_slides") endingSurface = "slides";
       }
       const nextSession = this.getSession(runtime.id);
-      const projectedSession: FixedSessionView = {...nextSession, direction:{...nextSession.direction!,position:endingPosition,phase:"complete",traveling:false,targetId:null}};
+      const projectedSession: FixedSessionView = {...nextSession, direction:{...nextSession.direction!,position:endingPosition,surface:endingSurface,drawing:endingDrawing,phase:"complete",traveling:false,targetId:null}};
       const promise = this.#planner!({session:projectedSession,unit:nextUnit,previousSpeech:spoken,remainingMs:this.getRemainingTimeMs(runtime.id)},nextController.signal).catch(()=>referencePlan(nextUnit,"先読みを再利用できませんでした"));
       this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller:nextController,plan:promise});
     }

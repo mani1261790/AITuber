@@ -27,7 +27,7 @@ it("compiles board markdown from the same response as speech without calling an 
   try {
     const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
     const provider={generate:vi.fn<SvgProvider["generate"]>(async()=>svg)};
-    const llm=new FixedResponseLlmProvider([{beats:[{text:"頂点の位置を図で見ましょう。",targetId:null,camera:"lecture",position:"left",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:"# 頂点\n◎ $x=2$ → 最小値"}]}]);
+    const llm=new FixedResponseLlmProvider([{beats:[{text:"頂点の位置を図で見ましょう。",targetId:null,camera:"lecture",position:"left",gesture:"explain",walkWhileSpeaking:false,surface:"board",blackboardMarkdown:"# 頂点\n◎ $x=2$ → 最小値"}]}]);
     const plan=await createLessonPlanner(()=>llm)({session,unit:quadraticFunctionsFixture.teachingUnits[0]!,previousSpeech:"",remainingMs:10000},new AbortController().signal);
     expect(plan.source).toBe("generated");
     expect(plan.actions.map(action=>action.type)).toEqual(["show_blackboard","camera","move_to","point_at","speak","release_point"]);
