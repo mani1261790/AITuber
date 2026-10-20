@@ -1,15 +1,18 @@
 import type { AssessmentEvaluationView, FixedSessionView, LearningEvidenceSummaryView, ReadonlyCoursePackage, SubmitLearningEvidenceRequest } from "@aituber/contracts";
 import type { LearningEvidenceStore, StoredEvidenceJudgment, StoredLearningEvidence } from "@aituber/storage";
 import type { FixedLectureService } from "./fixed-lecture-service.ts";
+import type { AssessmentEvaluator } from "./assessment-evaluator.ts";
 import type { QuestionQueueService } from "./question-queue-service.ts";
 
 export class PedagogyService {
   readonly #store: LearningEvidenceStore;
   readonly #lecture: FixedLectureService;
   readonly #questions: QuestionQueueService;
+  readonly #evaluator: AssessmentEvaluator | undefined;
+  readonly #pending = new Set<string>();
 
-  constructor(options: { readonly store: LearningEvidenceStore; readonly lecture: FixedLectureService; readonly questions: QuestionQueueService }) {
-    this.#store = options.store; this.#lecture = options.lecture; this.#questions = options.questions;
+  constructor(options: { readonly store: LearningEvidenceStore; readonly lecture: FixedLectureService; readonly questions: QuestionQueueService; readonly evaluator?: AssessmentEvaluator }) {
+    this.#store = options.store; this.#lecture = options.lecture; this.#questions = options.questions; this.#evaluator = options.evaluator;
   }
 
   recordQuestion(input: { readonly sessionId: string; readonly participantId: string; readonly semanticTargetId: string; readonly text: string; readonly submittedAt: string }): void {
@@ -30,19 +33,26 @@ export class PedagogyService {
     return this.#lecture.getSession(input.sessionId);
   }
 
-  answer(input: { readonly sessionId: string; readonly participantId: string; readonly answer: string }): FixedSessionView {
+  async answer(input: { readonly sessionId: string; readonly participantId: string; readonly answer: string }): Promise<FixedSessionView> {
     if (typeof input.answer !== "string" || !input.answer.trim() || input.answer.length > 2_000) throw new TypeError("回答は1〜2000文字で入力してください。");
     const session = this.#lecture.getSession(input.sessionId); const assessment = session.assessment;
     if (session.status !== "CHECKPOINT" || !assessment) throw new TypeError("The session is not waiting for an answer");
-    const result = evaluate(assessment, input.answer); const linkedSupplementId = session.liveSupplement?.status === "completed" ? session.liveSupplement.id : null;
-    const records = assessment.learningGoalIds.map((scopeId) => this.#store.record({ sessionId: input.sessionId, participantId: input.participantId, kind: "checkpoint-answer", scopeId, assessmentId: assessment.id, semanticTargetId: null, observedValue: input.answer.trim(), automaticJudgment: result.judgment, finalJudgment: result.judgment, rationale: result.rationale, correction: null, linkedSupplementId }));
-    const evaluation: AssessmentEvaluationView = { evidenceId: records[0]!.id, assessmentId: assessment.id, answer: input.answer.trim(), outcome: result.judgment === "confirmed" ? "correct" : result.judgment === "struggle" ? "incorrect" : "unknown", rationale: result.rationale, automaticJudgment: publicJudgment(result.judgment), finalJudgment: publicJudgment(result.judgment), correction: null, linkedSupplementId, recordedAt: records[0]!.recordedAt };
-    if (result.judgment === "struggle") {
-      const unit = session.course.teachingUnits.find((item) => item.id === assessment.afterUnitId)!; const targetId = unit.focusTargetIds[0]!;
-      this.#questions.submitPedagogyTrigger({ sessionId: input.sessionId, sceneId: unit.sceneId, semanticTargetId: targetId, text: `確認問題「${assessment.prompt}」への回答「${input.answer.trim()}」にはつまずきがありました。${assessment.rubric.commonMistakes.join("、")}を避け、教材に沿って考え方を補足してください。` });
-    }
-    this.#lecture.updateLearningEvidence(input.sessionId, this.#summaries(session), evaluation);
-    return this.#lecture.command(input.sessionId, { command: "answer", answer: input.answer.trim(), assessmentEvaluation: evaluation });
+    if (this.#pending.has(input.sessionId)) throw new TypeError("回答を採点中です。しばらくお待ちください。");
+    this.#pending.add(input.sessionId);
+    try {
+      const result = this.#evaluator ? await this.#evaluator({ course: session.course, assessment, answer: input.answer.trim() }) : evaluate(assessment, input.answer);
+      const current = this.#lecture.getSession(input.sessionId);
+      if (current.status !== "CHECKPOINT" || current.epoch !== session.epoch || current.assessment?.id !== assessment.id) throw new TypeError("採点中に講義の状態が変わりました。現在の画面を確認してください。");
+      const linkedSupplementId = session.liveSupplement?.status === "completed" ? session.liveSupplement.id : null;
+      const records = assessment.learningGoalIds.map((scopeId) => this.#store.record({ sessionId: input.sessionId, participantId: input.participantId, kind: "checkpoint-answer", scopeId, assessmentId: assessment.id, semanticTargetId: null, observedValue: input.answer.trim(), automaticJudgment: result.judgment, finalJudgment: result.judgment, rationale: result.rationale, correction: null, linkedSupplementId }));
+      const evaluation: AssessmentEvaluationView = { evidenceId: records[0]!.id, assessmentId: assessment.id, answer: input.answer.trim(), outcome: result.judgment === "confirmed" ? "correct" : result.judgment === "struggle" ? "incorrect" : "unknown", rationale: result.rationale, automaticJudgment: publicJudgment(result.judgment), finalJudgment: publicJudgment(result.judgment), correction: null, linkedSupplementId, recordedAt: records[0]!.recordedAt };
+      if (result.judgment === "struggle") {
+        const unit = session.course.teachingUnits.find((item) => item.id === assessment.afterUnitId)!; const targetId = unit.focusTargetIds[0]!;
+        this.#questions.submitPedagogyTrigger({ sessionId: input.sessionId, sceneId: unit.sceneId, semanticTargetId: targetId, text: `確認問題「${assessment.prompt}」への回答「${input.answer.trim()}」にはつまずきがありました。${assessment.rubric.commonMistakes.join("、")}を避け、教材に沿って考え方を補足してください。` });
+      }
+      this.#lecture.updateLearningEvidence(input.sessionId, this.#summaries(session), evaluation);
+      return this.#lecture.command(input.sessionId, { command: "answer", answer: input.answer.trim(), assessmentEvaluation: evaluation });
+    } finally { this.#pending.delete(input.sessionId); }
   }
 
   #refresh(sessionId: string) { const session = this.#lecture.getSession(sessionId); this.#lecture.updateLearningEvidence(sessionId, this.#summaries(session)); }

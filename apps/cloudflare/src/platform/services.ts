@@ -1,3 +1,4 @@
+import { createAssessmentEvaluator } from "../../../server/src/assessment-evaluator.ts";
 import { ChatGptConnection } from "../../../server/src/chatgpt-connection.ts";
 
 
@@ -64,7 +65,7 @@ const authoring = new CourseAuthoringService({ cacheViews: true, directory: auth
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;
 const questions = new QuestionQueueService({ classifier: createCommentClassifier(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }), store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
-pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions });
+pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions, ...(ttsTestMode ? {} : { evaluator: createAssessmentEvaluator(() => llmSettings.createProvider("runtime")) }) });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 

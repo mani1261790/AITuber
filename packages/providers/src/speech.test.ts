@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,33 @@ describe("speech cache", () => {
       { ...base, provider: "other" }, { ...base, model: "s1" }, { ...base, voiceId: "voice.other" },
       { ...base, dictionaryVersion: "dict.v2" }, { ...base, language: "en-US" }, { ...base, text: "別の文章" },
     ]) expect(createSpeechCacheKey(changed)).not.toBe(original);
+  });
+
+  it("plays generated audio when the cache cannot read or write, without retrying synthesis", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aituber-speech-")); directories.push(root);
+    const blocked = join(root, "not-a-directory"); await writeFile(blocked, "blocked");
+    const backing = new TestToneSpeechProvider(100);
+    const synthesize = vi.spyOn(backing, "synthesize");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await new CachedSpeechProvider(backing, blocked).synthesize(request, { signal: new AbortController().signal });
+      expect(result.audio.length).toBeGreaterThan(0);
+      expect(synthesize).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalled();
+    } finally { warning.mockRestore(); }
+  });
+
+  it("keeps audio usable when an individual cache write fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aituber-speech-")); directories.push(root);
+    const backing = new TestToneSpeechProvider(100);
+    const key = createSpeechCacheKey({ provider: backing.provider, model: backing.model, ...request });
+    await mkdir(join(root, `${key}.audio`));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await new CachedSpeechProvider(backing, root).synthesize(request, { signal: new AbortController().signal });
+      expect(result.audio.length).toBeGreaterThan(0);
+      expect(warning).toHaveBeenCalledWith("Speech cache write unavailable; using generated audio.");
+    } finally { warning.mockRestore(); }
   });
 
   it("persists an artifact and avoids a second provider call", async () => {

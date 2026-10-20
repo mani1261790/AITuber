@@ -16,7 +16,7 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   const state = await snapshot.json();
   if(['storage_quota_exceeded','storage_safety_stop'].includes(state.error)) throw new Error('Deployment uploaded; verification blocked by storage quota.');
   // An old stop handler also returns 404. Require a field added by this rollout.
-  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 5 && state.storageAccountingVersion === 2) {
+  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 5 && state.assessmentRevision === 1 && state.storageAccountingVersion === 2) {
     for (const path of ['/api/operator/snapshot','/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
       const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
       const body = await result.json();

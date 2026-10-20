@@ -64,11 +64,15 @@ export class CachedSpeechProvider implements TextToSpeechProvider {
     const artifact = await this.#backing.synthesize(request, options);
     if (artifact.cacheKey !== key) throw new TypeError("Speech provider returned an unexpected cache key");
     if (options.signal.aborted) throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
-    await mkdir(this.#directory, { recursive: true });
-    await Promise.all([
-      writeFile(join(this.#directory, `${key}.audio`), artifact.audio),
-      writeFile(join(this.#directory, `${key}.json`), JSON.stringify({ ...artifact, audio: undefined })),
-    ]);
+    try {
+      await mkdir(this.#directory, { recursive: true });
+      const writes = await Promise.allSettled([
+        writeFile(join(this.#directory, `${key}.audio`), artifact.audio),
+        writeFile(join(this.#directory, `${key}.json`), JSON.stringify({ ...artifact, audio: undefined })),
+      ]);
+      if (writes.some((result) => result.status === "rejected")) console.warn("Speech cache write unavailable; using generated audio.");
+    } catch { console.warn("Speech cache unavailable; using generated audio."); }
+    options.signal.throwIfAborted();
     return artifact;
   }
 
@@ -81,8 +85,8 @@ export class CachedSpeechProvider implements TextToSpeechProvider {
       const parsed = JSON.parse(metadata) as Omit<SpeechArtifact, "audio"> & { synthesisMs?: number };
       return { ...parsed, durationMs: Math.max(parsed.durationMs, opusDurationMs(audio) ?? 0), synthesisMs: parsed.synthesisMs ?? parsed.firstAudioMs, audio };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.warn("Speech cache read unavailable; generating audio.");
+      return null;
     }
   }
 }

@@ -40,9 +40,9 @@ describe("PedagogyService", () => {
     expect(questions.list(session.id)[0]).toMatchObject({ origin: "pedagogy-trigger", resolution: "pending" });
   });
 
-  it("keeps a wrong answer as struggle evidence, supplements it, and records the post-supplement answer as new evidence", () => {
+  it("keeps a wrong answer as struggle evidence, supplements it, and records the post-supplement answer as new evidence", async () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
-    const wrong = pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(3, -4)" });
+    const wrong = await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(3, -4)" });
     expect(wrong.lastAssessmentEvaluation).toMatchObject({ outcome: "incorrect", linkedSupplementId: null });
     expect(wrong.learningEvidence.find((item) => item.scopeId === "goal.math.calculate")?.state).toBe("struggle-evidence");
     const trigger = questions.list(session.id)[0]!; expect(trigger.origin).toBe("pedagogy-trigger");
@@ -52,15 +52,50 @@ describe("PedagogyService", () => {
     lecture.announceSupplement(session.id, view, { interrupt: false, bridgeText: null, bridgeTargetIds: [] });
     lecture.queueSupplement(session.id, { ...view, status: "ready", candidate }, { onPlaybackStarted: () => undefined, onCompleted: () => undefined });
     vi.advanceTimersByTime(100); expect(lecture.getSession(session.id).status).toBe("CHECKPOINT");
-    const corrected = pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" });
+    const corrected = await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" });
     expect(corrected.lastAssessmentEvaluation).toMatchObject({ outcome: "correct", linkedSupplementId: "supplement.assessment" });
     expect(corrected.learningEvidence.find((item) => item.scopeId === "goal.math.calculate")?.state).toBe("confirmed-for-item");
     expect(evidence.list(session.id).filter((item) => item.assessmentId === "assessment.math.vertex")).toHaveLength(2);
   });
 
-  it("does not accept a partial numeric token as satisfying a short-answer rubric", () => {
+  it("does not accept a partial numeric token as satisfying a short-answer rubric", async () => {
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
-    expect(pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "-3" }).lastAssessmentEvaluation?.outcome).toBe("incorrect");
+    expect((await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer: "-3" })).lastAssessmentEvaluation?.outcome).toBe("incorrect");
+  });
+
+  it("uses semantic evaluation rather than literal matching for a natural answer", async () => {
+    const evaluator = vi.fn().mockResolvedValue({ judgment: "confirmed", rationale: "頂点の座標を正しく説明しています。" });
+    pedagogy = new PedagogyService({ store: evidence, lecture, questions, evaluator });
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
+    const answer = "頂点は、横方向がマイナス三、縦方向がマイナス四の位置です。";
+    const result = await pedagogy.answer({ sessionId: session.id, participantId: "learner.one", answer });
+    expect(evaluator).toHaveBeenCalledWith(expect.objectContaining({ answer, assessment: expect.objectContaining({ id: "assessment.math.vertex" }) }));
+    expect(result.lastAssessmentEvaluation?.outcome).toBe("correct");
+  });
+
+  it("does not record a wrong answer or advance on a grading outage, and allows a retry", async () => {
+    const evaluator = vi.fn().mockRejectedValueOnce(new Error("provider unavailable")).mockResolvedValue({ judgment: "confirmed", rationale: "正しい座標です。" });
+    pedagogy = new PedagogyService({ store: evidence, lecture, questions, evaluator });
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
+    const input = { sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" };
+    await expect(pedagogy.answer(input)).rejects.toThrow("provider unavailable");
+    expect(lecture.getSession(session.id).status).toBe("CHECKPOINT");
+    expect(evidence.list(session.id)).toHaveLength(0);
+    expect((await pedagogy.answer(input)).lastAssessmentEvaluation?.outcome).toBe("correct");
+  });
+
+  it("rejects concurrent answers and discards grading completed after the session ends", async () => {
+    let resolve!: (value: { judgment: "confirmed"; rationale: string }) => void;
+    pedagogy = new PedagogyService({ store: evidence, lecture, questions, evaluator: () => new Promise((done) => { resolve = done; }) });
+    const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); advanceToAssessment();
+    const input = { sessionId: session.id, participantId: "learner.one", answer: "(-3, -4)" };
+    const pending = pedagogy.answer(input);
+    await expect(pedagogy.answer(input)).rejects.toThrow("採点中");
+    lecture.command(session.id, { command: "finish" });
+    resolve({ judgment: "confirmed", rationale: "正しい座標です。" });
+    await expect(pending).rejects.toThrow("状態が変わりました");
+    expect(evidence.list(session.id)).toHaveLength(0);
+    expect(lecture.getSession(session.id).status).toBe("FINISHED");
   });
 
   it("reports conflicting observed judgments without inventing a mastery score", () => {
