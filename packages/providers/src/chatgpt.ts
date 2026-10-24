@@ -52,11 +52,23 @@ export async function readResponsesStream(response: Response, limit: number): Pr
   if (!response.body) throw new LlmProviderError('provider_error', 'ChatGPTの応答本文がありません。');
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     // Some gateways deliver the completed Responses envelope as JSON even with stream:true.
-    const reader = response.body.getReader(); let bytes = 0; const chunks: Uint8Array[] = [];
+    const reader = response.body.getReader(); let bytes = 0; const chunks: Uint8Array[] = []; let prefix = "";
     try {
       for (;;) { const part = await reader.read(); if (part.done) break; bytes += part.value.byteLength;
-        if (bytes > limit * 2 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTの応答がサイズ上限を超えました。');
         chunks.push(part.value);
+        prefix += new TextDecoder().decode(part.value).slice(0, Math.max(0, 64-prefix.length));
+        // Gateways may omit the SSE content type. Detect its prefix before applying
+        // the envelope bound, and parse frames without buffering all wire data.
+        if (/^(?:event:|data:|:)/.test(prefix.trimStart())) {
+          const body=new ReadableStream<Uint8Array>({
+            start(controller){for(const chunk of chunks)controller.enqueue(chunk);},
+            async pull(controller){const next=await reader.read();if(next.done)controller.close();else controller.enqueue(next.value);},
+            cancel(){return reader.cancel();},
+          });
+          return await readResponsesStream(new Response(body,{headers:{'content-type':'text/event-stream'}}),limit);
+        }
+        // Completed envelopes also carry reasoning/usage metadata, separate from output text.
+        if (bytes > limit * 64 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTのJSON応答が通信サイズ上限を超えました。');
       }
     } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
     const buffer = new Uint8Array(bytes); let offset = 0; for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
@@ -99,14 +111,15 @@ export async function readResponsesStream(response: Response, limit: number): Pr
       bytes += chunk.value.byteLength;
       if (bytes > limit * 64 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTストリームがサイズ上限を超えました。');
       pending += decoder.decode(chunk.value, { stream: true });
-      if (pending.length > limit * 2 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTイベントがサイズ上限を超えました。');
       // Normalize only complete frames, preserving CRLF across network chunks.
       let match: RegExpExecArray | null;
       while ((match = /\r?\n\r?\n/.exec(pending))) {
+        if (match.index > limit * 2 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTイベントがサイズ上限を超えました。');
         accept(pending.slice(0, match.index).replace(/\r\n/g, '\n'));
         pending = pending.slice(match.index + match[0].length);
         if (complete) break;
       }
+      if (!complete && pending.length > limit * 2 + 65536) throw new LlmProviderError('response_too_large', 'ChatGPTイベントがサイズ上限を超えました。');
     }
     if (!complete) throw new LlmProviderError('invalid_response', 'ChatGPTの応答が完了前に切断されました。');
     return { text, usage };

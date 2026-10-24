@@ -61,3 +61,22 @@ it('recognizes SSE when an intermediary omits the event-stream content type', as
   const frames=event({type:'response.output_text.delta',delta:'{}'})+event({type:'response.completed'});
   expect((await readResponsesStream(new Response(frames),1000)).text).toBe('{}');
 });
+
+it('streams mislabeled SSE larger than the JSON envelope bound without relaxing output limits', async () => {
+  const frames=Array.from({length:40},()=>event({type:'response.reasoning_summary_text.delta',delta:'x'.repeat(4000)})).join('')+event({type:'response.output_text.delta',delta:'{}'})+event({type:'response.completed'});
+  expect(new TextEncoder().encode(frames).length).toBeGreaterThan(30_000*2+65536);
+  const source=stream(frames,997);
+  expect((await readResponsesStream(new Response(source.body),30_000)).text).toBe('{}');
+  await expect(readResponsesStream(new Response(event({type:'response.output_text.delta',delta:'x'.repeat(1001)})+event({type:'response.completed'})),1000)).rejects.toMatchObject({code:'response_too_large'});
+});
+it('checks individual SSE frames rather than the size of a network chunk containing many frames', async () => {
+  const frames=Array.from({length:20},()=>event({type:'response.reasoning_summary_text.delta',delta:'x'.repeat(4000)})).join('')+event({type:'response.output_text.delta',delta:'{}'})+event({type:'response.completed'});
+  expect((await readResponsesStream(stream(frames,frames.length),1000)).text).toBe('{}');
+  await expect(readResponsesStream(stream(event({type:'response.reasoning_summary_text.delta',delta:'x'.repeat(70_000)}),100000),1000)).rejects.toMatchObject({code:'response_too_large'});
+});
+
+it('bounds completed-envelope metadata separately from generated output text', async () => {
+  const envelope={status:'completed',output:[{type:'reasoning',encrypted_content:'x'.repeat(140_000)},{content:[{type:'output_text',text:'{}'}]}]};
+  expect((await readResponsesStream(Response.json(envelope),30_000)).text).toBe('{}');
+  await expect(readResponsesStream(Response.json(envelope),1000)).rejects.toMatchObject({code:'response_too_large'});
+});
