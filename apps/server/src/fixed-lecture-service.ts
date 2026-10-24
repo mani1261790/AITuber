@@ -63,6 +63,7 @@ export class FixedLectureService {
   readonly #travelArrived = new WeakSet<RuntimeSession>();
   readonly #drawingWait = new WeakMap<RuntimeSession, {started:number; fail:()=>void}>();
   readonly #stageNext = new WeakMap<RuntimeSession, () => void>();
+  readonly #questionAnswer = new WeakMap<RuntimeSession,string>();
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #preparedSpeech = new WeakMap<RuntimeSession, Map<string, {controller:AbortController; promise:Promise<SpeechArtifact>}>>();
   readonly #projection = new WeakMap<RuntimeSession, {started:number; timer:ReturnType<typeof setTimeout>; fail:()=>void; stageDone:boolean; speechDone:boolean; next:()=>void}>();
@@ -423,11 +424,12 @@ export class FixedLectureService {
         plan = await prefetched.plan;
       } else {
         prefetched?.controller.abort();
-        plan = await this.#planner!({session:this.getSession(runtime.id),unit,previousSpeech:this.#previousSpeech.get(runtime) ?? "",remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal);
+        plan = await this.#planner!({session:this.getSession(runtime.id),unit,previousSpeech:this.#previousSpeech.get(runtime) ?? "",...(this.#questionAnswer.has(runtime) ? {questionAnswer:this.#questionAnswer.get(runtime)!} : {}),remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal);
       }
     } catch (error) { if (controller.signal.aborted) return; plan = referencePlan(unit,error instanceof Error ? error.message : "台本生成失敗"); }
     if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     runtime.speechAbort = null;
+    this.#questionAnswer.delete(runtime);
     const stored = this.#store.getSession(runtime.id);
     this.#store.appendEvent({eventId:`event.${randomUUID()}`,sessionId:runtime.id,coursePackageId:runtime.course.id,coursePackageVersion:runtime.course.version,epoch:stored.epoch,seq:stored.lastSeq+1,occurredAt:new Date().toISOString(),type:"lesson.direction-planned",payload:{unitId:unit.id,source:plan.source,reason:plan.reason,actions:plan.actions}});
     const base = this.#directions.get(runtime)!;
@@ -712,8 +714,8 @@ export class FixedLectureService {
       const session=this.getSession(runtime.id);
       const direction=this.#directions.get(runtime);
       const projected:FixedSessionView={...session,...(direction ? {direction:{...direction,phase:"complete",targetId:null,traveling:false,...(candidate.drawing ? {surface:"board",drawing:candidate.drawing,position:"right"} : {})}} : {})};
-      const previousSpeech=((this.#previousSpeech.get(runtime) ?? "")+"\n質問への回答: "+candidate.speechText).slice(-2000);
-      const plan=this.#planner({session:projected,unit:nextUnit,previousSpeech,remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal).catch(()=>referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
+      const previousSpeech=this.#previousSpeech.get(runtime) ?? "";
+      const plan=this.#planner({session:projected,unit:nextUnit,previousSpeech,questionAnswer:candidate.speechText,remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal).catch(()=>referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
       void plan.then(result=>{if(!controller.signal.aborted) for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);});
       this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller,plan});
     }
@@ -772,7 +774,7 @@ export class FixedLectureService {
     this.#verifyRejoin(runtime, pending.view.origin);
     this.#apply(runtime, { type: "REJOIN_VERIFIED", epoch: runtime.state.epoch });
     runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, status: "completed" } : null;
-    this.#previousSpeech.set(runtime, ((this.#previousSpeech.get(runtime) ?? "") + "\n質問への回答: " + (pending.view.candidate?.speechText ?? "")).slice(-2000));
+    this.#questionAnswer.set(runtime,pending.view.candidate?.speechText ?? "");
     runtime.pendingSupplement = null; this.#restDirection(runtime); this.#publish(runtime); pending.onCompleted();
     if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch }); else this.#schedule(runtime);
   }

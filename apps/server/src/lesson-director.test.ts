@@ -19,10 +19,12 @@ describe("lesson director",()=>{
     try {
       const unit = quadraticFunctionsFixture.teachingUnits[0]!;
       const llm = new FixedResponseLlmProvider([{beats:[{text:"では、この式の頂点に注目しましょう。",targetId:unit.focusTargetIds[0],camera:"lecture",position:"right",gesture:"explain",surface:"slides",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
-      const plan = await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"さきほどの説明",remainingMs:10000},new AbortController().signal);
+      const plan = await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"さきほどの説明",questionAnswer:"検索結果はアプリを経由して戻ります。",remainingMs:10000},new AbortController().signal);
       expect(plan.source).toBe("generated");
       expect(plan.actions.map(action=>action.type)).toEqual(["show_slides","camera","move_to","point_at","speak","release_point"]);
-      expect(llm.calls[0]?.prompt).toContain("さきほどの説明");
+      const prompt=JSON.parse(llm.calls[0]!.prompt.split("\n/no_think")[0]!);
+      expect(prompt.previousSpeech).toBe("さきほどの説明");
+      expect(prompt.questionAnswer).toBe("検索結果はアプリを経由して戻ります。");
     } finally {runtime.close();}
   });
   it("does not invent pointing regions on PDF slides with no known focus", async () => {
@@ -460,11 +462,27 @@ it("keeps the slide visible through an oral answer and passes the answer into th
   expect(runtime.service.getSession(started.id).speech.text).toBe(started.speech.text);
   await vi.advanceTimersByTimeAsync(100);
   expect(runtime.service.getSession(started.id)).toMatchObject({direction:{surface:"slides"},liveSupplement:{status:"playing"},speech:{text:candidate.speechText}});
-  const continuation=planner.mock.calls.find(call=>call[0].previousSpeech.includes(candidate.speechText))![0];
+  const continuation=planner.mock.calls.find(call=>call[0].questionAnswer===candidate.speechText)![0];
   expect(continuation.unit.id).toBe("unit.math.parts");
   planner.mockClear();
   await vi.advanceTimersByTimeAsync(100);
   expect(runtime.service.getSession(started.id).direction?.surface).toBe("slides");
   expect(planner.mock.calls.every(call=>call[0].unit.id!==continuation.unit.id)).toBe(true);
+ } finally {runtime.close();}
+});
+
+it("keeps a prefetched continuation when a question is still being prepared",async()=>{
+ vi.useFakeTimers();
+ const planner=vi.fn<LessonPlanner>(async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText,surface:"slides"}]}));
+ const runtime=setup(planner);
+ try {
+  await vi.advanceTimersByTimeAsync(0);
+  const started=runtime.service.getSession(runtime.session.id);
+  runtime.service.completeStageAction(started.id,started.epoch,started.direction!.actionId);
+  const origin=runtime.service.captureSupplementOrigin(started.id,"target.math.vertex-form");
+  runtime.service.announceSupplement(started.id,{id:"supplement.preparing",questionId:"question.preparing",status:"preparing",attempt:0,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null},{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.getSession(started.id).currentUnitId).toBe("unit.math.parts");
+  expect(planner.mock.calls.filter(call=>call[0].unit.id==="unit.math.parts")).toHaveLength(1);
  } finally {runtime.close();}
 });
