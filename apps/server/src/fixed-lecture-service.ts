@@ -57,6 +57,7 @@ type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
 export class FixedLectureService {
   readonly #planner: LessonPlanner | null;
   readonly #requireLiveExecution: boolean;
+  readonly #waitForClassroom: boolean;
   readonly #directions = new WeakMap<RuntimeSession, LessonDirectionView>();
   readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
   readonly #boardSpeechStart = new WeakMap<RuntimeSession, () => void>();
@@ -140,9 +141,11 @@ export class FixedLectureService {
     voiceId?: string;
     planner?: LessonPlanner;
     requireLiveExecution?: boolean;
+    waitForClassroom?: boolean;
   }) {
     this.#planner = options.planner ?? null;
     this.#requireLiveExecution = options.requireLiveExecution ?? false;
+    this.#waitForClassroom = options.waitForClassroom ?? false;
     this.#store = options.store;
     this.#courses = new Map((options.courses ?? coursePackageFixtures).map((course) => [course.id, course]));
     this.#playbackUnitMs = options.playbackUnitMs ?? 2_000;
@@ -168,18 +171,19 @@ export class FixedLectureService {
     if (saved.version !== 1 || this.#currentSessionId) throw new TypeError("Invalid or duplicate runtime checkpoint");
     const stored = this.#store.getSession(saved.id);
     const terminal = saved.state.status === "FINISHED";
+    const waiting = saved.state.status === "PREPARING" && this.#waitForClassroom;
     const waitForAnswer = saved.state.status === "CHECKPOINT";
     const manuallyPaused = saved.state.status === "PAUSED";
-    const epoch = terminal ? stored.epoch : this.#store.advanceEpoch(saved.id).epoch;
+    const epoch = terminal || waiting ? stored.epoch : this.#store.advanceEpoch(saved.id).epoch;
     const recoverable = saved.liveSupplement?.candidate && ["ready","playing","rejoining"].includes(saved.liveSupplement.status) ? saved.liveSupplement : null;
-    const resumedStatus = recoverable && (["BRANCHING","REJOINING"].includes(saved.state.status) || saved.state.resumeStatus === "BRANCHING") ? "BRANCHING" as const : saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
-    const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
+    const resumedStatus = saved.state.resumeStatus === "PREPARING" ? "PREPARING" as const : recoverable && (["BRANCHING","REJOINING"].includes(saved.state.status) || saved.state.resumeStatus === "BRANCHING") ? "BRANCHING" as const : saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
+    const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waiting?"PREPARING":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waiting||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
     const runtime: RuntimeSession = {...saved,state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:recoverable,pendingSupplement:null};
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
     this.#courses.set(saved.course.id,saved.course); this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
-    return !terminal && !waitForAnswer && !manuallyPaused;
+    return !terminal && !waiting && !waitForAnswer && !manuallyPaused;
   }
 
   forgetSessionsExcept(ids: ReadonlySet<string>) {
@@ -242,16 +246,30 @@ export class FixedLectureService {
     this.#sessions.set(id, runtime);
     this.#currentSessionId = id;
     this.#apply(runtime, { type: "PREPARE_REQUESTED", epoch: runtime.state.epoch });
-    this.#apply(runtime, { type: "PREPARATION_COMPLETED", epoch: runtime.state.epoch });
-    this.#schedule(runtime);
+    if (this.#waitForClassroom) {
+      runtime.displayUnitId = runtime.state.orderedUnitIds[0] ?? null;
+      this.#publish(runtime);
+    } else {
+      this.#apply(runtime, { type: "PREPARATION_COMPLETED", epoch: runtime.state.epoch });
+      this.#schedule(runtime);
+    }
     return this.getSession(id);
+  }
+
+  classroomReady(sessionId: string, epoch: number, participantId: string): void {
+    const runtime = this.#requireSession(sessionId);
+    if (!this.#waitForClassroom || runtime.state.status !== "PREPARING" || runtime.state.epoch !== epoch || !participantId) return;
+    if (!this.#ownsExecution(runtime,participantId)) return;
+    runtime.startedAtMs = Date.now();
+    this.#apply(runtime,{type:"PREPARATION_COMPLETED",epoch});
+    this.#schedule(runtime);
   }
 
   getCurrentSession(): FixedSessionView | null {
     return this.#currentSessionId ? this.getSession(this.#currentSessionId) : null;
   }
 
-  getRemainingTimeMs(sessionId: string): number { const runtime = this.#requireSession(sessionId); return Math.max(0, runtime.configuredDurationMinutes * 60_000 - (Date.now() - runtime.startedAtMs)); }
+  getRemainingTimeMs(sessionId: string): number { const runtime = this.#requireSession(sessionId); return runtime.state.status === "PREPARING" || runtime.state.resumeStatus === "PREPARING" ? runtime.configuredDurationMinutes * 60_000 : Math.max(0, runtime.configuredDurationMinutes * 60_000 - (Date.now() - runtime.startedAtMs)); }
 
   getSession(sessionId: string): FixedSessionView {
     const runtime = this.#requireSession(sessionId);

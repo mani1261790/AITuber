@@ -31,7 +31,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress, onReady }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -41,8 +41,8 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
   const lookRef = useRef(look);
   useEffect(() => { lookRef.current = look; }, [look]);
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
-  useEffect(() => { stageRef.current = { readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
+  const stageRef = useRef({ readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview });
+  useEffect(() => { stageRef.current = { readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview }; }, [readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview]);
   const motionRef = useRef({ state, mouthOpen, speaking: speaking ?? mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -299,6 +299,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
 
     let revealCanvas:HTMLCanvasElement|null=null;
     let revealTick=-1;
+    let lastReadyReport=-Infinity;
     let boardActionId="";
     let boardSpeechElapsed=0;
     let screenActionId="";
@@ -410,6 +411,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
       if (avatar) {
         const direction = stageRef.current.direction;
         avatar.scene.visible = motionReady;
+        if (motionReady && stageRef.current.materialReady && time-lastReadyReport>2) { lastReadyReport=time;stageRef.current.onReady?.(); }
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
         const listening = stageRef.current.listening && !motionRef.current.speaking;
         const targetId = listening ? null : direction ? direction.targetId : motionRef.current.targetId;

@@ -136,7 +136,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:19,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:20,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
@@ -212,7 +212,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(!object)throw new RangeError('Source file unavailable');
       return new Response(object.body,{headers:{...pdfSourceHeaders,'content-length':String(object.size)}});
     }
-    const roomMatch=path.match(/^\/api\/classrooms\/([^/]+)\/(reconnect|stream|playback|stage-complete|stage-progress|questions|answer|evidence|survey)$/);
+    const roomMatch=path.match(/^\/api\/classrooms\/([^/]+)\/(reconnect|stream|ready|playback|stage-complete|stage-progress|questions|answer|evidence|survey)$/);
     if(roomMatch){
       const operation=roomMatch[2];
       if(operation==='stream'&&request.headers.get('upgrade')?.toLowerCase()==='websocket'){
@@ -225,6 +225,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       const body=await read<SubmitQuestionRequest & SubmitLearningEvidenceRequest & SubmitAfterClassSurveyRequest & {accessToken:string;epoch:number;audioUrl:string;remainingMs:number;playbackState?:string;startedAt?:string;actionId:string;writingStarted?:boolean;answer:string}>();
       const access=this.classrooms.authenticate(roomMatch[1],body.accessToken),id=access.sessionId;
       if(operation==='reconnect')return json(200,{participant:access.participant,room:access.room,snapshot:lecture.getSnapshot(id),questions:questions.list(id)});
+      if(operation==='ready'){lecture.classroomReady(id,body.epoch,access.participant.id);return json(200,{snapshot:lecture.getSnapshot(id)});}
       if(operation==='playback')lecture.reportPlayback(id,body.epoch,body.audioUrl,body.remainingMs,access.participant.id,body.playbackState,body.startedAt);
       if(operation==='stage-complete')lecture.completeStageAction(id,body.epoch,body.actionId,access.participant.id);
       if(operation==='stage-progress')lecture.reportStageProgress(id,body.epoch,body.actionId,access.participant.id,body.writingStarted === true);

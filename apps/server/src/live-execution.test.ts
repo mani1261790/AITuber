@@ -182,3 +182,41 @@ it("retains prewarmed answer audio when the main-unit planner finishes later",as
  service.command(session.id,{command:"pause"});
  expect(prepared[1]?.signal?.aborted).toBe(true);
 });
+
+it("waits for a rendered classroom without spending lesson time or generating speech",async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ const planner=vi.fn<LessonPlanner>(async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText}]}));
+ const service=new FixedLectureService({store,requireLiveExecution:true,waitForClassroom:true,planner,speechProvider:new TestToneSpeechProvider(1000),voiceId:"test.voice"});resources.push(service);
+ const session=service.createSession(request);
+ expect(session).toMatchObject({status:"PREPARING",progress:{completed:0},speech:{playing:false}});
+ expect(session.displayUnitId).toBe(session.course.schedule.orderedUnitIds[0]);
+ await vi.advanceTimersByTimeAsync(3_600_000);
+ expect(service.getSession(session.id).status).toBe("PREPARING");
+ expect(service.getRemainingTimeMs(session.id)).toBe(360_000);expect(planner).not.toHaveBeenCalled();
+ service.classroomReady(session.id,session.epoch+1,"owner");service.classroomReady(session.id,session.epoch,"");
+ expect(planner).not.toHaveBeenCalled();
+ service.classroomReady(session.id,session.epoch,"owner");
+ await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(session.id).status).toBe("TEACHING");
+ expect(service.getRemainingTimeMs(session.id)).toBe(360_000);
+ const count=planner.mock.calls.length;
+ service.classroomReady(session.id,session.epoch,"owner");service.classroomReady(session.id,session.epoch,"other");
+ expect(planner).toHaveBeenCalledTimes(count);
+});
+
+it.each([false,true])("preserves classroom waiting across restart, including operator pause=%s",async paused=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ const first=new FixedLectureService({store,waitForClassroom:true});resources.push(first);
+ const session=first.createSession(request);
+ if(paused)first.command(session.id,{command:"pause"});
+ const saved=first.exportCheckpoint()!;first.close();
+ const restored=new FixedLectureService({store,waitForClassroom:true});resources.push(restored);
+ expect(restored.restoreCheckpoint(saved)).toBe(false);
+ if(paused)restored.command(session.id,{command:"resume"});
+ await vi.advanceTimersByTimeAsync(60_000);
+ expect(restored.getSession(session.id).status).toBe("PREPARING");
+ expect(restored.getRemainingTimeMs(session.id)).toBe(360_000);
+ const epoch=restored.getSession(session.id).epoch;
+ restored.classroomReady(session.id,epoch,"owner");
+ expect(restored.getSession(session.id).status).toBe("TEACHING");
+});

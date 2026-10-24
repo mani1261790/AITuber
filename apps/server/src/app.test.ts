@@ -72,7 +72,7 @@ describe("server boundary", () => {
 
   it("derives stage notification identity from the participant token",async()=>{
     const store=new LectureEventStore(":memory:");const service=new FixedLectureService({store});resources.add({store,service});
-    const complete=vi.spyOn(service,"completeStageAction"),progress=vi.spyOn(service,"reportStageProgress");
+    const complete=vi.spyOn(service,"completeStageAction"),progress=vi.spyOn(service,"reportStageProgress"),ready=vi.spyOn(service,"classroomReady");
     const server=createApp(service);servers.add(server);server.listen(0,"127.0.0.1");await once(server,"listening");
     const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const post=(path:string,body:unknown,surface="classroom")=>fetch(origin+path,{method:"POST",headers:{"content-type":"application/json","x-aituber-surface":surface},body:JSON.stringify(body)});
@@ -82,6 +82,12 @@ describe("server boundary", () => {
       const response=await post(`/api/classrooms/${started.classroom.code}/stage-${kind}`,{accessToken:joined.participant.accessToken,epoch:started.session.epoch,actionId:"action.check",participantId:"forged"});
       expect(response.status).toBe(200);
     }
+    const readyResponse=await post(`/api/classrooms/${started.classroom.code}/ready`,{accessToken:joined.participant.accessToken,epoch:started.session.epoch,participantId:"forged"});
+    expect(readyResponse.status).toBe(200);
+    expect(ready).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,joined.participant.id);
+    const unauthorized=await post(`/api/classrooms/${started.classroom.code}/ready`,{accessToken:"invalid",epoch:started.session.epoch});
+    expect(unauthorized.ok).toBe(false);
+    expect(ready).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id);
     expect(progress).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id,false);
   });

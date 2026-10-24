@@ -20,6 +20,7 @@ export interface LectureApi {
   subscribe(listener: (sessionId: string, snapshot: ClassroomSnapshot) => void): () => void;
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
+  classroomReady?(sessionId: string, epoch: number, participantId: string): void;
   reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number, participantId?: string, playbackState?: string, startedAt?: string): void;
   completeStageAction?(sessionId: string, epoch: number, actionId: string, participantId?: string, writingStarted?: boolean): void;
   reportStageProgress?(sessionId: string, epoch: number, actionId: string, participantId?: string, writingStarted?: boolean): void;
@@ -90,6 +91,14 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "classroom");
         const access = classrooms.authenticate(reconnectMatch[1]!, (await readJson<ClassroomReconnectRequest>(request)).accessToken);
         return json(response, 200, { participant: access.participant, room: access.room, snapshot: api.getSnapshot(access.sessionId), questions: questions?.list(access.sessionId) ?? [] });
+      }
+      const readyMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/ready$/);
+      if (request.method === "POST" && readyMatch) {
+        requireSurface(request,"classroom");
+        const body=await readJson<{accessToken:string;epoch:number}>(request);
+        const access=classrooms.authenticate(readyMatch[1]!,body.accessToken);
+        api.classroomReady?.(access.sessionId,body.epoch,access.participant.id);
+        return json(response,200,{snapshot:api.getSnapshot(access.sessionId)});
       }
       const playbackMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/playback$/);
       const stageMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/stage-(complete|progress)$/);
