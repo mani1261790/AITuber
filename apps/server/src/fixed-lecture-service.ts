@@ -418,7 +418,7 @@ export class FixedLectureService {
     const prefetched = this.#prefetch.get(runtime); this.#prefetch.delete(runtime);
     let plan: DirectedPlan;
     try {
-      if (prefetched?.unitId === unit.id && prefetched.stamp === this.#contextStamp(runtime)) {
+      if (prefetched?.unitId === unit.id && (prefetched.stamp === this.#contextStamp(runtime) || ["preparing","ready"].includes(runtime.liveSupplement?.status ?? ""))) {
         controller.signal.addEventListener("abort",()=>prefetched.controller.abort(),{once:true});
         plan = await prefetched.plan;
       } else {
@@ -499,7 +499,8 @@ export class FixedLectureService {
     if (projection) {
       if (!this.#ownsExecution(runtime,participantId)) return;
       clearTimeout(projection.timer); projection.stageDone=true;
-      this.#directions.set(runtime,{...this.#directions.get(runtime)!,phase:"speaking"}); this.#publish(runtime);
+      const direction=this.#directions.get(runtime)!;
+      this.#directions.set(runtime,{...direction,phase:"speaking",traveling:false,targetId:direction.surface==="board" ? direction.drawing?.id ?? null : null}); this.#publish(runtime);
       if (projection.speechDone) {this.#projection.delete(runtime);projection.next();}
       return;
     }
@@ -704,18 +705,27 @@ export class FixedLectureService {
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
     const candidate = pending.view.candidate;
     runtime.liveSupplement = { ...pending.view, status: "playing" };
+    // Prepare the continuation while the answer is drawn/spoken, using its actual content.
+    const nextUnit = runtime.course.teachingUnits.find(unit=>unit.id===runtime.state.activeUnitId);
+    if (this.#planner && nextUnit && !runtime.assessmentId) {
+      const controller=new AbortController();
+      const session=this.getSession(runtime.id);
+      const direction=this.#directions.get(runtime);
+      const projected:FixedSessionView={...session,...(direction ? {direction:{...direction,phase:"complete",targetId:null,traveling:false,...(candidate.drawing ? {surface:"board",drawing:candidate.drawing,position:"right"} : {})}} : {})};
+      const previousSpeech=((this.#previousSpeech.get(runtime) ?? "")+"\n質問への回答: "+candidate.speechText).slice(-2000);
+      const plan=this.#planner({session:projected,unit:nextUnit,previousSpeech,remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal).catch(()=>referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
+      void plan.then(result=>{if(!controller.signal.aborted) for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);});
+      this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller,plan});
+    }
     this.#publish(runtime);
     if (candidate.drawing) {
       const epoch = runtime.state.epoch;
       const move = () => {
         if (runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
-        this.#directions.set(runtime,{actionId:randomUUID(),phase:"moving",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
-        const speak = () => {
-          if (runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
-          this.#directions.set(runtime,{...this.#directions.get(runtime)!,phase:"speaking",targetId:candidate.drawing!.id});
-          this.#playSupplementSpeech(runtime,candidate,pending);
-        };
-        this.#stageNext.set(runtime,speak); runtime.timer=setTimeout(()=>{this.#stageNext.delete(runtime);speak();},12000); this.#publish(runtime);
+        this.#directions.set(runtime,{actionId:randomUUID(),phase:"speaking",traveling:true,position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
+        const fail=()=>this.#haltExecution(runtime,"先生の移動完了を確認できませんでした。教室画面を確認して再開してください。");
+        this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>this.#completeSupplement(runtime,pending)});
+        this.#playSupplementSpeech(runtime,candidate,pending);
       };
       this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
       this.#stageNext.set(runtime,move);
@@ -731,7 +741,13 @@ export class FixedLectureService {
       const occurredAt = new Date().toISOString(); const audible = speech.mode !== "caption-fallback"; pending.onPlaybackStarted(occurredAt, audible);
       runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, firstAudioAt: runtime.liveSupplement.firstAudioAt ?? (audible ? occurredAt : null) } : null;
       runtime.speech = speech; this.#publish(runtime);
-      this.#waitForSpeech(runtime, speech, () => this.#completeSupplement(runtime, pending));
+      this.#waitForSpeech(runtime, speech, () => {
+        const movement=this.#projection.get(runtime);
+        if (!movement) {this.#completeSupplement(runtime,pending);return;}
+        runtime.timer=null; movement.speechDone=true;
+        runtime.speech={...runtime.speech,playing:false,startedAt:null};this.#publish(runtime);
+        if(movement.stageDone){this.#projection.delete(runtime);movement.next();}
+      });
     };
     if (!this.#speechProvider || !this.#voiceId) { begin({ ...emptySpeech(epoch), mode: "test", playing: true, unitId: null, text, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs, segments: [{ text, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: candidate.focusTargetIds }] }); return; }
     runtime.speech = { ...emptySpeech(epoch), mode: "preparing", text, segments: [{ text, startMs: 0, endMs: candidate.speechText.length * 80, semanticTargetIds: candidate.focusTargetIds }] }; this.#publish(runtime);

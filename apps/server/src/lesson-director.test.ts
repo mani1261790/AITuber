@@ -443,3 +443,28 @@ it("requires a concrete missing visual explanation before creating a board",asyn
   expect(plan.actions.some(a=>a.type==="show_blackboard")).toBe(true);
  } finally {runtime.close();}
 });
+
+it("keeps the slide visible through an oral answer and passes the answer into the next explanation",async()=>{
+ vi.useFakeTimers();
+ const planner=vi.fn<LessonPlanner>(async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText,surface:"slides"}]}));
+ const runtime=setup(planner);
+ try {
+  await vi.advanceTimersByTimeAsync(0);
+  const started=runtime.service.getSession(runtime.session.id);
+  runtime.service.completeStageAction(started.id,started.epoch,started.direction!.actionId);
+  const origin=runtime.service.captureSupplementOrigin(started.id,"target.math.vertex-form");
+  const preparing={id:"supplement.oral",questionId:"question.oral",status:"preparing" as const,attempt:1,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null};
+  runtime.service.announceSupplement(started.id,preparing,{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+  const candidate={speechText:"そうです。括弧の中がゼロになる値を考えます。",captionText:"括弧の中がゼロになる値",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[]};
+  runtime.service.queueSupplement(started.id,{...preparing,status:"ready",candidate},{onPlaybackStarted(){},onCompleted(){}});
+  expect(runtime.service.getSession(started.id).speech.text).toBe(started.speech.text);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.getSession(started.id)).toMatchObject({direction:{surface:"slides"},liveSupplement:{status:"playing"},speech:{text:candidate.speechText}});
+  const continuation=planner.mock.calls.find(call=>call[0].previousSpeech.includes(candidate.speechText))![0];
+  expect(continuation.unit.id).toBe("unit.math.parts");
+  planner.mockClear();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.getSession(started.id).direction?.surface).toBe("slides");
+  expect(planner.mock.calls.every(call=>call[0].unit.id!==continuation.unit.id)).toBe(true);
+ } finally {runtime.close();}
+});

@@ -137,7 +137,7 @@ describe("LiveSupplementService", () => {
     expect(questions.list(session.id)[0]).toMatchObject({ resolution: "deferred" });
   });
 
-  it("prepares markdown notes with speech, waits for board and walking, then rejoins", async()=>{
+  it("waits for the written board, speaks while stepping aside and rejoins after both finish", async()=>{
     const directory=mkdtempSync(join(tmpdir(),"aituber-live-svg-"));
     try {
       const provider=new FixedResponseLlmProvider([{...candidate(),boardPatches:[],blackboardMarkdown:"# 符号\n◎ $x-h=0$"},passReview]);
@@ -154,7 +154,8 @@ describe("LiveSupplementService", () => {
       let current=lecture.getSession(session.id);
       expect(current.direction?.phase).toBe("drawing");
       lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
-      current=lecture.getSession(session.id); expect(current.direction?.phase).toBe("moving");
+      current=lecture.getSession(session.id); expect(current.direction).toMatchObject({phase:"speaking",traveling:true});
+      expect(current.speech).toMatchObject({text:candidate().speechText,playing:true});
       lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
       expect(lecture.getSession(session.id).speech.text).toBe(candidate().speechText);
       vi.advanceTimersByTime(100);
