@@ -1,3 +1,4 @@
+import { boardSpeechRevealElapsed } from "./board-reveal.ts";
 import {eraserPalmPosition} from "./eraser-grip.ts";
 import { paintBoardErase, eraseDurationFor, boardEraseArea, type EraseArea } from "./board-erase.ts";
 import { paintBoardReveal } from "./board-reveal.ts";
@@ -30,7 +31,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -40,8 +41,8 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
   const lookRef = useRef(look);
   useEffect(() => { lookRef.current = look; }, [look]);
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
-  useEffect(() => { stageRef.current = { materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
+  const stageRef = useRef({ readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview });
+  useEffect(() => { stageRef.current = { readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview }; }, [readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, preview]);
   const motionRef = useRef({ state, mouthOpen, speaking: speaking ?? mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -299,6 +300,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
     let revealCanvas:HTMLCanvasElement|null=null;
     let revealTick=-1;
     let boardActionId="";
+    let boardSpeechElapsed=0;
     let screenActionId="";
     let screenAlreadyDown=false;
     let previousBoard:HTMLCanvasElement|null=null;
@@ -351,14 +353,21 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
       const drawingDirection=stageRef.current.direction?.phase==="drawing"?stageRef.current.direction:null;
       const drawingReady=!!drawingDirection?.drawing && currentImage?.drawingId===drawingDirection.drawing.id;
       if(drawingDirection && boardActionId!==drawingDirection.actionId){
-        boardActionId=drawingDirection.actionId;revealTick=-1;eraseFirst=boardHasInk;eraseArea=inkArea;
+        boardActionId=drawingDirection.actionId;boardSpeechElapsed=0;revealTick=-1;eraseFirst=boardHasInk;eraseArea=inkArea;
         previousBoard=document.createElement("canvas");previousBoard.width=1280;previousBoard.height=720;
         if(boardTexture?.image)previousBoard.getContext("2d")!.drawImage(boardTexture.image as HTMLCanvasElement,0,0);
         revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
         revealCanvas.getContext("2d")!.drawImage(previousBoard,0,0);
       }
+      const speechClock = stageRef.current.readSpeechClock?.();
+      // Finish the ink before the closing spoken sentence, using media time so
+      // buffering does not let the board race ahead of the explanation.
+      const revealDuration = currentImage?.boardReveal?.duration ?? 1;
+      const synchronizedElapsed = stageRef.current.readSpeechClock
+        ? (boardSpeechElapsed = boardSpeechRevealElapsed(boardSpeechElapsed, revealDuration, speechClock))
+        : null;
       const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (screenDirection && !screenAlreadyDown ? {id:screenDirection.actionId,kind:"screen"} : drawingDirection?{
-        id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingDuration:currentImage?.boardReveal?.duration ?? 1,
+        id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingDuration:synchronizedElapsed === null ? revealDuration : Infinity, writingComplete:synchronizedElapsed !== null && synchronizedElapsed >= revealDuration,
       }:undefined);
       const destination=propAction?propMotion.destination(propAction,curtain>.02):null;
       const propReady=reducedMotion || (!!destination && !!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-destination.yaw),Math.cos(locomotion.yaw-destination.yaw)))<.05);
@@ -371,7 +380,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         }
       }
       if(drawingDirection && drawingReady && currentImage){
-        const elapsed=propFrame?.writingElapsed??0;
+        const elapsed=synchronizedElapsed ?? propFrame?.writingElapsed ?? 0;
         const tick=propFrame?.kind==="write"?10000+Math.floor(elapsed*15):Math.floor((propFrame?.eraseElapsed??0)*15);
         if(revealCanvas && tick!==revealTick){
           revealTick=tick;
@@ -384,7 +393,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
           if(boardTexture)boardTexture.needsUpdate=true;
           setLessonMap(boardMaterial,boardTexture);
         }
-        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId, propFrame?.kind === "write" && elapsed > 0);}
+        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId, propFrame?.kind === "write" && propFrame.writingElapsed > 0);}
         if(propFrame?.done && (propAcknowledged!==drawingDirection.actionId || time-propAcknowledgedAt>1)){
           propAcknowledged=drawingDirection.actionId;propAcknowledgedAt=time;stageRef.current.onStageComplete?.(drawingDirection.actionId);
         }

@@ -39,3 +39,9 @@ export function paintBoardReveal(output:HTMLCanvasElement,source:HTMLCanvasEleme
   ctx.save();ctx.beginPath();ctx.rect(mark.x,mark.y,mark.width,mark.height);ctx.clip();ctx.drawImage(source,0,0);ctx.restore();
  }
 }
+
+/** Preserve written ink on buffering/end; leave four seconds for the conclusion. */
+export function boardSpeechRevealElapsed(previous:number,duration:number,clock:{elapsed:number;duration:number}|null|undefined):number {
+ if(!clock || !Number.isFinite(clock.elapsed) || !Number.isFinite(clock.duration) || clock.duration<=0)return previous;
+ return Math.max(previous,Math.min(duration,duration*Math.max(0,clock.elapsed)/Math.max(1,clock.duration-4)));
+}

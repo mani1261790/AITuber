@@ -1,3 +1,4 @@
+import { boardSpeechRevealElapsed } from "./board-reveal.ts";
 import {it,expect} from "vitest";
 import {planBoardReveal} from "./board-reveal.ts";
 it("orders characters and intact formula blocks with a pause between lines",()=>{
@@ -8,4 +9,12 @@ it("orders characters and intact formula blocks with a pause between lines",()=>
  expect(plan.duration).toBeGreaterThan(plan.marks[2]!.end);
  const large=planBoardReveal(Array.from({length:700},(_,i)=>({...marks[0]!,line:Math.floor(i/80)})));
  expect(large.duration).toBeCloseTo(30.45);
+});
+
+it("reveals with media time, holds ink on buffering and finishes before the spoken conclusion",()=>{
+ expect(boardSpeechRevealElapsed(0,30,{elapsed:8,duration:20})).toBe(15);
+ expect(boardSpeechRevealElapsed(15,30,null)).toBe(15);
+ expect(boardSpeechRevealElapsed(15,30,{elapsed:3,duration:20})).toBe(15);
+ expect(boardSpeechRevealElapsed(15,30,{elapsed:16,duration:20})).toBe(30);
+ expect(boardSpeechRevealElapsed(30,30,{elapsed:20,duration:20})).toBe(30);
 });
