@@ -212,6 +212,16 @@ describe("LiveSupplementService", () => {
     expect(supplementStore.list(session.id)[0]?.candidate).toMatchObject({drawing:{markdown:expect.stringContaining("x-h=0")}});
   });
 
+  it("rejects internal staging commentary in the introduction even if model review passes",async()=>{
+    const invalid={...candidate(),preparationSpeechText:"生成した板書を説明します。",blackboardMarkdown:"# 符号\n$x-h=0$",boardPatches:[]};
+    replaceSupplements(new FixedResponseLlmProvider([invalid,passReview,invalid,passReview]));
+    const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    vi.advanceTimersByTime(100);
+    questions.submit(questionInput(session.id,"符号を図で説明してください。"));
+    await supplements.drain(session.id);
+    expect(supplementStore.list(session.id)[0]).toMatchObject({status:"deferred",attempt:2});
+  });
+
   function replaceSupplements(provider: LlmProvider) { supplements.close(); supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => provider }); }
 });
 

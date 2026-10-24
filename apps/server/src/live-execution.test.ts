@@ -258,7 +258,7 @@ it("reuses reviewed candidate audio on playback instead of synthesizing it again
  expect(synthesize.mock.calls.filter(call=>call[0].text===candidate.speechText)).toHaveLength(1);
 });
 
-it.each([false,true])("speaks an introduction during board preparation and waits for both gates before diagram narration (arrival first=%s)",async arrivalFirst=>{
+it.each([[false,false],[true,false],[true,true]])("gates board narration after introduction (arrival first=%s, pause=%s)",async(arrivalFirst,pause)=>{
  vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
  const service=new FixedLectureService({store,playbackUnitMs:1000});resources.push(service);
  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
@@ -275,6 +275,13 @@ it.each([false,true])("speaks an introduction during board preparation and waits
  const action=current.direction!.actionId;
  if(arrivalFirst)service.reportStageProgress(session.id,current.epoch,action,undefined,true);
  expect(service.getSession(session.id).speech.text).toBe(candidate.preparationSpeechText);
+ if(pause){
+  service.command(session.id,{command:"pause"});
+  service.reportStageProgress(session.id,current.epoch,action,undefined,true);
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(service.getSession(session.id)).toMatchObject({status:"PAUSED",speech:{playing:false}});
+  expect(completed).not.toHaveBeenCalled();return;
+ }
  await vi.advanceTimersByTimeAsync(1000);
  if(!arrivalFirst){
   expect(service.getSession(session.id).speech.playing).toBe(false);
