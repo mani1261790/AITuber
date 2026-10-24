@@ -280,11 +280,11 @@ function ClassroomApp() {
 
           {session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
             <h2 id="checkpoint-title">確認問題</h2><div className="checkpoint-prompt"><RichText text={session.assessment.prompt} /></div>
-            {session.lastAssessmentEvaluation?.assessmentId === session.assessment.id && <p className={`assessment-result assessment-result--${session.lastAssessmentEvaluation.outcome}`}>{session.lastAssessmentEvaluation.outcome === "correct" ? "この問いで確認できました。" : session.lastAssessmentEvaluation.outcome === "incorrect" ? session.liveSupplement?.status === "deferred" ? "回答を見直して、もう一度答えてみましょう。" : "補足を踏まえて、もう一度答えてみましょう。" : "この回答だけでは確認できませんでした。"}</p>}
+            {session.lastAssessmentEvaluation?.assessmentId === session.assessment.id && <p className={`assessment-result assessment-result--${session.lastAssessmentEvaluation.outcome}`}>{session.lastAssessmentEvaluation.outcome === "correct" ? "正解です。" : session.lastAssessmentEvaluation.outcome === "incorrect" ? session.liveSupplement?.status === "deferred" ? "回答を見直して、もう一度答えてみましょう。" : "解説を聞いて、もう一度考えてみましょう。" : "この回答だけでは確認できませんでした。"}</p>}
             <form aria-busy={answering || session.status !== "CHECKPOINT"} onSubmit={(event) => void submitAnswer(event)}>
               {session.assessment.responseKind === "multiple-choice" ? <fieldset disabled={answering || session.status !== "CHECKPOINT"}><legend>回答を一つ選んでください</legend>{session.assessment.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => setAnswer(option)} /> <RichText text={option} /></label>)}</fieldset>
                 : <label className="answer-field">回答<textarea aria-label="回答" rows={3} disabled={answering || session.status !== "CHECKPOINT"} value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>}
-              <button type="submit" disabled={answering || session.status !== "CHECKPOINT" || !answer.trim()}>{answering ? "回答を確認中…" : session.status !== "CHECKPOINT" ? "解説中" : "回答を送る"}</button>
+              <button type="submit" disabled={answering || session.status !== "CHECKPOINT" || !answer.trim()}>{answering ? "回答を確認中…" : session.status !== "CHECKPOINT" ? session.liveSupplement?.status === "playing" ? "解説中" : "解説を準備中…" : "回答を送る"}</button>
             </form>
           </section>}
 

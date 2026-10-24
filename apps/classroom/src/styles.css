@@ -454,3 +454,7 @@ button { cursor: pointer; }
 .checkpoint .assessment-result { border: 0; border-radius: 8px; }
 .caption p { display: block; overflow: visible; font-size: clamp(14px,1.8cqw,18px); }
 @media (max-width: 700px) { .checkpoint { padding: 16px; } .checkpoint button { width: 100%; } }
+
+.checkpoint input[type=radio] { appearance: none; box-sizing: border-box; padding: 0; height: 20px; border: 2px solid #b6bfd3; border-radius: 50%; background: transparent; }
+.checkpoint input[type=radio]:checked { background: #e8eeff; box-shadow: inset 0 0 0 4px #22243d; }
+.checkpoint input[type=radio]:focus-visible { outline: 3px solid #aacbff; outline-offset: 3px; }
