@@ -343,7 +343,7 @@ it("keeps the completed board through its explanation and lowers the screen only
   const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
   expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(1);
   expect(plan.actions[0]).toMatchObject({type:"show_blackboard",drawing:{markdown:"# 要点\n◎ 頂点 → 式の形"}});
-  const slideIndex=plan.actions.findIndex(a=>a.type==="show_slides");
+  const slideIndex=plan.actions.findIndex(a=>a.type==="speak" && a.surface==="slides");
   expect(plan.actions.slice(0,slideIndex).filter(a=>a.type==="speak")).toHaveLength(2);
   expect(plan.actions.filter(a=>a.type==="show_blackboard")).toHaveLength(1);
   expect(plan.actions[slideIndex-1]).toEqual({type:"pause",durationMs:2000});

@@ -43,7 +43,7 @@ export type LessonAction =
   | { type: "show_slides" }
   | { type: "move_to"; position: StagePosition }
   | { type: "point_at"; targetId: string }
-  | { type: "speak"; text: string; gesture?: TeachingGesture; position?: StagePosition }
+  | { type: "speak"; text: string; gesture?: TeachingGesture; position?: StagePosition; surface?: "slides" }
   | { type: "release_point" }
   | { type: "pause"; durationMs: number }
   | { type: "camera"; view: StageCamera };

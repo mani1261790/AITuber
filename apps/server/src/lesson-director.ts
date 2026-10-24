@@ -27,7 +27,7 @@ const schema = { type: "object", additionalProperties: false, required: ["beats"
   },
 } } } };
 
-function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing): LessonAction[] {
+function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, currentSurface?: "board" | "slides"): LessonAction[] {
   let previous: BlackboardDrawing | undefined = currentBoard;
   const actions: LessonAction[] = [];
   let previousTarget: string | null | undefined;
@@ -40,7 +40,7 @@ function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing): LessonAc
       if (board && board.id !== previous?.id) actions.push({type:"show_blackboard",drawing:board});
       previous = board ?? previous;
       if (!previous) throw new Error("説明する黒板の内容がありません");
-    } else if (previous || actions.length === 0) { if (previous) actions.push({type:"pause",durationMs:2000}); actions.push({type:"show_slides"}); previous=undefined; }
+    } else if (previous || (actions.length === 0 && currentSurface !== "slides")) { if (previous) actions.push({type:"pause",durationMs:2000}); actions.push({type:"show_slides"}); previous=undefined; }
     const target=surface === "board" ? previous!.id : beat.targetId;
     const travel = beat.walkWhileSpeaking === true && !target;
     const requestedPosition = surface === "board" || (beat.position === "center" && target) ? "right" : beat.position;
@@ -53,7 +53,20 @@ function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing): LessonAc
     {type:"speak" as const,text:beat.text,gesture:beat.gesture === "listen" ? "explain" : beat.gesture ?? "explain",...(travel ? {position} : {})}, {type:"release_point" as const},
     );
   }
-  return actions;
+  const concurrent: LessonAction[] = [];
+  for (let i=0;i<actions.length;i++) {
+    if (actions[i]!.type === "show_slides") {
+      const speechIndex=actions.findIndex((action,index)=>index>i && action.type==="speak");
+      const speech=actions[speechIndex];
+      if (speech?.type==="speak" && !speech.position && !actions.slice(i+1,speechIndex).some(action=>action.type==="show_blackboard" || action.type==="pause" || action.type==="point_at")) {
+        concurrent.push({type:"speak",text:speech.text,gesture:speech.gesture ?? "explain",surface:"slides"});
+        // Pointing at an unseen slide is invalid; following beats may point once projected.
+        i=speechIndex;continue;
+      }
+    }
+    concurrent.push(actions[i]!);
+  }
+  return concurrent;
 }
 
 function pointingTargets(input: DirectorInput): string[] {
@@ -104,7 +117,7 @@ export function createLessonPlanner(provider: () => LlmProvider | null): LessonP
         }
       }
       validatePlan(result.value.beats.flatMap(beat=>[...(beat.targetId ? [{type:"point_at" as const,targetId:beat.targetId}] : []),{type:"speak" as const,text:beat.text}]),input);
-      const actions = compileBeats(result.value.beats, input.session.direction?.surface === "board" ? input.session.direction.drawing ?? undefined : undefined);
+      const actions = compileBeats(result.value.beats, input.session.direction?.surface === "board" ? input.session.direction.drawing ?? undefined : undefined, input.session.direction?.surface);
       validatePlan(actions,input);
       return { actions, source: "generated", reason: null };
       } catch (error) {

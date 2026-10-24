@@ -19,7 +19,7 @@ describe("LiveSupplementService", () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-14T00:00:00.000Z")); eventStore = new LectureEventStore(":memory:"); questionStore = new QuestionStore(":memory:"); supplementStore = new LiveSupplementStore(":memory:"); lecture = new FixedLectureService({ store: eventStore, courses: [quadraticFunctionsFixture], playbackUnitMs: 100 }); questions = new QuestionQueueService({ store: questionStore, context: (id) => ({ session: lecture.getSession(id), remainingMs: lecture.getRemainingTimeMs(id) }) }); supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => null }); });
   afterEach(() => { supplements.close(); lecture.close(); eventStore.close(); questionStore.close(); supplementStore.close(); vi.useRealTimers(); });
 
-  it("uses an independent review, plays a pre-generated bridge, and rejoins at the first unfinished unit", async () => {
+  it("finishes the current utterance before answering a prerequisite question and rejoins at the next unit", async () => {
     const provider = new FixedResponseLlmProvider([candidate(), passReview]); replaceSupplements(provider);
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 });
     vi.advanceTimersByTime(100);
@@ -28,18 +28,19 @@ describe("LiveSupplementService", () => {
     await supplements.drain(session.id);
 
     const ready = lecture.getSession(session.id);
-    expect(ready.liveSupplement).toMatchObject({ status: "bridging", origin: { lastCompletedUnitId: "unit.math.intro", nextUnitId: "unit.math.parts", unfinishedUnitIds: quadraticFunctionsFixture.schedule.orderedUnitIds.slice(1) } });
-    expect(ready.speech.text).toBe(quadraticFunctionsFixture.teachingUnits.find((unit) => unit.id === "unit.math.supplement-sign")!.speechText);
+    expect(ready.liveSupplement).toMatchObject({ status: "ready", origin: { lastCompletedUnitId: "unit.math.intro", nextUnitId: "unit.math.parts", unfinishedUnitIds: quadraticFunctionsFixture.schedule.orderedUnitIds.slice(1) } });
+    expect(ready.speech).toEqual(before.speech);
+    expect(ready.completedUnitIds).toEqual(before.completedUnitIds);
     expect(provider.calls.map((call) => call.purpose)).toEqual(["live-supplement", "live-supplement-review"]);
     expect(provider.calls.every((call) => !call.prompt.includes("http://") && !call.prompt.includes("https://"))).toBe(true);
 
-    vi.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(100);
     expect(lecture.getSession(session.id).liveSupplement?.status).toBe("playing");
     vi.advanceTimersByTime(100);
     const rejoined = lecture.getSession(session.id);
     expect(rejoined.liveSupplement).toMatchObject({ status: "completed" });
-    expect(rejoined.completedUnitIds).toEqual(["unit.math.intro"]);
-    expect(rejoined.currentUnitId).toBe("unit.math.parts");
+    expect(rejoined.completedUnitIds).toEqual(["unit.math.intro", "unit.math.parts"]);
+    expect(rejoined.currentUnitId).toBe("unit.math.graph");
     expect(rejoined.boardCorrections).toEqual([{ sceneId: "scene.math.form", targetId: "target.math.h-term", content: "x - h = 0 なら x = h" }]);
     expect(questions.list(session.id)[0]).toMatchObject({ status: "answered", resolution: "answered" });
     expect(eventStore.loadEvents(session.id).map((event) => event.type)).toEqual(expect.arrayContaining(["lesson.question_accepted", "lesson.supplement_completed", "lesson.rejoin_verified"]));

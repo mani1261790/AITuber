@@ -51,9 +51,8 @@ export class LiveSupplementService {
     const origin = this.#lecture.captureSupplementOrigin(sessionId, question.semanticTargetId);
     const record = this.#store.create({ sessionId, questionId: question.id, origin });
     const bridge = chooseBridge(course, question.text);
-    const recentCompleted = this.#store.list(sessionId).findLast((item) => item.status === "completed" && Date.now() - Date.parse(item.updatedAt) <= 30_000);
-    const queueContinues = this.#questions.list(sessionId).filter((item) => item.resolution === "pending").length > 1;
-    const interrupt = question.priority.prerequisiteForNext || Boolean(recentCompleted) || queueContinues;
+    // Questions wait for the current explanation to finish, including prerequisite questions.
+    const interrupt = false;
     let view = toView(record);
     try {
       this.#lecture.announceSupplement(sessionId, view, { interrupt, bridgeText: interrupt ? bridge.text : null, bridgeTargetIds: bridge.targetIds, onBridgeStarted: (occurredAt, audible) => { if (!audible) return; const current = this.#store.get(record.id); this.#store.update({ id: record.id, status: current.status, firstAudioAt: current.firstAudioAt ?? occurredAt }); } });

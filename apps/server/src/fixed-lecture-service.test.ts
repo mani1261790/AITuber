@@ -21,6 +21,40 @@ describe("FixedLectureService", () => {
     vi.useRealTimers();
   });
 
+  it.each([true,false])("overlaps projection and speech and waits for both (stage finishes first: %s)", async stageFirst => {
+    service.close();
+    service = new FixedLectureService({store,courses:[quadraticFunctionsFixture],playbackUnitMs:100,planner:async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText,surface:"slides"}]})});
+    const session=service.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    await vi.advanceTimersByTimeAsync(0);
+    const started=service.getSession(session.id);
+    expect(started.direction).toMatchObject({phase:"projecting",surface:"slides"});
+    expect(started.speech.playing).toBe(true);
+    if(stageFirst) service.completeStageAction(session.id,started.epoch,started.direction!.actionId);
+    else await vi.advanceTimersByTimeAsync(100);
+    expect(service.getSession(session.id).progress.completed).toBe(0);
+    if(stageFirst) await vi.advanceTimersByTimeAsync(100);
+    else service.completeStageAction(session.id,started.epoch,started.direction!.actionId);
+    expect(service.getSession(session.id).progress.completed).toBe(1);
+  });
+
+  it("prepares speech during movement, reuses it once and cancels speculative synthesis on pause", async () => {
+    service.close();
+    const requests: {text:string;signal:AbortSignal|undefined}[]=[];
+    const provider:TextToSpeechProvider={provider:"fake",model:"fixed",synthesize:async(request,options)=>{requests.push({text:request.text,signal:options?.signal});return makeArtifact(request.text);}};
+    service=new FixedLectureService({store,courses:[quadraticFunctionsFixture],speechProvider:provider,voiceId:"voice.standard",planner:async input=>({source:"generated",reason:null,actions:[{type:"move_to",position:"left"},{type:"speak",text:input.unit.speechText}]})});
+    const session=service.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    await vi.advanceTimersByTimeAsync(0);
+    const moving=service.getSession(session.id);
+    expect(moving.direction?.phase).toBe("moving");
+    expect(requests.length).toBe(2);
+    service.completeStageAction(session.id,moving.epoch,moving.direction!.actionId);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(service.getSession(session.id).speech.playing).toBe(true);
+    expect(requests.length).toBe(2);
+    service.command(session.id,{command:"pause"});
+    expect(requests[1]!.signal?.aborted).toBe(true);
+  });
+
   it("runs teaching units automatically, waits for the checkpoint, and completes after an answer", () => {
     const started = service.createSession({
       coursePackageId: quadraticFunctionsFixture.id,

@@ -69,13 +69,13 @@ it("halts when the playback owner disconnects, without another viewer taking ove
  await vi.advanceTimersByTimeAsync(5001);
  expect(service.getSession(session.id)).toMatchObject({status:"PAUSED",progress:{completed:0}});
 });
-it("waits for the current screen action before preparing speech",async()=>{
+it("prepares speech early but waits for explicit projection before dependent explanation",async()=>{
  vi.useFakeTimers();const voice=new TestToneSpeechProvider(1000);const synthesize=vi.spyOn(voice,"synthesize");
  const service=create(async()=>({source:"generated",reason:null,actions:[{type:"show_slides"},{type:"speak",text:"投影ができました"}]}),voice);
  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  const view=service.getSession(session.id);expect(view.direction?.phase).toBe("projecting");
- await vi.advanceTimersByTimeAsync(3000);expect(synthesize).not.toHaveBeenCalled();
- service.completeStageAction(session.id,view.epoch,"old-action");expect(synthesize).not.toHaveBeenCalled();
+ await vi.advanceTimersByTimeAsync(3000);expect(synthesize).toHaveBeenCalledTimes(1);expect(service.getSession(session.id).speech.playing).toBe(false);
+ service.completeStageAction(session.id,view.epoch,"old-action");expect(service.getSession(session.id).speech.playing).toBe(false);
  service.completeStageAction(session.id,view.epoch,view.direction!.actionId,"owner");await vi.advanceTimersByTimeAsync(0);
  expect(synthesize).toHaveBeenCalledTimes(1);
  expect(service.getSession(session.id).speech.text).toBe("投影ができました");
@@ -97,7 +97,8 @@ it("halts a disconnected move instead of starting speech",async()=>{
  await vi.advanceTimersByTimeAsync(11999);expect(service.getSession(session.id).status).toBe("TEACHING");
  await vi.advanceTimersByTimeAsync(2);
  expect(service.getSession(session.id)).toMatchObject({status:"PAUSED",progress:{completed:0},speech:{failure:expect.stringContaining("移動完了")}});
- expect(synthesize).not.toHaveBeenCalled();
+ expect(synthesize).toHaveBeenCalledTimes(1);
+ expect(synthesize.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
 });
 it("bounds a continually reported move to ninety seconds",async()=>{
  vi.useFakeTimers();

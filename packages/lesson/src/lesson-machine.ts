@@ -131,7 +131,7 @@ function reduceCurrentEpoch(state: LessonState, event: LessonEvent): LessonState
         ? { ...state, status: "BRANCHING", branchOriginUnitId: state.activeUnitId }
         : { ...state, status: "TEACHING" };
     case "QUESTION_ACCEPTED":
-      requireStatus(state, event, "TEACHING");
+      requireStatus(state, event, "TEACHING", "CHECKPOINT");
       return { ...state, status: "BRANCHING", branchOriginUnitId: state.activeUnitId };
     case "QUESTION_DEFERRED":
       requireStatus(state, event, "BRANCHING");
