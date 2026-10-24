@@ -240,3 +240,20 @@ it.each([false,true])("preserves classroom waiting across restart, including ope
   service.prepareSupplementAudio(session.id,session.epoch,"古い候補です。");
   expect(synthesize).toHaveBeenCalledTimes(count);
  });
+
+it("reuses reviewed candidate audio on playback instead of synthesizing it again",async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ const provider=new TestToneSpeechProvider(1000),synthesize=vi.spyOn(provider,"synthesize");
+ const service=new FixedLectureService({store,speechProvider:provider,voiceId:"test.voice",playbackUnitMs:1000});resources.push(service);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const origin=service.captureSupplementOrigin(session.id,"target.math.vertex-form");
+ const candidate={speechText:"括弧がゼロになる値を考えます。",captionText:"括弧がゼロになる値",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[]};
+ service.prepareSupplementAudio(session.id,session.epoch,candidate.speechText);
+ expect(service.getSession(session.id).speech.text).not.toBe(candidate.speechText);
+ const started=vi.fn();
+ service.announceSupplement(session.id,{id:"supplement.reviewed",questionId:"question.reviewed",status:"preparing",attempt:0,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null},{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+ service.queueSupplement(session.id,{id:"supplement.reviewed",questionId:"question.reviewed",status:"ready",attempt:1,origin,candidate,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null},{onPlaybackStarted:started,onCompleted(){}});
+ await vi.advanceTimersByTimeAsync(2000);
+ expect(started).toHaveBeenCalledTimes(1);
+ expect(synthesize.mock.calls.filter(call=>call[0].text===candidate.speechText)).toHaveLength(1);
+});
