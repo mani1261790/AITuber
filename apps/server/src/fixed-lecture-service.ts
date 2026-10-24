@@ -521,7 +521,7 @@ export class FixedLectureService {
         // The ink is ready; keep speaking while clearing the board for learners.
         // A new action id prevents a repeated drawing receipt acknowledging the walk.
         this.#directions.set(runtime,{...direction,actionId:randomUUID(),phase:"moving",position:"right",traveling:true,targetId:null});
-        projection.timer=setTimeout(projection.fail,12000);
+        projection.started=Date.now();projection.timer=setTimeout(projection.fail,12000);
         this.#publish(runtime);return;
       }
       projection.stageDone=true;
@@ -758,7 +758,7 @@ export class FixedLectureService {
     if (candidate.drawing) {
       this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
       const fail=()=>this.#haltExecution(runtime,"板書の完了を確認できませんでした。教室画面を確認して再開してください。");
-      this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>this.#completeSupplement(runtime,pending)});
+      this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>{runtime.timer=setTimeout(()=>{runtime.timer=null;this.#completeSupplement(runtime,pending);},2000);}});
       this.#boardSpeechStart.set(runtime,()=>this.#playSupplementSpeech(runtime,candidate,pending));
       this.#publish(runtime);
     } else this.#playSupplementSpeech(runtime, candidate, pending);
