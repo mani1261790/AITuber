@@ -162,6 +162,20 @@ describe("LiveSupplementService", () => {
     } finally {rmSync(directory,{recursive:true,force:true});}
   });
 
+  it("reviews the actual learner question and repairs a missing requested visual once", async () => {
+    const question="式変形の途中を黒板で見せてください。";
+    const noBoard={...candidate(),boardPatches:[],corrections:[]};
+    const missingVisual={...passReview,gates:passReview.gates.map(g=>g.id==="board"?{...g,passed:false,rationale:"必要な途中式が表示されていない"}:g)};
+    const provider=new FixedResponseLlmProvider([noBoard,missingVisual,{...noBoard,blackboardMarkdown:"# 符号\n$x-h=0$\n→ $x=h$"},passReview]);replaceSupplements(provider);
+    const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    questions.submit(questionInput(session.id,question));await supplements.drain(session.id);
+    expect(provider.calls.map(c=>c.purpose)).toEqual(["live-supplement","live-supplement-review","live-supplement","live-supplement-review"]);
+    expect(provider.calls[1]!.prompt).toContain(question);
+    expect(provider.calls[0]!.systemInstruction).toContain("For a learner question");
+    expect(provider.calls[0]!.systemInstruction).not.toContain("Assessment remediation must use speech and captions only");
+    expect(supplementStore.list(session.id)[0]?.candidate).toMatchObject({drawing:{markdown:expect.stringContaining("x-h=0")}});
+  });
+
   function replaceSupplements(provider: LlmProvider) { supplements.close(); supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => provider }); }
 });
 
