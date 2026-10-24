@@ -141,35 +141,40 @@ describe("lesson director",()=>{
   });
 });
 
-it("waits for SVG readiness and movement before speaking, then returns to slides",async()=>{
+it("speaks after writing starts, waits for both completions and leaves reading time",async()=>{
   vi.useFakeTimers();
   const drawing={id:"blackboard.test",svg:"<svg/>",purpose:"補足"};
-  const planner:LessonPlanner=async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing},{type:"move_to",position:"left"},{type:"point_at",targetId:drawing.id},{type:"speak",text:"生成した図の説明"},{type:"show_slides"}]});
-  const runtime=setup(planner);
+  const runtime=setup(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing},{type:"speak",text:"式の左右を整理します。"},{type:"show_slides"}]}));
   try {
     await vi.advanceTimersByTimeAsync(0);
     let session=runtime.service.getSession(runtime.session.id);
-    expect(session.direction?.phase).toBe("drawing"); expect(session.speech.playing).toBe(false);
-    runtime.service.completeStageAction(session.id,session.epoch+1,session.direction!.actionId);
+    expect(session.speech.playing).toBe(false);
+    runtime.service.reportStageProgress(session.id,session.epoch+1,session.direction!.actionId,undefined,true);
+    expect(runtime.service.getSession(session.id).speech.playing).toBe(false);
+    runtime.service.reportStageProgress(session.id,session.epoch,session.direction!.actionId,undefined,true);
+    expect(runtime.service.getSession(session.id).speech.playing).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
     expect(runtime.service.getSession(session.id).direction?.phase).toBe("drawing");
     runtime.service.completeStageAction(session.id,session.epoch,session.direction!.actionId);
-    session=runtime.service.getSession(session.id); expect(session.direction?.phase).toBe("moving");
+    session=runtime.service.getSession(session.id);
+    expect(session.direction?.phase).toBe("moving");
     runtime.service.completeStageAction(session.id,session.epoch,session.direction!.actionId);
-    await vi.advanceTimersByTimeAsync(550);
-    expect(runtime.service.getSession(session.id).speech.text).toBe("生成した図の説明");
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(runtime.service.getSession(session.id).direction?.surface).toBe("board");
+    await vi.advanceTimersByTimeAsync(1);
     expect(runtime.service.getSession(session.id).direction?.surface).toBe("slides");
-  } finally {runtime.close();}
+  }finally{runtime.close();}
 });
-it("does not speak diagram-dependent text if rendering is never acknowledged",async()=>{
+it("does not speak when a board renderer never reports readiness",async()=>{
   vi.useFakeTimers();
   const runtime=setup(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing:{id:"blackboard.test",svg:"<svg/>",purpose:"図"}},{type:"speak",text:"見えていない図の説明"}]}));
-  try {
+  try{
     await vi.advanceTimersByTimeAsync(12000);
     const session=runtime.service.getSession(runtime.session.id);
-    expect(session.direction?.surface).toBe("slides");
+    expect(session.status).toBe("PAUSED");
+    expect(session.speech.playing).toBe(false);
     expect(session.speech.text).not.toBe("見えていない図の説明");
-  } finally {runtime.close();}
+  }finally{runtime.close();}
 });
 
 it.each(["arrival-first", "speech-first"])("waits for both speech and concurrent travel: %s", async (order) => {

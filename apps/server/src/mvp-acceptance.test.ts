@@ -73,8 +73,8 @@ describe("MVP acceptance path", () => {
     expect(results.every((result) => result.pauseMs < 250)).toBe(true);
     expect(results.every((result) => result.supplementCompletedMs < 8_000)).toBe(true);
     expect(results.every((result) => result.finalEvidenceStates.includes("confirmed-for-item"))).toBe(true);
-    expect(provider.calls.filter((call) => call === "live_supplement")).toHaveLength(3);
-    expect(provider.calls.filter((call) => call === "live_supplement_review")).toHaveLength(3);
+    expect(provider.calls.filter((call) => call === "live_supplement")).toHaveLength(6);
+    expect(provider.calls.filter((call) => call === "live_supplement_review")).toHaveLength(6);
     process.stdout.write(`MVP_ACCEPTANCE ${JSON.stringify({ courses: results, p95: { questionAcceptedMs: percentile95(results.map((result) => result.questionAcceptedMs)), pauseMs: percentile95(results.map((result) => result.pauseMs)), supplementCompletedMs: percentile95(results.map((result) => result.supplementCompletedMs)) } })}\n`);
   }, 30_000);
 

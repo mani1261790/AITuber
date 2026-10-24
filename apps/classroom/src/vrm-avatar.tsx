@@ -30,7 +30,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -384,7 +384,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
           if(boardTexture)boardTexture.needsUpdate=true;
           setLessonMap(boardMaterial,boardTexture);
         }
-        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId);}
+        if(time-lastProgressReport>2){lastProgressReport=time;stageRef.current.onStageProgress?.(drawingDirection.actionId, propFrame?.kind === "write" && elapsed > 0);}
         if(propFrame?.done && (propAcknowledged!==drawingDirection.actionId || time-propAcknowledgedAt>1)){
           propAcknowledged=drawingDirection.actionId;propAcknowledgedAt=time;stageRef.current.onStageComplete?.(drawingDirection.actionId);
         }

@@ -59,6 +59,7 @@ export class FixedLectureService {
   readonly #requireLiveExecution: boolean;
   readonly #directions = new WeakMap<RuntimeSession, LessonDirectionView>();
   readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
+  readonly #boardSpeechStart = new WeakMap<RuntimeSession, () => void>();
   readonly #speechNext = new WeakMap<RuntimeSession, () => void>();
   readonly #travelArrived = new WeakSet<RuntimeSession>();
   readonly #drawingWait = new WeakMap<RuntimeSession, {started:number; fail:()=>void}>();
@@ -384,7 +385,7 @@ export class FixedLectureService {
       if (!request.answer?.trim()) throw new TypeError("answer is required");
       this.#apply(runtime, { type: "ANSWER_RECEIVED", epoch: runtime.state.epoch });
       this.#recordAnswer(runtime, request.answer.trim());
-      const supplementRequired = request.assessmentEvaluation?.outcome === "incorrect";
+      const supplementRequired = Boolean(request.assessmentEvaluation && (request.assessmentEvaluation.outcome !== "correct" || !request.assessmentEvaluation.linkedSupplementId));
       this.#apply(runtime, { type: "BRANCH_SELECTED", epoch: runtime.state.epoch, supplementRequired });
       if (request.assessmentEvaluation) runtime.lastAssessmentEvaluation = request.assessmentEvaluation;
       if (!supplementRequired) runtime.assessmentId = null;
@@ -473,15 +474,16 @@ export class FixedLectureService {
     this.#runAction(runtime,unit.id,epoch,plan.actions,0);
   }
 
-  reportStageProgress(sessionId: string, epoch: number, actionId: string, participantId?: string) {
+  reportStageProgress(sessionId: string, epoch: number, actionId: string, participantId?: string, writingStarted?: boolean) {
     const runtime = this.#requireSession(sessionId);
     const direction = this.#directions.get(runtime);
     if (runtime.state.epoch !== epoch || direction?.actionId !== actionId) return;
     const projection = this.#projection.get(runtime);
     if (projection) {
       if (!this.#ownsExecution(runtime,participantId) || projection.stageDone) return;
+      if (writingStarted === true && direction.phase === "drawing") { const begin = this.#boardSpeechStart.get(runtime); this.#boardSpeechStart.delete(runtime); begin?.(); }
       clearTimeout(projection.timer);
-      projection.timer=setTimeout(projection.fail,Math.max(1,Math.min(12_000,90_000-(Date.now()-projection.started))));
+      projection.timer=setTimeout(projection.fail,Math.max(1,Math.min(12_000,(direction.phase === "drawing" ? 120_000 : 90_000)-(Date.now()-projection.started))));
       return;
     }
     if (!this.#stageNext.has(runtime) && !direction.traveling) return;
@@ -509,6 +511,7 @@ export class FixedLectureService {
     if (projection) {
       if (!this.#ownsExecution(runtime,participantId)) return;
       clearTimeout(projection.timer); projection.stageDone=true;
+      const begin = this.#boardSpeechStart.get(runtime); this.#boardSpeechStart.delete(runtime); begin?.();
       const direction=this.#directions.get(runtime)!;
       this.#directions.set(runtime,{...direction,phase:"speaking",traveling:false,targetId:direction.surface==="board" ? direction.drawing?.id ?? null : null}); this.#publish(runtime);
       if (projection.speechDone) {this.#projection.delete(runtime);projection.next();}
@@ -560,6 +563,18 @@ export class FixedLectureService {
       }
       case "show_blackboard": {
         update({phase:"drawing",surface:"board",drawing:action.drawing,targetId:null});
+        const speechIndex = actions.findIndex((item, offset) => offset > index && item.type === "speak");
+        const speech = actions[speechIndex];
+        if (speech?.type === "speak" && !actions.slice(index + 1, speechIndex).some(item => item.type === "show_slides" || item.type === "show_blackboard" || item.type === "pause")) {
+          const after = () => this.#runAction(runtime,unitId,epoch,[{type:"move_to",position:"right"},{type:"pause",durationMs:2000},...actions.slice(speechIndex+1)],0);
+          const fail = () => this.#haltExecution(runtime,"板書の表示完了を確認できませんでした。教室画面を確認して再開してください。");
+          const pending = {started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:after};
+          this.#projection.set(runtime,pending);
+          this.#previousSpeech.set(runtime,speech.text);
+          this.#speechNext.set(runtime,()=>{pending.speechDone=true;if(pending.stageDone){this.#projection.delete(runtime);after();}});
+          this.#boardSpeechStart.set(runtime,()=>this.#speakUnit(runtime,unitId,speech.text));
+          return;
+        }
         this.#stageNext.set(runtime,next);
         // Never speak about an illustration until a classroom has rendered it.
         const fail = () => {
@@ -717,7 +732,7 @@ export class FixedLectureService {
     runtime.liveSupplement = { ...pending.view, status: "playing" };
     // Prepare the continuation while the answer is drawn/spoken, using its actual content.
     const nextUnit = runtime.course.teachingUnits.find(unit=>unit.id===runtime.state.activeUnitId);
-    if (this.#planner && nextUnit && !runtime.assessmentId) {
+    if (this.#planner && nextUnit && (!runtime.assessmentId || runtime.lastAssessmentEvaluation?.outcome === "correct")) {
       const controller=new AbortController();
       const session=this.getSession(runtime.id);
       const direction=this.#directions.get(runtime);
@@ -729,18 +744,10 @@ export class FixedLectureService {
     }
     this.#publish(runtime);
     if (candidate.drawing) {
-      const epoch = runtime.state.epoch;
-      const move = () => {
-        if (runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
-        this.#directions.set(runtime,{actionId:randomUUID(),phase:"speaking",traveling:true,position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
-        const fail=()=>this.#haltExecution(runtime,"先生の移動完了を確認できませんでした。教室画面を確認して再開してください。");
-        this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>this.#completeSupplement(runtime,pending)});
-        this.#playSupplementSpeech(runtime,candidate,pending);
-      };
       this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
-      this.#stageNext.set(runtime,move);
-      const fail=()=>{ this.#drawingWait.delete(runtime); this.#stageNext.delete(runtime); if (pending.onFailure) pending.onFailure("黒板画像を表示できませんでした"); else this.deferSupplement(runtime.id,{...pending.view,status:"deferred",failure:"黒板画像を表示できませんでした"}); };
-      this.#drawingWait.set(runtime,{started:Date.now(),fail});runtime.timer=setTimeout(fail,12000);
+      const fail=()=>this.#haltExecution(runtime,"板書の完了を確認できませんでした。教室画面を確認して再開してください。");
+      this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>this.#completeSupplement(runtime,pending)});
+      this.#boardSpeechStart.set(runtime,()=>this.#playSupplementSpeech(runtime,candidate,pending));
       this.#publish(runtime);
     } else this.#playSupplementSpeech(runtime, candidate, pending);
   }
@@ -784,6 +791,7 @@ export class FixedLectureService {
     runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, status: "completed" } : null;
     this.#questionAnswer.set(runtime,pending.view.candidate?.speechText ?? "");
     runtime.pendingSupplement = null; this.#restDirection(runtime); this.#publish(runtime); pending.onCompleted();
+    if (runtime.assessmentId && runtime.lastAssessmentEvaluation?.assessmentId === runtime.assessmentId && runtime.lastAssessmentEvaluation.outcome === "correct") runtime.assessmentId = null;
     if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch }); else this.#schedule(runtime);
   }
 
@@ -871,7 +879,7 @@ export class FixedLectureService {
     const projection = this.#projection.get(runtime); if (projection) clearTimeout(projection.timer); this.#projection.delete(runtime);
     this.#preparedSpeech.get(runtime)?.forEach(item=>item.controller.abort()); this.#preparedSpeech.delete(runtime);
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
-    this.#speechNext.delete(runtime); this.#stageNext.delete(runtime); this.#travelArrived.delete(runtime);
+    this.#boardSpeechStart.delete(runtime); this.#speechNext.delete(runtime); this.#stageNext.delete(runtime); this.#travelArrived.delete(runtime);
     this.#clearDirection(runtime);
     runtime.speechAbort?.abort(new DOMException("Lecture epoch changed", "AbortError"));
     runtime.speechAbort = null;
@@ -910,9 +918,18 @@ function dictionaryVersion(dictionary: ReadonlyCoursePackage["pronunciationDicti
 }
 
 export function applyPronunciationDictionary(text: string, dictionary: ReadonlyCoursePackage["pronunciationDictionary"]): string {
-  return [...dictionary].sort((left, right) => right.surface.length - left.surface.length).reduce(
-    (result, entry) => result.replaceAll(entry.surface, entry.reading), text,
-  );
+  // One pass prevents a short entry from changing a reading emitted by a longer one.
+  // Course-specific readings take precedence over the shared technical vocabulary.
+  const entries = new Map([
+    ["Large Language Model", "ラージ・ランゲージ・モデル"],
+    ["LLM", "エルエルエム"],
+    ...dictionary.map(entry => [entry.surface, entry.reading] as [string, string]),
+  ]);
+  const surfaces = [...entries.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!surfaces.length) return text;
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(surfaces.map(surface => `${/^[A-Za-z]/.test(surface) ? "(?<![A-Za-z0-9_])" : ""}${escape(surface)}${/[A-Za-z]$/.test(surface) ? "(?![A-Za-z0-9_])" : ""}`).join("|"), "giu");
+  return text.replace(pattern, matched => entries.get(matched) ?? entries.get(surfaces.find(surface => surface.toLowerCase() === matched.toLowerCase())!) ?? matched);
 }
 
 function visibleStatus(status: LessonState["status"]): FixedSessionView["status"] {

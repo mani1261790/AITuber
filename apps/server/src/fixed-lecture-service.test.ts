@@ -257,6 +257,14 @@ describe("FixedLectureService", () => {
 });
 
 describe("pronunciation dictionary", () => {
+  it("reads English technical terms without replacing parts of other words or reprocessing readings", () => {
+    expect(applyPronunciationDictionary("Large Language Modelとlarge language model、LLMとLLMs", []))
+      .toBe("ラージ・ランゲージ・モデルとラージ・ランゲージ・モデル、エルエルエムとLLMs");
+    expect(applyPronunciationDictionary("ABCとAB", [{surface:"ABC",reading:"ABシー"},{surface:"AB",reading:"エービー"}]))
+      .toBe("ABシーとエービー");
+    expect(applyPronunciationDictionary("Large Language Model", [{surface:"Large Language Model",reading:"大規模言語モデル"}]))
+      .toBe("大規模言語モデル");
+  });
   it("applies longer entries first to the finalized speech and subtitle text", () => {
     expect(applyPronunciationDictionary("DNAポリメラーゼとDNA", [
       { surface: "DNA", reading: "ディーエヌエー" },

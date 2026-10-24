@@ -1,3 +1,4 @@
+import { speechCaption } from "./speech-caption.ts";
 import { useSpeechEnvelope } from "./use-speech-envelope.ts";
 import { startSpeechAudio } from "./speech-audio.ts";
 import { trackSpeechPlayback } from "./speech-playback.ts";
@@ -98,11 +99,13 @@ function ClassroomApp() {
   useEffect(() => {
     const startedAt = session?.speech.startedAt;
     if (!startedAt || !session.speech.playing) { setSpeechElapsedMs(0); return; }
-    const update = () => setSpeechElapsedMs(Math.max(0, Date.now() - Date.parse(startedAt)));
+    const update = () => setSpeechElapsedMs(session.speech.audioUrl
+      ? Math.max(0, (audioRef.current?.currentTime ?? 0) * 1000)
+      : Math.max(0, Date.now() - Date.parse(startedAt)));
     update();
     const timer = window.setInterval(update, 100);
     return () => window.clearInterval(timer);
-  }, [session?.speech.startedAt, session?.speech.playing]);
+  }, [session?.speech.startedAt, session?.speech.playing, session?.speech.audioUrl]);
 
   useEffect(() => {
     if (!session?.speech.playing || !session.speech.audioUrl) setAudioPlaybackActive(false);
@@ -270,18 +273,18 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} direction={session.direction} onStageProgress={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
+            <LessonStage slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
             <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button>{audioBlocked && session.speech.audioUrl && <button onClick={() => retrySpeechRef.current?.()}>音声を再生</button>}</div>
-            {(captions || session.speech.mode === "caption-fallback") && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText}</p></section>}
+            {(captions || session.speech.mode === "caption-fallback") && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />{supplementCandidate ? "ライブ補足" : "字幕"}</h2><p>{speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary) || (session.speech.audioUrl ? "" : session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText)}</p></section>}
           </section>}
 
-          {session.status === "CHECKPOINT" && session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
-            <p className="section-kicker">CHECKPOINT</p><h2 id="checkpoint-title">確認問題</h2><div className="checkpoint-prompt"><RichText text={session.assessment.prompt} /></div>
+          {session.assessment && <section className="checkpoint" aria-labelledby="checkpoint-title">
+            <h2 id="checkpoint-title">確認問題</h2><div className="checkpoint-prompt"><RichText text={session.assessment.prompt} /></div>
             {session.lastAssessmentEvaluation?.assessmentId === session.assessment.id && <p className={`assessment-result assessment-result--${session.lastAssessmentEvaluation.outcome}`}>{session.lastAssessmentEvaluation.outcome === "correct" ? "この問いで確認できました。" : session.lastAssessmentEvaluation.outcome === "incorrect" ? session.liveSupplement?.status === "deferred" ? "回答を見直して、もう一度答えてみましょう。" : "補足を踏まえて、もう一度答えてみましょう。" : "この回答だけでは確認できませんでした。"}</p>}
-            <form onSubmit={(event) => void submitAnswer(event)}>
-              {session.assessment.responseKind === "multiple-choice" ? <fieldset><legend>回答を一つ選んでください</legend>{session.assessment.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => setAnswer(option)} /> <RichText text={option} /></label>)}</fieldset>
-                : <label className="answer-field">回答<input value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>}
-              <button type="submit" disabled={answering || !answer.trim()}>回答して続ける</button>
+            <form aria-busy={answering || session.status !== "CHECKPOINT"} onSubmit={(event) => void submitAnswer(event)}>
+              {session.assessment.responseKind === "multiple-choice" ? <fieldset disabled={answering || session.status !== "CHECKPOINT"}><legend>回答を一つ選んでください</legend>{session.assessment.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => setAnswer(option)} /> <RichText text={option} /></label>)}</fieldset>
+                : <label className="answer-field">回答<textarea aria-label="回答" rows={3} disabled={answering || session.status !== "CHECKPOINT"} value={answer} onChange={(event) => setAnswer(event.target.value)} /></label>}
+              <button type="submit" disabled={answering || session.status !== "CHECKPOINT" || !answer.trim()}>{answering ? "回答を確認中…" : session.status !== "CHECKPOINT" ? "解説中" : "回答を送る"}</button>
             </form>
           </section>}
 

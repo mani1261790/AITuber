@@ -21,8 +21,8 @@ export interface LectureApi {
   getSpeechAudio(sessionId: string, epoch: number, cacheKey: string): { readonly audio: Uint8Array; readonly mimeType: string };
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView;
   reportPlayback?(sessionId: string, epoch: number, audioUrl: string, remainingMs: number, participantId?: string, playbackState?: string, startedAt?: string): void;
-  completeStageAction?(sessionId: string, epoch: number, actionId: string, participantId?: string): void;
-  reportStageProgress?(sessionId: string, epoch: number, actionId: string, participantId?: string): void;
+  completeStageAction?(sessionId: string, epoch: number, actionId: string, participantId?: string, writingStarted?: boolean): void;
+  reportStageProgress?(sessionId: string, epoch: number, actionId: string, participantId?: string, writingStarted?: boolean): void;
 }
 
 const unavailableApi: LectureApi = {
@@ -95,9 +95,9 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
       const stageMatch = url.pathname.match(/^\/api\/classrooms\/([^/]+)\/stage-(complete|progress)$/);
       if (request.method === "POST" && stageMatch) {
         requireSurface(request,"classroom");
-        const body = await readJson<{accessToken:string;epoch:number;actionId:string}>(request);
+        const body = await readJson<{accessToken:string;epoch:number;actionId:string;writingStarted?:boolean}>(request);
         const access = classrooms.authenticate(stageMatch[1]!,body.accessToken);
-        if (stageMatch[2] === "progress") api.reportStageProgress?.(access.sessionId,body.epoch,body.actionId,access.participant.id);
+        if (stageMatch[2] === "progress") api.reportStageProgress?.(access.sessionId,body.epoch,body.actionId,access.participant.id,body.writingStarted === true);
         else api.completeStageAction?.(access.sessionId,body.epoch,body.actionId,access.participant.id);
         return json(response,200,{ok:true});
       }

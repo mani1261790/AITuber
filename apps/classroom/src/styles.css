@@ -436,3 +436,21 @@ button { cursor: pointer; }
 .board-markdown .katex-display { margin: 0; text-align: left; }
 /* KaTeX's glyph bearings can extend beyond its measured inline box when rasterized. */
 .lesson-image-source--board .board-markdown .formula { overflow: visible; padding: 4px 10px; }
+
+/* Keep the whole question and its answer controls visible together. */
+.broadcast-main:has(.checkpoint) { overflow-y: auto; container-type: inline-size; justify-content: flex-start; }
+.broadcast-main:has(.checkpoint) .stage { width: min(100%, 68vh); flex-shrink: 0; }
+.checkpoint { flex: none; max-height: none; overflow: visible; width: 100%; padding: 20px; }
+.checkpoint h2 { font-size: 1.2rem; margin-bottom: 12px; }
+.checkpoint-prompt { font-size: 1rem; line-height: 1.7; }
+.checkpoint form { display: grid; gap: 12px; }
+.checkpoint fieldset { margin: 0; }
+.checkpoint fieldset label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.checkpoint fieldset label:has(input:checked) { background: #333c51; border-color: #a8c7eb; }
+.checkpoint input[type=radio] { min-height: 20px; width: 20px; margin-top: 3px; flex: 0 0 20px; }
+.checkpoint .answer-field { display: grid; gap: 8px; }
+.checkpoint textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 88px; font: inherit; padding: 12px; color: inherit; background: #22243d; border: 1px solid #697088; border-radius: 8px; }
+.checkpoint button { justify-self: start; min-height: 44px; padding: 10px 22px; font-size: 1rem; }
+.checkpoint .assessment-result { border: 0; border-radius: 8px; }
+.caption p { display: block; overflow: visible; font-size: clamp(14px,1.8cqw,18px); }
+@media (max-width: 700px) { .checkpoint { padding: 16px; } .checkpoint button { width: 100%; } }

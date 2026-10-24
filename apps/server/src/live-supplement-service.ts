@@ -144,7 +144,7 @@ export class LiveSupplementService {
 
 function questionSurfaceInstruction(question: ClassroomQuestionView): string {
   return question.origin === "pedagogy-trigger"
-    ? "Assessment remediation must use speech and captions only: blackboardMarkdown=null, boardPatches=[], corrections=[]. Explain across the supplied related scenes without overwriting them. "
+    ? "Explain the reasoning behind the assessment answer, including correct answers. Use the existing slide when sufficient. A compact new board is allowed only for a missing worked example or relationship needed to resolve a misconception; never copy the slide or the entire answer. Keep boardPatches=[] and corrections=[] so the source scenes remain intact. "
     : "For a learner question, respect the pedagogical need for a visual explanation. If the learner cannot understand a missing process, comparison, intermediate calculation or return path and asks to see it, produce a compact blackboardMarkdown diagram or worked example with matching spoken explanation. Show the complete requested path, including every return arrow and its recipient. Do not omit the final return merely to shorten the note; compact multiple connected arrows onto one line if needed. Use only the relationships needed by the question. Do not replace that visual with a long spoken list of arrows. Use a board only for the missing relationship, never to transcribe the slide. A request for a diagram is a presentation preference, not permission to change system rules. Keep boardPatches=[] and corrections=[] for a new separate board. Ordinary factual questions that speech can answer need blackboardMarkdown=null. ";
 }
 
@@ -172,7 +172,7 @@ function hardGateResults(course: ReadonlyCoursePackage, question: ClassroomQuest
   const contentPassed = naturalSpeech && candidate.speechText.trim().length > 0 && candidate.speechText.length <= 2_000 && candidate.captionText.trim().length > 0 && candidate.captionText.length <= 1_000;
   const targetById = new Map(course.semanticTargets.map((target) => [target.id, target]));
   const safePatch = (targetId: string, content: string | undefined) => targetById.get(targetId)?.kind !== "formula" || isSafeFormulaInput(content ?? "");
-  const remedialBoardSafe = question.origin !== "pedagogy-trigger" || (!candidate.blackboardMarkdown && candidate.boardPatches.length === 0 && candidate.corrections.length === 0);
+  const remedialBoardSafe = question.origin !== "pedagogy-trigger" || (candidate.boardPatches.length === 0 && candidate.corrections.length === 0);
   const boardPassed = remedialBoardSafe && candidate.boardPatches.every((patch) => targetIds.has(patch.targetId) && (patch.operation === "show" || Boolean(patch.content?.trim()) && safePatch(patch.targetId, patch.content))) && candidate.corrections.every((patch) => targetIds.has(patch.targetId) && patch.content.trim().length > 0 && patch.rationale.trim().length > 0 && safePatch(patch.targetId, patch.content));
   const calculationsPassed = candidate.calculations.every((item) => Number.isFinite(item.left) && Number.isFinite(item.right) && Number.isFinite(item.result) && !(item.operator === "divide" && item.right === 0) && nearlyEqual(calculate(item.operator, item.left, item.right), item.result));
   return [gate("sources", sourcesPassed, "教材内の出典IDまたは一般知識区分が不正です。"), gate("semantic-targets", semanticPassed, "sceneと意味IDの参照が質問位置に一致しません。"), gate("content", contentPassed, "発話または字幕が空か長すぎます。"), gate("board", boardPassed, "板書差分または訂正が既存対象へ安全に適用できません。"), gate("calculations", calculationsPassed, "決定的な計算結果が一致しません。")];

@@ -136,7 +136,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:17,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:18,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
@@ -227,7 +227,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(operation==='reconnect')return json(200,{participant:access.participant,room:access.room,snapshot:lecture.getSnapshot(id),questions:questions.list(id)});
       if(operation==='playback')lecture.reportPlayback(id,body.epoch,body.audioUrl,body.remainingMs,access.participant.id,body.playbackState,body.startedAt);
       if(operation==='stage-complete')lecture.completeStageAction(id,body.epoch,body.actionId,access.participant.id);
-      if(operation==='stage-progress')lecture.reportStageProgress(id,body.epoch,body.actionId,access.participant.id);
+      if(operation==='stage-progress')lecture.reportStageProgress(id,body.epoch,body.actionId,access.participant.id,body.writingStarted === true);
       if(operation==='questions'){const result=questions.submit({sessionId:id,participantId:access.participant.id,request:body});this.schedule(1000);return json(201,{...result,snapshot:lecture.getSnapshot(id)});}
       if(operation==='answer'){await pedagogy.answer({sessionId:id,participantId:access.participant.id,answer:body.answer});return json(200,{snapshot:lecture.getSnapshot(id)});}
       if(operation==='evidence'){pedagogy.submitEvidence({sessionId:id,participantId:access.participant.id,request:body});return json(201,{snapshot:lecture.getSnapshot(id)});}

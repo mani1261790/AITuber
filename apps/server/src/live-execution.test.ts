@@ -139,3 +139,22 @@ it.each([false,true])("bounds slow drawing and still stops a disconnected render
  }else await vi.advanceTimersByTimeAsync(12001);
  expect(service.getSession(view.id)).toMatchObject({status:"PAUSED",progress:{completed:0},speech:{playing:false}});
 });
+
+it("starts board speech only once from the rendering owner and cancels it on pause",async()=>{
+ vi.useFakeTimers();
+ const service=create(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing:{id:"board.test",markdown:"# 補足",purpose:"補足"}},{type:"speak",text:"関係を順に整理します。"}]}),new TestToneSpeechProvider(1000));
+ const initial=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const view=service.getSession(initial.id);
+ service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner");
+ service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"other",true);
+ await vi.advanceTimersByTimeAsync(0);expect(service.getSession(view.id).speech.playing).toBe(false);
+ service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner",true);
+ await vi.advanceTimersByTimeAsync(0);const started=service.getSession(view.id).speech.startedAt;
+ expect(service.getSession(view.id).speech.playing).toBe(true);
+ await vi.advanceTimersByTimeAsync(100);
+ service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner",true);
+ expect(service.getSession(view.id).speech.startedAt).toBe(started);
+ service.command(view.id,{command:"pause"});
+ service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner",true);
+ expect(service.getSession(view.id)).toMatchObject({status:"PAUSED",speech:{playing:false}});
+});

@@ -82,7 +82,8 @@ describe("server boundary", () => {
       const response=await post(`/api/classrooms/${started.classroom.code}/stage-${kind}`,{accessToken:joined.participant.accessToken,epoch:started.session.epoch,actionId:"action.check",participantId:"forged"});
       expect(response.status).toBe(200);
     }
-    for(const spy of [complete,progress])expect(spy).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id);
+    expect(complete).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id);
+    expect(progress).toHaveBeenCalledExactlyOnceWith(started.session.id,started.session.epoch,"action.check",joined.participant.id,false);
   });
 
   it("reports health without exposing provider configuration", async () => {
