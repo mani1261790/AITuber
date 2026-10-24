@@ -5,7 +5,7 @@ import type { AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, Course
 import "./styles.css";
 
 declare const __AITUBER_CLASSROOM_ORIGIN__: string;
-const sessionLabels: Record<FixedSessionView["status"], string> = { PREPARING: "教室の準備待ち", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了" };
+const sessionLabels: Record<FixedSessionView["status"], string> = { PREPARING: "講義の準備中", TEACHING: "講義中", CHECKPOINT: "確認問題", PAUSED: "一時停止中", RECOVERING: "再開中", FINISHED: "終了" };
 const gateLabels = { "source-alignment": "出典と内容", "factual-consistency": "事実・式・数値", "goal-alignment": "学習目標", prerequisites: "前提関係", references: "参照ID", renderability: "描画可能性", "speech-caption": "発話と字幕", "safe-content": "安全な内容", rights: "利用権の申告" };
 type Scope = "authoring" | "session" | "connection";
 type Confirmation = { title: string; description: string; label: string; run(): void };

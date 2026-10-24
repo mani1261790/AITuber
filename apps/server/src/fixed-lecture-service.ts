@@ -70,6 +70,8 @@ export class FixedLectureService {
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #preparedSpeech = new WeakMap<RuntimeSession, Map<string, {controller:AbortController; promise:Promise<SpeechArtifact>}>>();
   readonly #projection = new WeakMap<RuntimeSession, {started:number; timer:ReturnType<typeof setTimeout>; fail:()=>void; stageDone:boolean; speechDone:boolean; next:()=>void}>();
+  readonly #openingPrepared = new WeakSet<RuntimeSession>();
+  readonly #waitingParticipant = new WeakMap<RuntimeSession,string>();
   readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan> }>();
   readonly #playbackDeadlines = new WeakMap<RuntimeSession, { deadline: number; maxDeadline: number; complete: () => void; audioUrl: string | null; epoch: number; owner?: string; ended?: boolean }>();
 
@@ -262,6 +264,10 @@ export class FixedLectureService {
     const runtime = this.#requireSession(sessionId);
     if (!this.#waitForClassroom || runtime.state.status !== "PREPARING" || runtime.state.epoch !== epoch || !participantId) return;
     if (!this.#ownsExecution(runtime,participantId)) return;
+    if(this.#planner?.preparesWholeLecture && !this.#openingPrepared.has(runtime)){
+      this.#waitingParticipant.set(runtime,participantId);this.#prepareOpening(runtime);return;
+    }
+    this.#waitingParticipant.delete(runtime);
     runtime.startedAtMs = Date.now();
     this.#apply(runtime,{type:"PREPARATION_COMPLETED",epoch});
     this.#schedule(runtime);
@@ -342,7 +348,7 @@ export class FixedLectureService {
     this.#reviewAudio.get(runtime)?.forEach(entry=>entry.controller.abort());
     const entries=new Map<string,{controller:AbortController;promise:Promise<SpeechArtifact>}>();
     for(const raw of [rawText,preparationText].filter((text):text is string=>Boolean(text?.trim()))){
-      const text=applyPronunciationDictionary(raw,runtime.course.pronunciationDictionary);
+      const text=this.#speechText(runtime,raw);
       if(entries.has(text))continue;
       const controller=new AbortController();
       const promise=this.#speechProvider.synthesize({text,language:"ja-JP",voiceId:this.#voiceId,dictionaryVersion:dictionaryVersion(runtime.course.pronunciationDictionary)},{signal:controller.signal});
@@ -462,11 +468,23 @@ export class FixedLectureService {
     const epoch=runtime.state.epoch, controller=new AbortController();
     // Prepare only the opening. Readiness still owns playback and the lesson clock.
     const plan=this.#planner({session:this.getSession(runtime.id),unit,previousSpeech:"",remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal)
-      .catch(()=>referencePlan(unit,"冒頭の説明を準備できませんでした"));
+      .catch(error=>referencePlan(unit,error instanceof Error ? error.message : "冒頭の説明を準備できませんでした"));
     this.#prefetch.set(runtime,{unitId:unit.id,stamp:this.#contextStamp(runtime),controller,plan});
-    void plan.then(result=>{
-      if (controller.signal.aborted || runtime.state.epoch!==epoch || runtime.state.status!=="PREPARING" || result.source!=="generated") return;
+    void plan.then(async result=>{
+      if (controller.signal.aborted || runtime.state.epoch!==epoch || runtime.state.status!=="PREPARING") return;
+      if(result.source!=="generated"){
+        if(this.#planner?.preparesWholeLecture)throw Error(result.reason ?? "講義台本の準備に失敗しました");
+        return;
+      }
       for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);
+      if(this.#planner?.preparesWholeLecture){
+        await Promise.all([...this.#preparedSpeech.get(runtime)?.values() ?? []].map(item=>item.promise));
+        if(controller.signal.aborted || runtime.state.epoch!==epoch || runtime.state.status!=="PREPARING")return;
+        this.#openingPrepared.add(runtime);
+        const participant=this.#waitingParticipant.get(runtime);if(participant)this.classroomReady(runtime.id,epoch,participant);
+      }
+    }).catch(error=>{
+      if(!controller.signal.aborted && runtime.state.epoch===epoch && runtime.state.status==="PREPARING")this.#haltExecution(runtime,error instanceof Error?error.message:"講義の準備に失敗しました");
     });
   }
 
@@ -500,11 +518,11 @@ export class FixedLectureService {
       this.#haltExecution(runtime, `授業台本を生成できませんでした: ${plan.reason ?? "生成結果がありません"}`);
       return;
     }
-    const neededSpeech = new Set(plan.actions.filter(action=>action.type==="speak").map(action=>applyPronunciationDictionary(action.text,runtime.course.pronunciationDictionary)));
+    const neededSpeech = new Set(plan.actions.filter(action=>action.type==="speak").map(action=>this.#speechText(runtime,action.text)));
     // A reviewed answer may become ready while this main-unit plan is pending.
     // Keep its prewarmed audio when pruning stale main-lecture work.
     const pendingAnswer = runtime.pendingSupplement?.view.candidate?.speechText;
-    if (pendingAnswer) neededSpeech.add(applyPronunciationDictionary(pendingAnswer,runtime.course.pronunciationDictionary));
+    if (pendingAnswer) neededSpeech.add(this.#speechText(runtime,pendingAnswer));
     this.#preparedSpeech.get(runtime)?.forEach((item,key,cache)=>{if(!neededSpeech.has(key)){item.controller.abort();cache.delete(key);}});
     for (const action of plan.actions) if (action.type === "speak") this.#prepareSpeech(runtime, action.text);
     const spoken = plan.actions.filter(action=>action.type === "speak").map(action=>action.text).join(" ");
@@ -681,9 +699,11 @@ export class FixedLectureService {
     }
   }
 
+  #speechText(runtime:RuntimeSession,text:string){return this.#speechProvider?.transcriptFormat === "original" ? text : applyPronunciationDictionary(text,runtime.course.pronunciationDictionary);}
+
   #prepareSpeech(runtime: RuntimeSession, text: string) {
     if (!this.#speechProvider || !this.#voiceId) return;
-    const normalized = applyPronunciationDictionary(text, runtime.course.pronunciationDictionary);
+    const normalized = this.#speechText(runtime,text);
     let cache = this.#preparedSpeech.get(runtime);
     if (!cache) { cache = new Map(); this.#preparedSpeech.set(runtime,cache); }
     if (this.#reviewAudio.get(runtime)?.has(normalized) || cache.has(normalized) || cache.size >= 6) return;
@@ -712,7 +732,7 @@ export class FixedLectureService {
 
   #speakUnit(runtime: RuntimeSession, unitId: string, text: string) {
     const unit = runtime.course.teachingUnits.find(candidate => candidate.id === unitId)!;
-    const finalizedText = applyPronunciationDictionary(text, runtime.course.pronunciationDictionary);
+    const finalizedText = this.#speechText(runtime,text);
     const epoch = runtime.state.epoch;
     if (!this.#speechProvider || !this.#voiceId) {
       this.#startPlayback(runtime, unitId, epoch, {
@@ -732,7 +752,7 @@ export class FixedLectureService {
       this.#startPlayback(runtime, unitId, epoch, {
         mode: "fish-audio", playing: true, epoch, unitId, text: finalizedText, startedAt: new Date().toISOString(), durationMs: artifact.durationMs,
         audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null,
-        segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: unit.focusTargetIds })),
+        ...(artifact.transcriptFormat ? {transcriptFormat:artifact.transcriptFormat} : {}), segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: unit.focusTargetIds })),
         provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs,
       });
     }).catch((error: unknown) => {
@@ -837,7 +857,7 @@ export class FixedLectureService {
   }
 
   #playSupplementSpeech(runtime: RuntimeSession, candidate: LiveSupplementCandidateView, pending: PendingSupplement, onPartComplete?: () => void) {
-    const text = applyPronunciationDictionary(candidate.speechText, runtime.course.pronunciationDictionary); const epoch = runtime.state.epoch;
+    const text = this.#speechText(runtime,candidate.speechText); const epoch = runtime.state.epoch;
     const begin = (speech: FixedSessionView["speech"]) => {
       const occurredAt = new Date().toISOString(); const audible = speech.mode !== "caption-fallback"; pending.onPlaybackStarted(occurredAt, audible);
       runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, firstAudioAt: runtime.liveSupplement.firstAudioAt ?? (audible ? occurredAt : null) } : null;
@@ -857,7 +877,7 @@ export class FixedLectureService {
     void this.#synthesize(runtime,text,controller,true).then((artifact) => {
       if (controller.signal.aborted || runtime.pendingSupplement?.view.id !== pending.view.id || runtime.state.status !== "BRANCHING") return;
       runtime.speechAbort = null; this.#speechArtifacts.set(artifact.cacheKey, artifact);
-      begin({ mode: "fish-audio", playing: true, epoch, unitId: null, text, startedAt: new Date().toISOString(), durationMs: artifact.provider === "test-tone" ? Math.min(5_000, artifact.durationMs) : artifact.durationMs, audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null, segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: candidate.focusTargetIds })), provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs });
+      begin({ mode: "fish-audio", playing: true, epoch, unitId: null, text, startedAt: new Date().toISOString(), durationMs: artifact.provider === "test-tone" ? Math.min(5_000, artifact.durationMs) : artifact.durationMs, audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null, ...(artifact.transcriptFormat ? {transcriptFormat:artifact.transcriptFormat} : {}), segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: candidate.focusTargetIds })), provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs });
     }).catch((error: unknown) => {
       if (controller.signal.aborted || runtime.pendingSupplement?.view.id !== pending.view.id || runtime.state.status !== "BRANCHING") return;
       runtime.speechAbort = null;
@@ -894,10 +914,10 @@ export class FixedLectureService {
     if (!this.#speechProvider || !this.#voiceId) { begin({ ...emptySpeech(epoch), mode: "test", playing: true, unitId: null, text, startedAt: new Date().toISOString(), durationMs, segments: [{ text, startMs: 0, endMs: durationMs, semanticTargetIds: targetIds }] }); return; }
     runtime.speech = { ...emptySpeech(epoch), mode: "preparing", text }; this.#publish(runtime);
     const controller = new AbortController(); runtime.speechAbort = controller;
-    void this.#speechProvider.synthesize({ text: applyPronunciationDictionary(text, runtime.course.pronunciationDictionary), language: "ja-JP", voiceId: this.#voiceId, dictionaryVersion: dictionaryVersion(runtime.course.pronunciationDictionary) }, { signal: controller.signal }).then((artifact) => {
+    void this.#speechProvider.synthesize({ text: this.#speechText(runtime,text), language: "ja-JP", voiceId: this.#voiceId, dictionaryVersion: dictionaryVersion(runtime.course.pronunciationDictionary) }, { signal: controller.signal }).then((artifact) => {
       if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
       runtime.speechAbort = null; this.#speechArtifacts.set(artifact.cacheKey, artifact);
-      begin({ mode: "fish-audio", playing: true, epoch, unitId: null, text, startedAt: new Date().toISOString(), durationMs: artifact.durationMs, audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null, segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: targetIds })), provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs });
+      begin({ mode: "fish-audio", playing: true, epoch, unitId: null, text, startedAt: new Date().toISOString(), durationMs: artifact.durationMs, audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null, ...(artifact.transcriptFormat ? {transcriptFormat:artifact.transcriptFormat} : {}), segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: targetIds })), provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs });
     }).catch((error: unknown) => {
       if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "BRANCHING") return;
       runtime.speechAbort = null; begin({ ...emptySpeech(epoch), mode: "caption-fallback", playing: true, unitId: null, text, startedAt: new Date().toISOString(), durationMs, segments: [{ text, startMs: 0, endMs: durationMs, semanticTargetIds: targetIds }], failure: error instanceof Error ? error.message : "TTS failed", provider: this.#speechProvider?.provider ?? null, model: this.#speechProvider?.model ?? null, voiceId: this.#voiceId || null });
@@ -961,6 +981,7 @@ export class FixedLectureService {
   }
 
   #cancelSpeech(runtime: RuntimeSession) {
+    this.#openingPrepared.delete(runtime);this.#waitingParticipant.delete(runtime);
     const projection = this.#projection.get(runtime); if (projection) clearTimeout(projection.timer); this.#projection.delete(runtime);
     this.#reviewAudio.get(runtime)?.forEach(entry=>entry.controller.abort()); this.#reviewAudio.delete(runtime);
     this.#preparedSpeech.get(runtime)?.forEach(item=>item.controller.abort()); this.#preparedSpeech.delete(runtime);

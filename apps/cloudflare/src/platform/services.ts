@@ -7,7 +7,9 @@ import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, F
 
 import { FixedLectureService } from "../../../server/src/fixed-lecture-service.ts";
 import { LlmSettingsStore } from "../../../server/src/llm-settings-store.ts";
-import { createLessonPlanner } from "../../../server/src/lesson-director.ts";
+import { createWholeLecturePlanner } from "../../../server/src/whole-lecture-planner.ts";
+import { PreparedArtifacts } from "../../../server/src/prepared-artifacts.ts";
+import { PreparedReadings, ReadingSpeechProvider } from "../../../server/src/prepared-readings.ts";
 import { CourseAuthoringService } from "../../../server/src/course-authoring-service.ts";
 import { createCommentClassifier } from "../../../server/src/comment-classifier.ts";
 import { QuestionQueueService } from "../../../server/src/question-queue-service.ts";
@@ -60,7 +62,11 @@ if (ttsTestMode === "tone") {
 }
 const chatgpt = new ChatGptConnection("/data/chatgpt-connection.json", { clientId: env.CHATGPT_CLIENT_ID ?? "", redirectUri: env.CHATGPT_REDIRECT_URI ?? "", planUsageEnabled: env.CHATGPT_PLAN_USAGE_ENABLED === "true", ...(env.CHATGPT_CLIENT_SECRET ? {clientSecret: env.CHATGPT_CLIENT_SECRET} : {}) });
 const llmSettings = new LlmSettingsStore(llmSettingsPath, env, resourceBudgetStore, chatgpt);
-const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }) }) });
+const preparedArtifacts = new PreparedArtifacts(llmSettingsPath + ".prepared");
+const preparationProvider = () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } };
+const preparedReadings = new PreparedReadings(preparationProvider, preparedArtifacts);
+if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? []);
+const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings) }) });
 const authoring = new CourseAuthoringService({ cacheViews: true, directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course), defer: schedule });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;

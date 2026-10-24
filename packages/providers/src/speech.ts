@@ -18,6 +18,7 @@ export interface SpeechAlignmentSegment {
 }
 
 export interface SpeechArtifact {
+  readonly transcriptFormat?: "original";
   readonly cacheKey: string;
   readonly provider: string;
   readonly model: string;
@@ -31,6 +32,7 @@ export interface SpeechArtifact {
 }
 
 export interface TextToSpeechProvider {
+  readonly transcriptFormat?: "original";
   readonly provider: string;
   readonly model: string;
   synthesize(request: SpeechRequest, options: { signal: AbortSignal }): Promise<SpeechArtifact>;

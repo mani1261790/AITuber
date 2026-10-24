@@ -24,3 +24,9 @@ it("recovers sentence boundaries and technical spelling from punctuation-free al
  expect(speechCaption(words,500,[],transcript)).toBe("Large Language Modelです。");
  expect(speechCaption(words,1500,[],transcript)).toBe("文章を生成します。");
 });
+
+it("uses original mapped text without converting intentional kana or homophones",()=>{
+ const segments=[{text:"エルエルエムと読みます。",startMs:0,endMs:500},{text:"橋と箸です。",startMs:600,endMs:1000}];
+ expect(speechCaption(segments,100,[],"別の読み",true)).toBe("エルエルエムと読みます。");
+ expect(speechCaption(segments,650,[{surface:"端",reading:"箸"}],null,true)).toBe("橋と箸です。");
+});

@@ -6,7 +6,9 @@ import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, F
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
-import { createLessonPlanner } from "./lesson-director.ts";
+import { createWholeLecturePlanner } from "./whole-lecture-planner.ts";
+import { PreparedArtifacts } from "./prepared-artifacts.ts";
+import { PreparedReadings, ReadingSpeechProvider } from "./prepared-readings.ts";
 import { CourseAuthoringService } from "./course-authoring-service.ts";
 import { createCommentClassifier } from "./comment-classifier.ts";
 import { QuestionQueueService } from "./question-queue-service.ts";
@@ -67,7 +69,11 @@ if (ttsTestMode === "tone") {
   speechProvider = new CachedSpeechProvider(new BudgetedSpeechProvider({ backing: new FishAudioTtsProvider({ apiKey: fishApiKey, model }), budget: resourceBudgetStore, scope: "runtime", ...(price !== undefined ? { usdPerMillionCharacters: price } : {}) }), ttsCachePath);
 }
 const llmSettings = new LlmSettingsStore(llmSettingsPath, process.env, resourceBudgetStore);
-const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createLessonPlanner(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }) }) });
+const preparedArtifacts = new PreparedArtifacts(llmSettingsPath + ".prepared");
+const preparationProvider = () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } };
+const preparedReadings = new PreparedReadings(preparationProvider, preparedArtifacts);
+if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? []);
+const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings) }) });
 const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
 let pedagogy: PedagogyService | null = null;

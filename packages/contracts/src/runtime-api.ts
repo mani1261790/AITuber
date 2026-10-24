@@ -155,6 +155,7 @@ export interface SessionSpeechView {
   readonly voiceId: string | null;
   readonly firstAudioMs: number | null;
   readonly synthesisMs: number | null;
+  readonly transcriptFormat?: "original";
 }
 
 export interface CreateSessionRequest {

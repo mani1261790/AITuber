@@ -337,3 +337,25 @@ it.each([[false,false],[true,false],[true,true]])("gates board narration after i
  await vi.advanceTimersByTimeAsync(3100);
  expect(completed).toHaveBeenCalledTimes(1);
 });
+
+it("holds the lesson clock until the whole script and opening audio are prepared, even after classroom readiness",async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ let resolve!: (plan:Awaited<ReturnType<LessonPlanner>>)=>void;
+ const planner=Object.assign(vi.fn<LessonPlanner>(()=>new Promise(done=>{resolve=done;})),{preparesWholeLecture:true});
+ const provider=new TestToneSpeechProvider(1000);
+ const service=new FixedLectureService({store,waitForClassroom:true,planner,speechProvider:provider,voiceId:"test"});resources.push(service);
+ const session=service.createSession(request);service.classroomReady(session.id,session.epoch,"owner");
+ await vi.advanceTimersByTimeAsync(120000);
+ expect(service.getSession(session.id).status).toBe("PREPARING");expect(service.getRemainingTimeMs(session.id)).toBe(360000);
+ resolve({source:"generated",reason:null,actions:[{type:"speak",text:"全体台本の最初の説明です。"}]});
+ await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(session.id)).toMatchObject({status:"TEACHING",speech:{playing:true,text:"全体台本の最初の説明です。"}});
+ expect(service.getRemainingTimeMs(session.id)).toBe(360000);
+});
+it("makes whole-script preparation failures visible instead of leaving an endless waiting room",async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ const planner=Object.assign(vi.fn<LessonPlanner>(async()=>{throw Error("whole script unavailable");}),{preparesWholeLecture:true});
+ const service=new FixedLectureService({store,waitForClassroom:true,planner,speechProvider:new TestToneSpeechProvider(100),voiceId:"test"});resources.push(service);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(session.id)).toMatchObject({status:"PAUSED",speech:{playing:false,failure:expect.any(String)}});
+});
