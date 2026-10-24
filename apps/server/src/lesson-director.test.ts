@@ -498,3 +498,30 @@ it("accepts spoken formatting differences but names every missing required claim
   expect(()=>validatePlan([{type:"speak",text:"top_pは安全性を保証します。num_predictは生成トークン数の上限です。"}],input)).toThrow("Required wording missing");
  } finally {runtime.close();}
 });
+
+it.each(["slides","board"] as const)("provides only the visible board to generation on %s",async surface=>{
+ const runtime=setup();
+ try {
+  const unit=quadraticFunctionsFixture.teachingUnits[0]!;
+  const drawing={id:"blackboard.old-question",markdown:"# OLD_QUESTION_ONLY",purpose:"old question"};
+  const session={...runtime.session,direction:{actionId:"visible-context",phase:"resting" as const,position:"right" as const,targetId:null,camera:"lecture" as const,source:"generated" as const,reason:null,surface,drawing}};
+  const llm=new FixedResponseLlmProvider([{beats:[{text:"いまの式を見ましょう。",targetId:null,camera:"lecture",position:"right",gesture:"explain",surface:"slides",blackboardMarkdown:null,walkWhileSpeaking:false}]}]);
+  await createLessonPlanner(()=>llm)({session,unit,previousSpeech:"直前の説明",remainingMs:10000},new AbortController().signal);
+  const prompt=JSON.parse(llm.calls[0]!.prompt.split("\n/no_think")[0]!);
+  expect(prompt.currentStage.drawing).toEqual(surface==="board"?drawing:null);
+  expect(llm.calls[0]!.prompt.includes("OLD_QUESTION_ONLY")).toBe(surface==="board");
+ } finally {runtime.close();}
+});
+it("keeps all beats of only the most recent main unit in continuation context",async()=>{
+ vi.useFakeTimers();
+ const planner:LessonPlanner=async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.id+" first"},{type:"speak",text:input.unit.id+" second"}]});
+ const runtime=setup(planner);
+ try {
+  await vi.advanceTimersByTimeAsync(0);
+  expect(runtime.service.exportCheckpoint()?.previousSpeech).toBe("unit.math.intro first");
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.exportCheckpoint()?.previousSpeech).toBe("unit.math.intro first unit.math.intro second");
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.exportCheckpoint()?.previousSpeech).toBe("unit.math.parts first");
+ } finally {runtime.close();}
+});

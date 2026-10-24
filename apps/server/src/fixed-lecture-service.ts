@@ -588,12 +588,12 @@ export class FixedLectureService {
           const fail=()=>this.#haltExecution(runtime,"スライド投影の完了を確認できませんでした。教室画面を確認して再開してください。");
           const pending={started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next};
           this.#projection.set(runtime,pending);
-          this.#previousSpeech.set(runtime,((this.#previousSpeech.get(runtime) ?? "")+" "+action.text).slice(-2000));
+          this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
           this.#speechNext.set(runtime,()=>{pending.speechDone=true;if(pending.stageDone){this.#projection.delete(runtime);next();}});
           this.#speakUnit(runtime,unitId,action.text);return;
         }
         this.#travelArrived.delete(runtime);
-        update({phase:"speaking",gesture:action.gesture ?? "explain",...(action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((this.#previousSpeech.get(runtime) ?? "")+" "+action.text).slice(-2000));
+        update({phase:"speaking",gesture:action.gesture ?? "explain",...(action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
         this.#speechNext.set(runtime, () => {
           if (!action.position || this.#travelArrived.has(runtime)) { this.#travelArrived.delete(runtime); next(); }
           else { waitForMove(); }
