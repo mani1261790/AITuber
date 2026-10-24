@@ -1,4 +1,7 @@
 // Verify the authenticated API, including Durable Object rollout, without creating jobs.
+import {readFileSync} from "node:fs";
+const expectedSupplementRevision=Number(readFileSync(new URL("../apps/cloudflare/src/lecture-room.ts",import.meta.url),"utf8").match(/supplementRevision:\s*(\d+)/)?.[1]);
+if(!Number.isInteger(expectedSupplementRevision)) throw new Error("Cannot determine the expected supplement revision from the deployed source.");
 const base = 'https://aituber.mani1261790.workers.dev';
 const password = process.env.OPERATOR_PASSWORD;
 if (!password) throw new Error('OPERATOR_PASSWORD is required for operator rollout verification.');
@@ -16,7 +19,7 @@ for (let attempt = 1; attempt <= 60; attempt++) {
   const state = await snapshot.json();
   if(['storage_quota_exceeded','storage_safety_stop'].includes(state.error)) throw new Error('Deployment uploaded; verification blocked by storage quota.');
   // An old stop handler also returns 404. Require a field added by this rollout.
-  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 5 && state.assessmentRevision === 1 && state.supplementRevision === 13 && state.storageAccountingVersion === 2) {
+  if (response.status === 404 && value.message === 'Unknown authoring job' && snapshot.ok && state.authoringRevision === 5 && state.assessmentRevision === 1 && state.supplementRevision === expectedSupplementRevision && state.storageAccountingVersion === 2) {
     for (const path of ['/api/operator/snapshot','/api/courses','/api/sessions/current','/api/authoring/jobs','/api/settings/llm']) {
       const result = await fetch(base+path, {headers:{cookie},signal:AbortSignal.timeout(20000)});
       const body = await result.json();
