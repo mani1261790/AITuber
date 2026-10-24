@@ -152,7 +152,11 @@ export class FixedLectureService {
   exportCheckpoint() {
     const runtime = this.#currentSessionId ? this.#sessions.get(this.#currentSessionId) : null;
     if (!runtime) return null;
-    return { executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
+    const direction=this.#directions.get(runtime);
+    return { liveSupplement:runtime.liveSupplement,
+      presentation:direction ? {surface:direction.surface ?? "slides",drawing:direction.drawing ?? null,position:direction.position,camera:direction.camera} : null,
+      previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null,
+      executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
       state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
       startedAtMs: runtime.startedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
       lastAssessmentEvaluation: runtime.lastAssessmentEvaluation, afterClassAnswers: runtime.afterClassAnswers };
@@ -166,9 +170,13 @@ export class FixedLectureService {
     const waitForAnswer = saved.state.status === "CHECKPOINT";
     const manuallyPaused = saved.state.status === "PAUSED";
     const epoch = terminal ? stored.epoch : this.#store.advanceEpoch(saved.id).epoch;
-    const resumedStatus = saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
+    const recoverable = saved.liveSupplement?.candidate && ["ready","playing","rejoining"].includes(saved.liveSupplement.status) ? saved.liveSupplement : null;
+    const resumedStatus = recoverable && (["BRANCHING","REJOINING"].includes(saved.state.status) || saved.state.resumeStatus === "BRANCHING") ? "BRANCHING" as const : saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
     const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
-    const runtime: RuntimeSession = {...saved,state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:null,pendingSupplement:null};
+    const runtime: RuntimeSession = {...saved,state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:recoverable,pendingSupplement:null};
+    if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
+    this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
+    if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
     this.#courses.set(saved.course.id,saved.course); this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
     return !terminal && !waitForAnswer && !manuallyPaused;
   }
@@ -365,7 +373,7 @@ export class FixedLectureService {
     } else if (request.command === "resume") {
       this.#apply(runtime, { type: "RECOVERY_STARTED", epoch: runtime.state.epoch });
       this.#apply(runtime, { type: "RECOVERY_COMPLETED", epoch: runtime.state.epoch });
-      if (runtime.state.status === "BRANCHING" && runtime.pendingSupplement) this.#activateSupplement(runtime); else this.#schedule(runtime);
+      if (runtime.state.status === "BRANCHING" && runtime.pendingSupplement) { if(!runtime.timer && !runtime.speechAbort && !runtime.speech.playing) this.#activateSupplement(runtime); } else this.#schedule(runtime);
     } else if (request.command === "finish") {
       this.#cancelSpeech(runtime);
       this.#apply(runtime, { type: "FINISH_REQUESTED", epoch: runtime.state.epoch });

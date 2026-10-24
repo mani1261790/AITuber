@@ -23,6 +23,7 @@ export class LiveSupplementService {
   readonly #lecture: FixedLectureService;
   readonly #llm: () => LlmProvider | null;
   readonly #active = new Map<string, Promise<void>>();
+  readonly #recoverySubscriptions = new Map<string,()=>void>();
   readonly #audioDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
   readonly #controllers = new Map<string, AbortController>();
   readonly #unsubscribe: () => void;
@@ -35,14 +36,35 @@ export class LiveSupplementService {
 
   consider(sessionId: string, questions = this.#questions.list(sessionId)): void {
     if (this.#closed || this.#active.has(sessionId)) return;
+    const active=this.#lecture.getSession(sessionId).liveSupplement;
+    if(active && !["completed","deferred"].includes(active.status)) return;
     const selected = questions.find((question) => question.disposition === "answer-now" && question.status === "accepted" && question.resolution === "pending");
     if (!selected) return;
     const task = this.#process(sessionId, selected).catch((error: unknown) => { if (!this.#closed) { try { this.#questions.defer(selected.id, `ライブ補足を開始できなかったため、授業後へ保留しました。 ${failureMessage(error)}`); } catch { /* The question store may be shutting down. */ } } }).finally(() => { this.#active.delete(sessionId); this.consider(sessionId); });
     this.#active.set(sessionId, task);
   }
 
+  /** Replay an already-reviewed answer after a process restart; never regenerate it. */
+  recover(sessionId: string): void {
+    const saved=this.#lecture.getSession(sessionId).liveSupplement;
+    if (!saved?.candidate || !["ready","playing","rejoining"].includes(saved.status)) return;
+    const resume=()=>{
+      const status=this.#lecture.getSession(sessionId).status;
+      if(status==="PAUSED" || status==="RECOVERING") return;
+      this.#recoverySubscriptions.get(sessionId)?.();this.#recoverySubscriptions.delete(sessionId);
+      if(status==="FINISHED") return;
+      const record=this.#store.get(saved.id);
+      this.#questions.markAnswering(record.questionId);
+      this.#store.update({id:record.id,status:"ready"});
+      this.#queuePlayback(sessionId,{...saved,status:"ready"});
+    };
+    this.#recoverySubscriptions.get(sessionId)?.();
+    this.#recoverySubscriptions.set(sessionId,this.#lecture.subscribe(id=>{if(id===sessionId)resume();}));
+    resume();
+  }
+
   async drain(sessionId: string): Promise<void> { await this.#active.get(sessionId); }
-  close() { this.#closed = true; this.#unsubscribe(); this.#controllers.forEach((controller) => controller.abort(new DOMException("Live supplement service closed", "AbortError"))); this.#controllers.clear(); this.#audioDeadlines.forEach(clearTimeout); this.#audioDeadlines.clear(); }
+  close() { this.#recoverySubscriptions.forEach(unsubscribe=>unsubscribe());this.#recoverySubscriptions.clear();this.#closed = true; this.#unsubscribe(); this.#controllers.forEach((controller) => controller.abort(new DOMException("Live supplement service closed", "AbortError"))); this.#controllers.clear(); this.#audioDeadlines.forEach(clearTimeout); this.#audioDeadlines.clear(); }
 
   async #process(sessionId: string, question: ClassroomQuestionView): Promise<void> {
     await Promise.resolve();

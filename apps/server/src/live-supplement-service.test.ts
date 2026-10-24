@@ -47,6 +47,30 @@ describe("LiveSupplementService", () => {
     const stored = supplementStore.list(session.id)[0]!; expect(Date.parse(stored.firstAudioAt!) - Date.parse(stored.adoptedAt)).toBeLessThan(8_000);
   });
 
+  it("restores a reviewed answer after a process restart without skipping it or regenerating",async()=>{
+    const provider=new FixedResponseLlmProvider([candidate(),passReview]);replaceSupplements(provider);
+    const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    vi.advanceTimersByTime(100);
+    questions.submit(questionInput(session.id,"なぜ括弧の符号を反対に読むのですか。"));await supplements.drain(session.id);
+    vi.advanceTimersByTime(100);
+    expect(lecture.getSession(session.id).liveSupplement?.status).toBe("playing");
+    const checkpoint=JSON.parse(JSON.stringify(lecture.exportCheckpoint()));
+    const completed=lecture.getSession(session.id).completedUnitIds;
+    supplements.close();lecture.close();
+    lecture=new FixedLectureService({store:eventStore,courses:[quadraticFunctionsFixture],playbackUnitMs:100});
+    expect(lecture.restoreCheckpoint(checkpoint)).toBe(true);
+    supplements=new LiveSupplementService({store:supplementStore,questions,lecture,llm:()=>{throw new Error("Recovery must not regenerate a reviewed answer");}});
+    supplements.recover(session.id);
+    expect(lecture.getSession(session.id).status).toBe("PAUSED");
+    lecture.command(session.id,{command:"resume"});
+    expect(lecture.getSession(session.id)).toMatchObject({liveSupplement:{status:"playing"},speech:{text:candidate().speechText,playing:true}});
+    expect(lecture.getSession(session.id).completedUnitIds).toEqual(completed);
+    vi.advanceTimersByTime(100);
+    expect(lecture.getSession(session.id).liveSupplement?.status).toBe("completed");
+    expect(questions.list(session.id)[0]?.resolution).toBe("answered");
+    expect(provider.calls).toHaveLength(2);
+  });
+
   it("reviews cross-scene remediation with every related scene and keeps the board unchanged", async () => {
     const course = { ...quadraticFunctionsFixture, assessments: [{ ...quadraticFunctionsFixture.assessments[0]!, afterUnitId: "unit.math.parts", learningGoalIds: [...new Set(quadraticFunctionsFixture.teachingUnits.flatMap(unit => unit.learningGoalIds))] }] };
     lecture.registerCourse(course);
