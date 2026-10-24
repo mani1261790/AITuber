@@ -467,7 +467,7 @@ export class FixedLectureService {
       const pending=this.#drawingWait.get(runtime);
       if(pending && runtime.timer){
         clearTimeout(runtime.timer);
-        const remaining=90_000-(Date.now()-pending.started);
+        const remaining=(direction.phase==="drawing"?120_000:90_000)-(Date.now()-pending.started);
         runtime.timer=setTimeout(pending.fail,Math.max(1,Math.min(12_000,remaining)));
       }
       return;

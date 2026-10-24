@@ -109,9 +109,9 @@ it("does not erase before arrival and does not repeat erasing after completion",
 it("finishes screen return, real travel, erasure and maximum writing within the stage deadline",async()=>{
  const {StageLocomotion}=await import("./stage-locomotion.ts");
  const movement=new StageLocomotion(rightStageX,-.26),motion=new StagePropMotion();
- const action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:30.45,eraseArea:{left:200,top:100,right:1080,bottom:620}};
+ const action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:30.45,eraseArea:{left:0,top:0,right:1280,bottom:720}};
  let complete=false;
- for(let i=0;i<90*60;i++){
+ for(let i=0;i<120*60;i++){
   const destination=motion.destination(action,true);
   const ready=movement.phase==="idle" && Math.abs(movement.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(movement.yaw-destination.yaw),Math.cos(movement.yaw-destination.yaw)))<.05;
   const frame=motion.update(action,ready,1/60,true)!;

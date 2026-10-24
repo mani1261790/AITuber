@@ -356,7 +356,7 @@ it("waits through long acknowledged board writing without starting speech; disco
  try{
   await vi.advanceTimersByTimeAsync(0);
   const view=runtime.service.getSession(runtime.session.id);
-  for(let i=0;i<15;i++){runtime.service.reportStageProgress(view.id,view.epoch,view.direction!.actionId);await vi.advanceTimersByTimeAsync(2000);}
+  for(let i=0;i<50;i++){runtime.service.reportStageProgress(view.id,view.epoch,view.direction!.actionId);await vi.advanceTimersByTimeAsync(2000);}
   expect(runtime.service.getSession(view.id).direction?.phase).toBe("drawing");
   expect(runtime.service.getSession(view.id).speech.playing).toBe(false);
   runtime.service.completeStageAction(view.id,view.epoch,view.direction!.actionId);

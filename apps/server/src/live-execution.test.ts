@@ -125,3 +125,16 @@ it("uses the same classroom for projection, movement and speech",async()=>{
  for(const state of ["playing","ended"])service.reportPlayback(session.id,speech.epoch,speech.audioUrl!,0,"owner",state,speech.startedAt!);
  await vi.advanceTimersByTimeAsync(850);expect(service.getSession(session.id).progress.completed).toBe(1);
 });
+
+it.each([false,true])("bounds slow drawing and still stops a disconnected renderer (heartbeats=%s)",async heartbeats=>{
+ vi.useFakeTimers();
+ const service=create(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing:{id:"board.test",markdown:"# 補足",purpose:"補足"}},{type:"speak",text:"説明"}]}),new TestToneSpeechProvider(100));
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const view=service.getSession(session.id);
+ if(heartbeats){
+  for(let i=0;i<59;i++){service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner");await vi.advanceTimersByTimeAsync(2000);}
+  expect(service.getSession(view.id).status).toBe("TEACHING");
+  service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner");await vi.advanceTimersByTimeAsync(2001);
+ }else await vi.advanceTimersByTimeAsync(12001);
+ expect(service.getSession(view.id)).toMatchObject({status:"PAUSED",progress:{completed:0},speech:{playing:false}});
+});
