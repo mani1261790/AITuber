@@ -106,6 +106,22 @@ describe("LiveSupplementService", () => {
     expect(provider.calls[2]?.prompt).toContain(JSON.stringify(candidate()));
   });
 
+  it("repairs ambiguous flow labels before spending a review or synthesizing their audio", async () => {
+    const prepareAudio=vi.spyOn(lecture,"prepareSupplementAudio").mockReturnValue(vi.fn());
+    const invalid={...candidate(),blackboardMarkdown:"# Web検索の往復\nアプリ → LLM：結果を渡す → 利用者：回答",boardPatches:[],corrections:[]};
+    const repaired={...candidate(),blackboardMarkdown:"# Web検索の往復\nアプリ → LLM：検索結果\nLLM → アプリ：回答\nアプリ → 利用者：回答",boardPatches:[],corrections:[]};
+    const provider=new FixedResponseLlmProvider([invalid,repaired,passReview]);replaceSupplements(provider);
+    const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});vi.advanceTimersByTime(200);
+    questions.submit(questionInput(session.id,"検索結果の戻り道を図で説明してください。"));await supplements.drain(session.id);
+    const record=supplementStore.list(session.id)[0]!;
+    expect(record.attempt).toBe(2);
+    expect(supplementStore.listAttempts(record.id)[0]?.failure).toContain("1行に1つ");
+    expect(provider.calls.map(call=>call.purpose)).toEqual(["live-supplement","live-supplement","live-supplement-review"]);
+    expect(provider.calls[1]?.prompt).toContain("送り手・受け手・内容");
+    expect(prepareAudio).toHaveBeenCalledTimes(1);
+    expect(record.candidate).toMatchObject({blackboardMarkdown:repaired.blackboardMarkdown});
+  });
+
   it("defers after two failed reviews and resumes the interrupted main unit", async () => {
     const discardAudio=vi.fn();const prepareAudio=vi.spyOn(lecture,"prepareSupplementAudio").mockReturnValue(discardAudio);
     const provider = new FixedResponseLlmProvider([candidate(), failReview, candidate(), failReview]); replaceSupplements(provider);

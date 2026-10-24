@@ -16,3 +16,12 @@ it("uses the same valid few-shot examples as the classroom preview",async()=>{
  const {boardMarkdownInstruction}=await import("./blackboard-markdown.ts");
  for(const example of boardExamples){expect(markdownBoard(example.blackboardMarkdown)).toBeDefined();expect(boardMarkdownInstruction).toContain(JSON.stringify(example.blackboardMarkdown));}
 });
+
+it("rejects ambiguous message chains without rejecting explicit return paths or math",()=>{
+ expect(()=>markdownBoard("# Web検索の往復\nアプリ → LLM：結果を渡す → 利用者：回答")).toThrow("1行に1つ");
+ expect(()=>markdownBoard("アプリ → LLM:結果 → 利用者:回答")).toThrow("1行に1つ");
+ const explicit="# Web検索の往復\nLLM → アプリ：検索依頼\nアプリ → 検索ツール：検索実行\n検索ツール → アプリ：検索結果\nアプリ → LLM：結果\nLLM → アプリ：回答\nアプリ → 利用者：回答";
+ expect(markdownBoard(explicit)?.markdown).toBe(explicit);
+ for(const valid of ["LLM → アプリ → 利用者", "役割：LLM → アプリ → ツール", "$x-h=0$ → $x=h$", "$f:A\\to B$ → $g:B\\to C$"])
+  expect(markdownBoard(valid)).toBeDefined();
+});
