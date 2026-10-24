@@ -112,6 +112,7 @@ describe("LiveSupplementService", () => {
     questions.submit(questionInput(session.id, "なぜ括弧の符号を反対に読むのですか。")); await supplements.drain(session.id);
     expect(supplementStore.list(session.id)[0]).toMatchObject({ status: "deferred", attempt: 2 });
     expect(questions.list(session.id)[0]).toMatchObject({ resolution: "deferred", disposition: "after-class" });
+    expect(questions.list(session.id)[0]?.reason).not.toContain("Previous candidate");
     expect(lecture.getSession(session.id)).toMatchObject({ status: "TEACHING", currentUnitId: "unit.math.graph", liveSupplement: { status: "deferred" } });
     vi.advanceTimersByTime(100); expect(lecture.getSession(session.id).completedUnitIds).toContain("unit.math.graph");
   });
