@@ -339,7 +339,7 @@ it("keeps the completed board through its explanation and lowers the screen only
  try {
   const unit=quadraticFunctionsFixture.teachingUnits[0]!;
   const beat={text:unit.speechText,targetId:null,camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false};
-  const llm=new FixedResponseLlmProvider([{beats:[{...beat,surface:"board",blackboardMarkdown:"# 要点\n◎ 頂点 → 式の形"},{...beat,surface:"board",blackboardMarkdown:null},{...beat,surface:"slides",blackboardMarkdown:null}]}]);
+  const llm=new FixedResponseLlmProvider([{beats:[{...beat,surface:"board",boardReason:"スライドにない式変形の中間過程を示す",blackboardMarkdown:"# 要点\n◎ 頂点 → 式の形"},{...beat,surface:"board",boardReason:"スライドにない式変形の中間過程を示す",blackboardMarkdown:null},{...beat,surface:"slides",blackboardMarkdown:null}]}]);
   const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
   expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(1);
   expect(plan.actions[0]).toMatchObject({type:"show_blackboard",drawing:{markdown:"# 要点\n◎ 頂点 → 式の形"}});
@@ -394,7 +394,7 @@ it("keeps a previous board visible when the next unit explicitly continues expla
   const unit=quadraticFunctionsFixture.teachingUnits[0]!;
   const drawing={id:"blackboard.existing",markdown:"# 頂点\nx=h",purpose:"頂点"};
   const session={...runtime.session,direction:{actionId:"existing",phase:"complete" as const,surface:"board" as const,drawing,position:"right" as const,targetId:null,camera:"lecture" as const,source:"generated" as const,reason:null}};
-  const llm=new FixedResponseLlmProvider([{beats:[{surface:"board",text:unit.speechText,targetId:null,camera:"lecture",position:"center",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:null}]}]);
+  const llm=new FixedResponseLlmProvider([{beats:[{surface:"board",boardReason:"スライドにない式変形の中間過程を示す",text:unit.speechText,targetId:null,camera:"lecture",position:"center",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:null}]}]);
   const plan=await createLessonPlanner(()=>llm)({session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
   expect(plan.source).toBe("generated");
   expect(plan.actions.some(a=>a.type==="show_slides"||a.type==="show_blackboard")).toBe(false);
@@ -414,4 +414,32 @@ it("repairs schema output once with the actual field errors",async()=>{
   expect(llm.calls[1]?.prompt).toContain("surface");
   expect(llm.calls[1]?.prompt).toContain("Repair the previous candidate once");
  }finally{runtime.close();}
+});
+
+it("rejects copying the visible slide even with a claimed board reason",async()=>{
+ const runtime=setup();
+ try {
+  const unit=runtime.session.course.teachingUnits[0]!;
+  const scene=runtime.session.course.scenes.find(s=>s.id===unit.sceneId)!;
+  const content=runtime.session.course.semanticTargets.find(t=>t.sceneId===scene.id)!.content;
+  const beat={surface:"board",boardReason:"要点をまとめるため",text:unit.speechText,targetId:null,camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:content};
+  const llm=new FixedResponseLlmProvider([{beats:[beat]},{beats:[{...beat,surface:"slides",blackboardMarkdown:null,boardReason:null}]}]);
+  const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
+  expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(2);
+  expect(llm.calls[1]?.prompt).toContain("スライドの転記");
+  expect(plan.actions.some(a=>a.type==="show_blackboard")).toBe(false);
+  expect(llm.calls[0]?.prompt).toContain('"slideContext"');
+ } finally {runtime.close();}
+});
+
+it("requires a concrete missing visual explanation before creating a board",async()=>{
+ const runtime=setup();
+ try {
+  const unit=runtime.session.course.teachingUnits[0]!;
+  const beat={surface:"board",text:unit.speechText,targetId:null,camera:"lecture",position:"right",gesture:"explain",walkWhileSpeaking:false,blackboardMarkdown:"# 補足\n式変形の途中を確認"};
+  const llm=new FixedResponseLlmProvider([{beats:[beat]},{beats:[{...beat,boardReason:"平方完成の中間式がスライドになく、等価変形の確認に必要"}]}]);
+  const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:10000},new AbortController().signal);
+  expect(plan.source).toBe("generated");expect(llm.calls).toHaveLength(2);
+  expect(plan.actions.some(a=>a.type==="show_blackboard")).toBe(true);
+ } finally {runtime.close();}
 });

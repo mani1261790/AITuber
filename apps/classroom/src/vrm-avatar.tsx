@@ -1,5 +1,5 @@
 import {eraserPalmPosition} from "./eraser-grip.ts";
-import { paintBoardErase, eraseDuration, boardEraseArea, type EraseArea } from "./board-erase.ts";
+import { paintBoardErase, eraseDurationFor, boardEraseArea, type EraseArea } from "./board-erase.ts";
 import { paintBoardReveal } from "./board-reveal.ts";
 import {StagePropMotion, StagePropVisuals, type StagePropAction} from "./stage-prop-motion.ts";
 import {applyAuthoredVertexColors} from "./authored-vertex-colors.ts";
@@ -379,7 +379,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
           else if(currentImage.boardReveal)paintBoardReveal(revealCanvas,currentImage.boardCanvas,currentImage.boardReveal,elapsed);
           else {const ctx=revealCanvas.getContext("2d")!;ctx.fillStyle="#204a3d";ctx.fillRect(0,0,1280,720);if(elapsed>=1)ctx.drawImage(currentImage.boardCanvas,0,0);}
           if(propFrame?.kind==="write")inkArea=currentImage.boardReveal?boardEraseArea(currentImage.boardReveal.marks):undefined;
-          boardHasInk=propFrame?.kind==="write"?elapsed>0:eraseFirst && (propFrame?.eraseElapsed??0)<eraseDuration;
+          boardHasInk=propFrame?.kind==="write"?elapsed>0:eraseFirst && (propFrame?.eraseElapsed??0)<eraseDurationFor(eraseArea);
           boardTexture=updateLessonTexture(boardTexture,revealCanvas,renderer.capabilities.getMaxAnisotropy());
           if(boardTexture)boardTexture.needsUpdate=true;
           setLessonMap(boardMaterial,boardTexture);

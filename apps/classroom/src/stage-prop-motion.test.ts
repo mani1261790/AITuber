@@ -89,7 +89,7 @@ it("uses the ordinary right standing position to operate the screen without an e
 it("retracts, erases existing ink, and only then starts the new writing clock",()=>{
  const motion=new StagePropMotion(),action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:2};
  const kinds:string[]=[];let sawErase=false,sawWrite=false,complete=false;
- for(let i=0;i<2400;i++){
+ for(let i=0;i<4800;i++){
   const frame=motion.update(action,true,1/60,true)!;
   if(kinds.at(-1)!==frame.kind)kinds.push(frame.kind);
   if(frame.kind==="erase"){sawErase=true;expect(frame.writingElapsed).toBe(0);expect(frame.done).toBe(false);}
@@ -101,7 +101,7 @@ it("retracts, erases existing ink, and only then starts the new writing clock",(
 it("does not erase before arrival and does not repeat erasing after completion",()=>{
  const motion=new StagePropMotion(),action={id:"replace",kind:"write" as const,eraseFirst:true,writingDuration:1};
  for(let i=0;i<120;i++)expect(motion.update(action,false,1/60)!.eraseElapsed).toBe(0);
- for(let i=0;i<2400;i++)motion.update(action,true,1/60);
+ for(let i=0;i<4800;i++)motion.update(action,true,1/60);
  expect(motion.update(action,true,1/60)!.kind).toBe("write");
  expect(motion.update(action,true,1/60)!.done).toBe(true);
  expect(motion.update({id:"fresh",kind:"write"},true,0)!.kind).toBe("write");
@@ -130,19 +130,19 @@ it("keeps screen return grip and release outside the sheet and in front of it",(
   expect(frame.pose.target.z).toBeGreaterThanOrEqual(.48);
  }
 });
-it("starts writing after a short erase including travel between the two working positions",async()=>{
+it("starts writing after a short erase including travel between reachable working positions",async()=>{
  const {StageLocomotion}=await import("./stage-locomotion.ts");
  const movement=new StageLocomotion(rightStageX,-.26),motion=new StagePropMotion();
  const action={id:"short",kind:"write" as const,eraseFirst:true,eraseArea:{left:250,top:160,right:1030,bottom:550}};
  let elapsed=0;
- for(;elapsed<25;elapsed+=1/60){
+ for(;elapsed<45;elapsed+=1/60){
   const dest=motion.destination(action);
   const ready=movement.phase==="idle" && Math.abs(movement.x-dest.x)<.01 && Math.abs(Math.atan2(Math.sin(movement.yaw-dest.yaw),Math.cos(movement.yaw-dest.yaw)))<.05;
   const frame=motion.update(action,ready,1/60)!;
   if(frame.kind==="write")break;
   movement.update(1/60,frame.x,frame.yaw,1.1,1.1);
  }
- expect(elapsed).toBeLessThan(25);
+ expect(elapsed).toBeLessThan(45);
 });
 
 it("keeps holding the eraser when stepping across the board",()=>{
@@ -152,4 +152,11 @@ it("keeps holding the eraser when stepping across the board",()=>{
  for(let i=0;i<120;i++)frame=motion.update(action,false,1/60)!;
  expect(frame.pose.weight).toBeLessThan(.01);
  expect(frame.pose.grip).toBeGreaterThan(.99);
+});
+
+it("writes around the center of the blackboard with the hand within reach",async()=>{
+ const {boardWritingX,loopingHandwritingPoint}=await import("./stage-prop-motion.ts");
+ const motion=new StagePropMotion();
+ expect(motion.destination({id:"center",kind:"write"}).x).toBeCloseTo((-3.7865+.8465)/2);
+ for(let t=0;t<12;t+=.1)expect(Math.abs(loopingHandwritingPoint(t).x-boardWritingX)).toBeLessThan(.8);
 });

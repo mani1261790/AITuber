@@ -1,6 +1,6 @@
 import {eraserHeldTransform,eraserHandOrientation} from "./eraser-grip.ts";
 import { createBlackboardEraser, disposeBlackboardEraser } from "./blackboard-eraser.ts";
-import { eraserWorldPoint, eraserStandingX, eraseDuration, type EraseArea } from "./board-erase.ts";
+import { eraserWorldPoint, eraserStandingX, eraseDurationFor, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
 export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean };
@@ -11,6 +11,7 @@ export interface StagePropPose {
 // The sheet ends at x=.908; keep the cord and the whole hand outside it,
 // with extra depth clearance for fingers when the grip opens on release.
 export const screenCordX=1.12;
+export const boardWritingX=-1.47;
 export const screenGripZ=.48;
 const ease=(n:number)=>THREE.MathUtils.clamp(THREE.MathUtils.smootherstep(n,0,1),0,1);
 
@@ -21,7 +22,7 @@ const writingKeys:{time:number;point:THREE.Vector3}[]=[];
 let clock=0;
 for(let row=0;row<2;row++)for(let letter=0;letter<4;letter++){
  for(const stroke of strokes){
-  const point=(p:readonly number[],lift=0)=>new THREE.Vector3(-1.35+letter*.11+p[0]!*.075,2.32-row*.19+p[1]!*.095,.045+lift);
+  const point=(p:readonly number[],lift=0)=>new THREE.Vector3(-1.35+(boardWritingX+.6)+letter*.11+p[0]!*.075,2.32-row*.19+p[1]!*.095,.045+lift);
   const first=point(stroke[0],.035);
   if(writingKeys.length){clock+=(row>0 && letter===0 && stroke===strokes[0]) ? .6 : .085;writingKeys.push({time:clock,point:first});}
   else writingKeys.push({time:clock,point:first});
@@ -57,7 +58,7 @@ export class StagePropMotion {
    this.stage=this.returningFirst?"screen-up":action.kind==="write" && action.eraseFirst?"erase":action.kind;
   }
   if(this.stage==="erase")return {x:eraserStandingX(this.age,action.eraseArea),yaw:Math.PI};
-  return {x:this.stage==="write"?-.6:rightStageX,yaw:this.stage==="write"?Math.PI:-.65};
+  return {x:this.stage==="write"?boardWritingX:rightStageX,yaw:this.stage==="write"?Math.PI:-.65};
  }
  update(action:StagePropAction|undefined,ready:boolean,delta:number,screenVisible=false){
   if(!action){this.id="";this.age=0;this.arrived=false;return null;}
@@ -74,7 +75,7 @@ export class StagePropMotion {
    const target=this.eraseTarget.clone();
    const frame={phase:ready?"erase":"approach",kind:"erase" as const,progress:0,weight:this.eraseWeight,handle:target,done:false,writingElapsed:0,eraseElapsed:elapsed,x:eraserStandingX(elapsed,action.eraseArea),yaw:Math.PI,
     pose:{kind:"erase",weight:this.eraseWeight,target,side:"left",grip:this.eraseHold,wristRoll:0} satisfies StagePropPose};
-   if(this.age>=eraseDuration){this.stage="write";this.age=0;this.arrived=false;}
+   if(this.age>=eraseDurationFor(action.eraseArea)){this.stage="write";this.age=0;this.arrived=false;}
    return frame;
   }
   if(ready)this.arrived=true;
@@ -96,8 +97,8 @@ export class StagePropMotion {
   const wristRoll=writing && this.age>1.2 ? .055*Math.sin(writingElapsed*14) : 0;
   const done=this.age>=duration;
   const frame={phase:!this.arrived?"approach":writing?(this.stopAge===null?"write":"settle"):this.age<1.3?"reach":this.age<1.8?"grasp":this.age<(raising?2.5:4.2)?"pull":this.age<(raising?2.95:4.75)?"release":this.age<(raising?4.5:6.1)?"lower":"settle",
-    kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,eraseElapsed:writing && action.eraseFirst?eraseDuration:0,
-    x:writing?-.6:rightStageX,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
+    kind:writing?"write" as const:"screen" as const,progress,weight,handle,done:done&&!this.returningFirst,writingElapsed:writing?writingElapsed:0,eraseElapsed:writing && action.eraseFirst?eraseDurationFor(action.eraseArea):0,
+    x:writing?boardWritingX:rightStageX,yaw:done&&!this.returningFirst?0:writing?Math.PI:-.65,
     pose:{kind:writing?"write":"screen",weight,target,side:writing?"left":"right",grip,wristRoll} satisfies StagePropPose};
   if(done && this.returningFirst){this.returningFirst=false;this.stage=action.eraseFirst?"erase":"write";this.age=0;this.arrived=false;}
   return frame;

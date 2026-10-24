@@ -621,15 +621,16 @@ function solveFixedGrip(vrm:VRM,side:"left"|"right",target:THREE.Vector3,weight:
 export function solveEraserGrip(vrm:VRM,target:THREE.Vector3,weight:number,grip:number){
  const hand=vrm.humanoid.getNormalizedBoneNode("leftHand");if(!hand)return;
  const palmGoal=target.clone().add(new THREE.Vector3(0,0,eraserPalmClearance));
- const original=hand.getWorldQuaternion(new THREE.Quaternion());
- const orientation=original.clone().slerp(eraserHandOrientation,weight);
+ const joints=(["leftUpperArm","leftLowerArm","leftHand"] as const).flatMap(name=>{const bone=vrm.humanoid.getNormalizedBoneNode(name);return bone?[bone]:[];});
+ const initial=joints.map(bone=>bone.quaternion.clone());
+ const orientation=eraserHandOrientation;
  for(let i=0;i<3;i++){
   vrm.scene.updateMatrixWorld(true);
   hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(orientation));
   vrm.scene.updateMatrixWorld(true);
   const palm=eraserPalmPosition(vrm);if(!palm)return;
   const offset=palm.sub(hand.getWorldPosition(new THREE.Vector3()));
-  aimArm(vrm,"left",palmGoal.clone().sub(offset),weight,"grip");
+  aimArm(vrm,"left",palmGoal.clone().sub(offset),1,"grip");
  }
  vrm.scene.updateMatrixWorld(true);
  // Carry axial rotation through the forearm/cuff instead of twisting only the wrist.
@@ -640,10 +641,12 @@ export function solveEraserGrip(vrm:VRM,target:THREE.Vector3,weight:number,grip:
   const projection=axis.clone().multiplyScalar(new THREE.Vector3(difference.x,difference.y,difference.z).dot(axis));
   const twist=new THREE.Quaternion(projection.x,projection.y,projection.z,difference.w).normalize();
   const parent=lower.parent.getWorldQuaternion(new THREE.Quaternion());
-  lower.quaternion.premultiply(parent.clone().invert().multiply(new THREE.Quaternion().slerp(twist,weight)).multiply(parent));
+  lower.quaternion.premultiply(parent.clone().invert().multiply(twist.clone()).multiply(parent));
   vrm.scene.updateMatrixWorld(true);
  }
  hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(orientation));
+ // Refinement solves a full contact pose; blend only once to avoid snapping on acquisition.
+ joints.forEach((bone,i)=>bone.quaternion.slerpQuaternions(initial[i]!,bone.quaternion.clone(),weight));
  applyEraserFingers(vrm,grip);
 }
 
