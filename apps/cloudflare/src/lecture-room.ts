@@ -222,7 +222,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
         return new Response(null,{status:101,webSocket:pair[0]});
       }
       if(request.method!=='POST')return json(405,{error:'method_not_allowed'});
-      const body=await read<SubmitQuestionRequest & SubmitLearningEvidenceRequest & SubmitAfterClassSurveyRequest & {accessToken:string;epoch:number;audioUrl:string;remainingMs:number;playbackState?:string;startedAt?:string;actionId:string;answer:string}>();
+      const body=await read<SubmitQuestionRequest & SubmitLearningEvidenceRequest & SubmitAfterClassSurveyRequest & {accessToken:string;epoch:number;audioUrl:string;remainingMs:number;playbackState?:string;startedAt?:string;actionId:string;writingStarted?:boolean;answer:string}>();
       const access=this.classrooms.authenticate(roomMatch[1],body.accessToken),id=access.sessionId;
       if(operation==='reconnect')return json(200,{participant:access.participant,room:access.room,snapshot:lecture.getSnapshot(id),questions:questions.list(id)});
       if(operation==='playback')lecture.reportPlayback(id,body.epoch,body.audioUrl,body.remainingMs,access.participant.id,body.playbackState,body.startedAt);
