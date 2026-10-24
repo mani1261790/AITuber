@@ -486,3 +486,15 @@ it("keeps a prefetched continuation when a question is still being prepared",asy
   expect(planner.mock.calls.filter(call=>call[0].unit.id==="unit.math.parts")).toHaveLength(1);
  } finally {runtime.close();}
 });
+
+
+it("accepts spoken formatting differences but names every missing required claim for repair",()=>{
+ const runtime=setup();
+ try {
+  const unit={...quadraticFunctionsFixture.teachingUnits[0]!,speakingGuidance:{requiredPhrases:["top_pは安全性を保証しません","num_predictは生成トークン数の上限"],avoidPhrases:["top_pは安全性を保証します"],explanationNotes:""}};
+  const input={session:runtime.session,unit,previousSpeech:"",remainingMs:1000};
+  expect(()=>validatePlan([{type:"speak",text:"top_p は、安全性を保証しません。num_predict は生成トークン数の上限です。"}],input)).not.toThrow();
+  expect(()=>validatePlan([{type:"speak",text:"設定を調整しましょう。"}],input)).toThrow('Required wording missing: ["top_pは安全性を保証しません","num_predictは生成トークン数の上限"]');
+  expect(()=>validatePlan([{type:"speak",text:"top_pは安全性を保証します。num_predictは生成トークン数の上限です。"}],input)).toThrow("Required wording missing");
+ } finally {runtime.close();}
+});
