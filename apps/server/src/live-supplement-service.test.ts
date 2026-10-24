@@ -102,6 +102,8 @@ describe("LiveSupplementService", () => {
     expect(lecture.getSession(session.id)).toMatchObject({ status: "TEACHING", currentUnitId: "unit.math.graph", liveSupplement: { status: "ready" } });
     expect(provider.calls.map((call) => call.purpose)).toEqual(["live-supplement", "live-supplement-review", "live-supplement", "live-supplement-review"]);
     expect(provider.calls[2]?.prompt).toContain("Previous attempt failure");
+    expect(provider.calls[2]?.prompt).toContain("unsupported explanation");
+    expect(provider.calls[2]?.prompt).toContain(JSON.stringify(candidate()));
   });
 
   it("defers after two failed reviews and resumes the interrupted main unit", async () => {
