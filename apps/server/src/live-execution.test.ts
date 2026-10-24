@@ -158,3 +158,27 @@ it("starts board speech only once from the rendering owner and cancels it on pau
  service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,"owner",true);
  expect(service.getSession(view.id)).toMatchObject({status:"PAUSED",speech:{playing:false}});
 });
+
+it("retains prewarmed answer audio when the main-unit planner finishes later",async()=>{
+ vi.useFakeTimers();
+ let resolvePlan!: (plan: import("./lesson-director.ts").DirectedPlan)=>void;
+ const firstPlan=new Promise<import("./lesson-director.ts").DirectedPlan>(resolve=>{resolvePlan=resolve;});
+ let calls=0;
+ const provider=new TestToneSpeechProvider(1000),synthesize=vi.spyOn(provider,"synthesize");
+ const service=create(async input=>++calls===1?firstPlan:{source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText}]},provider);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const origin=service.captureSupplementOrigin(session.id,"target.math.vertex-form");
+ const preparing={id:"supplement.prewarm",questionId:"question.prewarm",status:"preparing" as const,attempt:1,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null};
+ service.announceSupplement(session.id,preparing,{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+ const candidate={speechText:"括弧がゼロになる値を考えます。",captionText:"括弧がゼロになる値",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[]};
+ service.queueSupplement(session.id,{...preparing,status:"ready",candidate},{onPlaybackStarted(){},onCompleted(){}});
+ await vi.advanceTimersByTimeAsync(0);
+ const prepared=synthesize.mock.calls.find(call=>call[0].text===candidate.speechText)!;
+ expect(prepared).toBeDefined();
+ resolvePlan({source:"generated",reason:null,actions:[{type:"speak",text:"本編の説明です。"}]});
+ await vi.advanceTimersByTimeAsync(0);
+ expect(prepared[1]?.signal?.aborted).toBe(false);
+ expect(synthesize.mock.calls.filter(call=>call[0].text===candidate.speechText)).toHaveLength(1);
+ service.command(session.id,{command:"pause"});
+ expect(prepared[1]?.signal?.aborted).toBe(true);
+});
