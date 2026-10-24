@@ -204,8 +204,11 @@ export class FixedLectureService {
       targetLevel: course.targetLevel,
       durationMinutes: course.durationMinutes,
       learningGoals: course.learningGoals,
+      packageReady: Boolean(course.performance),
     }));
   }
+
+  getCourse(id:string): ReadonlyCoursePackage {const course=this.#courses.get(id);if(!course)throw new RangeError("教材が見つかりません");return structuredClone(course);}
 
   registerCourse(course: ReadonlyCoursePackage): void {
     if (course.status !== "available") throw new TypeError("Only an available Course Package can be registered");
@@ -225,6 +228,8 @@ export class FixedLectureService {
       if (previous && previous.state.status !== "FINISHED") throw new TypeError("進行中の講義があります。現在の講義を終了してから新しい講義を開始してください。");
     }
 
+    if(this.#planner?.requiresPackage && !course.performance)throw new TypeError("教材の台本が未準備です。パッケージ編集画面で「台本を準備して公開」を実行してください。");
+    if(course.performance && request.durationMinutes!==course.durationMinutes)throw new TypeError("このパッケージの講義時間を指定してください。時間変更には教材の再作成が必要です。");
     const id = `session.${randomUUID()}`;
     this.#store.createSession({ id, coursePackageId: course.id, coursePackageVersion: course.version });
     const runtime: RuntimeSession = {

@@ -414,3 +414,17 @@ it.each(['omitted', 'different'])('derives %s captions from reference speech wit
   expect(result.course!.teachingUnits.every(unit => unit.captionText === unit.speechText)).toBe(true);
   expect(provider.calls.map(call => call.purpose)).toEqual(['generation', 'review']);
 });
+
+it('does not make a course available before package preparation completes', async()=>{
+ const source=upload('Package preparation gate');const provider=new FixedResponseLlmProvider([remapSource(quadraticFunctionsFixture,sourceId(source)),passingReview()]);
+ let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});const available=vi.fn();
+ const prepare=vi.fn(async(course:CoursePackage)=>{await held;return course;});
+ const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'package-gate-')),llm:()=>provider,preparePackage:prepare,onAvailable:available});
+ const work=service.create({durationMinutes:5,sources:[source]});await vi.waitFor(()=>expect(prepare).toHaveBeenCalled());expect(available).not.toHaveBeenCalled();
+ release();expect((await work).status).toBe('available');expect(available).toHaveBeenCalledOnce();
+});
+it('does not publish a course when package preparation fails',async()=>{
+ const source=upload('Package preparation failure');const provider=new FixedResponseLlmProvider([remapSource(quadraticFunctionsFixture,sourceId(source)),passingReview()]);const available=vi.fn();
+ const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'package-failure-')),llm:()=>provider,preparePackage:async()=>{throw Error('読みの審査に失敗');},onAvailable:available});
+ const job=await service.create({durationMinutes:5,sources:[source]});expect(job.status).toBe('failed');expect(job.course).toBeNull();expect(available).not.toHaveBeenCalled();
+});

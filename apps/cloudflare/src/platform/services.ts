@@ -7,6 +7,7 @@ import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, F
 
 import { FixedLectureService } from "../../../server/src/fixed-lecture-service.ts";
 import { LlmSettingsStore } from "../../../server/src/llm-settings-store.ts";
+import { PackageEditorService } from "../../../server/src/package-editor-service.ts";
 import { createWholeLecturePlanner } from "../../../server/src/whole-lecture-planner.ts";
 import { PreparedArtifacts } from "../../../server/src/prepared-artifacts.ts";
 import { PreparedReadings, ReadingSpeechProvider } from "../../../server/src/prepared-readings.ts";
@@ -65,17 +66,20 @@ const llmSettings = new LlmSettingsStore(llmSettingsPath, env, resourceBudgetSto
 const preparedArtifacts = new PreparedArtifacts(llmSettingsPath + ".prepared");
 const preparationProvider = () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } };
 const preparedReadings = new PreparedReadings(preparationProvider, preparedArtifacts);
-if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? []);
-const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings) }) });
-const authoring = new CourseAuthoringService({ cacheViews: true, directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course), defer: schedule });
+if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? [], () => lecture.getCurrentSession()?.course.performance?.readings ?? []);
+const packageProvider=()=>llmSettings.createProvider("authoring");
+const packagePlanner=createWholeLecturePlanner(packageProvider,preparedArtifacts,new PreparedReadings(packageProvider,preparedArtifacts));
+const lecture: FixedLectureService = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings, true) }) });
+const authoring = new CourseAuthoringService({ ...(ttsTestMode ? {} : {preparePackage:(course,signal)=>packagePlanner.preparePackage(course,signal)}), cacheViews: true, directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course), defer: schedule });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
+const packages=new PackageEditorService(preparedArtifacts,packagePlanner,packageProvider,id=>lecture.getCourse(id),course=>lecture.registerCourse(course),schedule);
 let pedagogy: PedagogyService | null = null;
 const questions = new QuestionQueueService({ classifier: createCommentClassifier(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }), store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
 pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions, ...(ttsTestMode ? {} : { evaluator: createAssessmentEvaluator(() => llmSettings.createProvider("runtime")) }) });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 
-return {chatgpt,lecture,settings:llmSettings,authoring,questions,pedagogy,afterClass,supplements,dataRetention};
+return {packages,chatgpt,lecture,settings:llmSettings,authoring,questions,pedagogy,afterClass,supplements,dataRetention};
 }
 function optionalNonNegativeNumber(value: string | undefined, name: string): number | undefined {
   if (!value?.trim()) return undefined; const parsed = Number(value);

@@ -1,3 +1,4 @@
+import type { PackageEditorService } from "./package-editor-service.ts";
 import { lessonPdfSource, pdfSourceHeaders } from "./lesson-pdf-source.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AuthoringJobView, ClassroomJoinRequest, ClassroomQuestionView, ClassroomReconnectRequest, ClassroomSnapshot, ClassroomStreamMessage, CreateAuthoringRequest, CreateSessionRequest, FixedSessionView, LlmSettingsView, ResumeAuthoringRequest, SessionCommandRequest, SubmitAfterClassSurveyRequest, SubmitLearningEvidenceRequest, SubmitQuestionRequest, UpdateLlmSettingsRequest } from "@aituber/contracts";
@@ -32,7 +33,7 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi, afterClass?: AfterClassApi): Server {
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi, afterClass?: AfterClassApi, packages?: PackageEditorService): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
@@ -145,6 +146,20 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "classroom"); if (!afterClass) throw new RangeError("After-class survey is unavailable");
         const body = await readJson<SubmitAfterClassSurveyRequest>(request); const access = classrooms.authenticate(surveyMatch[1]!, body.accessToken);
         return json(response, 201, { survey: afterClass.submitSurvey({ sessionId: access.sessionId, participantId: access.participant.id, request: body }) });
+      }
+      const packageSource=url.pathname.match(/^\/api\/packages\/([^/]+)\/source$/);
+      if(packageSource&&request.method==='GET'){
+        requireSurface(request,"operator");if(!packages||!authoring?.readSource)throw new RangeError('元資料がありません');
+        const source=packages.get(decodeURIComponent(packageSource[1]!)).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
+        if(!source)throw new RangeError('PDFがありません');const bytes=authoring.readSource(source.contentHash);response.writeHead(200,{'content-type':'application/pdf','cache-control':'private, max-age=3600'});response.end(bytes);return;
+      }
+      const packageMatch=url.pathname.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop))?$/);
+      if(packageMatch){
+        requireSurface(request,"operator");if(!packages)throw new RangeError('パッケージ編集は利用できません');const id=decodeURIComponent(packageMatch[1]!);
+        if(request.method==='GET'&&!packageMatch[2])return json(response,200,{draft:packages.get(id)});
+        if(request.method==='PUT'&&!packageMatch[2])return json(response,200,{draft:packages.save(id,await readJson(request,4*1024*1024))});
+        if(request.method==='POST'&&packageMatch[2]==='publish'){const body=await readJson<{revision:string}>(request);return json(response,202,{draft:packages.begin(id,body.revision)});}
+        if(request.method==='POST'&&packageMatch[2]==='stop')return json(response,200,{draft:packages.stop(id)});
       }
       if (request.method === "GET" && url.pathname === "/api/courses") { requireSurface(request, "operator"); return json(response, 200, { courses: api.listCourses() }); }
       if (request.method === "GET" && url.pathname === "/api/sessions/current") {

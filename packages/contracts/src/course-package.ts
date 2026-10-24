@@ -146,7 +146,24 @@ export const PreGeneratedSupplementSchema = closedObject({
   autoPlayEligible: Type.Boolean(),
 });
 
+export const LectureBeatSchema = closedObject({
+  text: Type.String({minLength:1,maxLength:600}), targetId: Type.Union([Identifier,Type.Null()]),
+  camera: Type.Union([Type.Literal("lecture"),Type.Literal("material")]),
+  position: Type.Union([Type.Literal("left"),Type.Literal("center"),Type.Literal("right")]),
+  surface: Type.Optional(Type.Union([Type.Literal("slides"),Type.Literal("board")])),
+  gesture: Type.Optional(Type.Union([Type.Literal("idle"),Type.Literal("listen"),Type.Literal("explain"),Type.Literal("emphasize"),Type.Literal("nod")])),
+  walkWhileSpeaking: Type.Optional(Type.Boolean()),
+  blackboardMarkdown: Type.Optional(Type.Union([Type.String({maxLength:6000}),Type.Null()])),
+  boardReason: Type.Optional(Type.Union([Type.String({maxLength:300}),Type.Null()])),
+});
+export const LecturePerformanceSchema = closedObject({
+  version: Type.Literal(1),
+  units: Type.Array(closedObject({unitId:Identifier,beats:Type.Array(LectureBeatSchema,{minItems:1,maxItems:3})}),{minItems:1,maxItems:MAX_UNITS}),
+  readings: Type.Array(closedObject({text:NonEmptyText,parts:Type.Array(closedObject({text:Type.String({minLength:1,maxLength:40}),reading:Type.String({minLength:1,maxLength:160})}),{minItems:1,maxItems:180})}),{maxItems:4096}),
+});
+export type LecturePerformance = Static<typeof LecturePerformanceSchema>;
 export const CoursePackageSchema = closedObject({
+  performance: Type.Optional(LecturePerformanceSchema),
   schemaVersion: Type.Literal("1.0.0"),
   id: Identifier,
   version: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }),

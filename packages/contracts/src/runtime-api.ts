@@ -1,6 +1,7 @@
 import type { ReadonlyCoursePackage } from "./course-package.ts";
 
 export interface CourseSummary {
+  readonly packageReady?: boolean;
   readonly id: string;
   readonly title: string;
   readonly targetLevel: string;

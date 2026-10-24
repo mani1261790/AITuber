@@ -6,6 +6,7 @@ import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, F
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
+import { PackageEditorService } from "./package-editor-service.ts";
 import { createWholeLecturePlanner } from "./whole-lecture-planner.ts";
 import { PreparedArtifacts } from "./prepared-artifacts.ts";
 import { PreparedReadings, ReadingSpeechProvider } from "./prepared-readings.ts";
@@ -72,16 +73,19 @@ const llmSettings = new LlmSettingsStore(llmSettingsPath, process.env, resourceB
 const preparedArtifacts = new PreparedArtifacts(llmSettingsPath + ".prepared");
 const preparationProvider = () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } };
 const preparedReadings = new PreparedReadings(preparationProvider, preparedArtifacts);
-if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? []);
-const lecture = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings) }) });
-const authoring = new CourseAuthoringService({ directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
+if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? [], () => lecture.getCurrentSession()?.course.performance?.readings ?? []);
+const packageProvider=()=>llmSettings.createProvider("authoring");
+const packagePlanner=createWholeLecturePlanner(packageProvider,preparedArtifacts,new PreparedReadings(packageProvider,preparedArtifacts));
+const lecture: FixedLectureService = new FixedLectureService({ store, playbackUnitMs, requireLiveExecution: !ttsTestMode, waitForClassroom: !ttsTestMode, ...(speechProvider ? { speechProvider, voiceId } : {}), ...(ttsTestMode ? {} : { planner: createWholeLecturePlanner(preparationProvider, preparedArtifacts, preparedReadings, true) }) });
+const authoring = new CourseAuthoringService({ ...(ttsTestMode ? {} : {preparePackage:(course,signal)=>packagePlanner.preparePackage(course,signal)}), directory: authoringPath, llm: () => llmSettings.createProvider("authoring"), onAvailable: (course) => lecture.registerCourse(course) });
 authoring.list().forEach((job) => { if (job.course) lecture.registerCourse(job.course); });
+const packages=new PackageEditorService(preparedArtifacts,packagePlanner,packageProvider,id=>lecture.getCourse(id),course=>lecture.registerCourse(course));
 let pedagogy: PedagogyService | null = null;
 const questions = new QuestionQueueService({ classifier: createCommentClassifier(() => { try { return llmSettings.createProvider("runtime"); } catch { return null; } }), store: questionStore, context: (sessionId) => ({ session: lecture.getSession(sessionId), remainingMs: lecture.getRemainingTimeMs(sessionId) }), onQuestion: (input) => pedagogy?.recordQuestion(input) });
 pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions, ...(ttsTestMode ? {} : { evaluator: createAssessmentEvaluator(() => llmSettings.createProvider("runtime")) }) });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
-const server = createApp(lecture, llmSettings, authoring, questions, pedagogy, afterClass);
+const server = createApp(lecture, llmSettings, authoring, questions, pedagogy, afterClass, packages);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;

@@ -53,7 +53,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       this.context.storage.sql.exec("UPDATE question_threads SET triage='later',status='accepted',disposition='after-class' WHERE triage='pending' OR status='answering'");
       const restored=this.services.lecture.getCurrentSession();
       if(restored) this.services.supplements.recover(restored.id);
-      if(this.needsResume || this.services.lecture.getCurrentSession()?.status==='FINISHED' || this.services.authoring.list().some(job=>job.status==='running')) this.schedule(1000);
+      if(this.services.packages.pending || this.needsResume || this.services.lecture.getCurrentSession()?.status==='FINISHED' || this.services.authoring.list().some(job=>job.status==='running')) this.schedule(1000);
       this.initialized=true;
     });
   }
@@ -65,6 +65,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     this.needsResume=false;this.ctx.storage.kv.delete('resumeNeeded');
     const session=this.services.lecture.getCurrentSession();
     if(session && !['PAUSED','FINISHED'].includes(session.status))this.services.lecture.command(session.id,{command:'pause'});
+    this.services.packages.stopAll();
     for(const job of this.services.authoring.list())if(job.status==='running')this.services.authoring.stop(job.id);
     this.persist();this.budget.recovered();
   }
@@ -92,6 +93,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       await this.ctx.storage.setAlarm(Date.now()+60000);
       if(this.needsResume) {this.needsResume=false;const current=this.services.lecture.getCurrentSession();if(current?.status==='PAUSED')this.services.lecture.command(current.id,{command:'resume'});this.ctx.storage.kv.delete('resumeNeeded');}
       await this.services.authoring.runPendingStep();
+      await this.services.packages.runPendingStep();
       const lastPurge=await this.ctx.storage.get<number>('lastPurge')??0;
       if(Date.now()-lastPurge>86400000){await this.services.dataRetention.purgeNow();
         const ids=new Set(this.context.storage.sql.exec<{id:string}>('SELECT id FROM lecture_sessions').toArray().map(row=>row.id));
@@ -100,7 +102,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       await flushSourceFiles(); this.persist();
       const current=this.services.lecture.getCurrentSession();
       if(current?.status==='FINISHED'){this.services.afterClass.consider(current.id);await this.services.afterClass.drain(current.id);}
-      if(this.services.authoring.list().some(job=>job.status==='running') || current && ['TEACHING','RECOVERING'].includes(current.status)) await this.ctx.storage.setAlarm(Date.now()+15000);
+      if(this.services.packages.pending || this.services.authoring.list().some(job=>job.status==='running') || current && ['TEACHING','RECOVERING'].includes(current.status)) await this.ctx.storage.setAlarm(Date.now()+15000);
       else {const alarm=await this.ctx.storage.getAlarm();if(alarm===null || alarm>Date.now()+30000)await this.ctx.storage.setAlarm(Date.now()+86400000);}
     }).finally(()=>this.budget.flush());
   }
@@ -136,7 +138,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:24,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:25,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
@@ -185,7 +187,20 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(request.method==='POST'&&job[2]==='restart'){await readJson(request,64*1024,true);return json(202,{job:authoring.beginRestart(job[1])});}
       if(request.method==='POST'&&job[2]==='resume'){return json(202,{job:authoring.beginResume(job[1],await readJson<ResumeAuthoringRequest>(request,64*1024,true))});}
     }
-    if(path==='/api/courses'&&request.method==='GET')return json(200,{courses:lecture.listCourses()});
+    const packageSource=path.match(/^\/api\/packages\/([^/]+)\/source$/);
+    if(packageSource&&request.method==='GET'){
+      const source=this.services.packages.get(decodeURIComponent(packageSource[1])).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
+      if(!source)throw new RangeError('PDFがありません');const bytes=authoring.readSource(source.contentHash);return new Response(bytes.slice().buffer,{headers:{'content-type':'application/pdf','cache-control':'private, max-age=3600'}});
+    }
+    const packageMatch=path.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop))?$/);
+    if(packageMatch){
+      const id=decodeURIComponent(packageMatch[1]);const packages=this.services.packages;
+      if(request.method==='GET'&&!packageMatch[2])return json(200,{draft:packages.get(id)});
+      if(request.method==='PUT'&&!packageMatch[2])return json(200,{draft:packages.save(id,await readJson(request,4*1024*1024))});
+      if(request.method==='POST'&&packageMatch[2]==='publish'){const body=await read<{revision:string}>();return json(202,{draft:packages.begin(id,body.revision)});}
+      if(request.method==='POST'&&packageMatch[2]==='stop')return json(200,{draft:packages.stop(id)});
+    }
+    if(path==='/api/courses' &&request.method==='GET')return json(200,{courses:lecture.listCourses()});
     if(path==='/api/sessions/current'&&request.method==='GET'){const session=lecture.getCurrentSession();return json(200,{session,classroom:session?this.classrooms.create(session.id):null});}
     if(path==='/api/sessions'&&request.method==='POST'){const session=lecture.createSession(await read<CreateSessionRequest>());return json(201,{session,classroom:this.classrooms.create(session.id)});}
     const sessionMatch=path.match(/^\/api\/sessions\/([^/]+)(?:\/(commands|speech\/([a-f0-9]{64})))?$/);

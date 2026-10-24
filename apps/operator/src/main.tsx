@@ -1,3 +1,4 @@
+import { PackageEditor } from "./package-editor.tsx";
 import { pdfPageImages } from "./pdf-page-images.ts";
 import { StrictMode, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -10,8 +11,8 @@ const gateLabels = { "source-alignment": "出典と内容", "factual-consistency
 type Scope = "authoring" | "session" | "connection";
 type Confirmation = { title: string; description: string; label: string; run(): void };
 
-type Page = "lecture" | "materials" | "history" | "new" | "connection";
-function currentPage(): Page { const page = window.location.hash.replace("#/", ""); return page === "materials" || page === "history" || page === "new" || page === "connection" ? page : "lecture"; }
+type Page = "editor" | "lecture" | "materials" | "history" | "new" | "connection";
+function currentPage(): Page { const page = window.location.hash.replace("#/", ""); if(page.startsWith("editor/"))return "editor"; return page === "materials" || page === "history" || page === "new" || page === "connection" ? page : "lecture"; }
 function OperatorApp() {
   const [page, setPage] = useState<Page>(currentPage);
   useEffect(() => { const change = () => {setPage(currentPage()); setNotice(null); setError(null); window.scrollTo(0, 0);}; window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
@@ -154,11 +155,12 @@ function OperatorApp() {
   }
 
   return <div className="app-layout">
-    <aside className="sidebar"><a className="brand" href="#/lecture">講義管理</a><nav aria-label="管理メニュー">{([['lecture', '講義'], ['materials', '教材'], ['connection', '接続設定']] as const).map(([target, label]) => <a key={target} href={`#/${target}`} aria-current={(page === target || target === "materials" && (page === "new" || page === "history")) ? "page" : undefined}>{label}</a>)}</nav></aside>
+    <aside className="sidebar"><a className="brand" href="#/lecture">講義管理</a><nav aria-label="管理メニュー">{([['lecture', '講義'], ['materials', '教材'], ['connection', '接続設定']] as const).map(([target, label]) => <a key={target} href={`#/${target}`} aria-current={(page === target || target === "materials" && (page === "editor" || page === "new" || page === "history")) ? "page" : undefined}>{label}</a>)}</nav></aside>
     <main className="workspace">
-      <header className="page-header"><h1><HeadingIcon kind={page} />{({lecture: "講義", materials: "教材", history: "教材の作成履歴", new: "教材を作成", connection: "接続設定"})[page]}</h1><div className="page-tools">{!loaded && <span role="status">読み込み中</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>更新</button></div></header>
+      <header className="page-header"><h1><HeadingIcon kind={page} />{({editor:"パッケージを編集", lecture: "講義", materials: "教材", history: "教材の作成履歴", new: "教材を作成", connection: "接続設定"})[page]}</h1><div className="page-tools">{!loaded && <span role="status">読み込み中</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>更新</button></div></header>
       {(page === "materials" || page === "history") && <nav className="material-nav" aria-label="教材メニュー"><a href="#/materials" aria-current={page === "materials" ? "page" : undefined}>利用できる教材</a><a href="#/history" aria-current={page === "history" ? "page" : undefined}>作成履歴{activeJob ? "（作成中）" : ""}</a><a className="button primary" href="#/new">新しい教材を作成</a></nav>}
 
+      {page === "editor" && <PackageEditor key={window.location.hash} id={decodeURIComponent(window.location.hash.slice("#/editor/".length))} />}
       {syncError && <div className="message warning" role="alert"><strong>状態を確認できません</strong><p>{syncError} 接続が戻るまで、表示は前回取得時の状態です。</p></div>}
       {error && <div className="message danger" role="alert"><strong>操作を完了できませんでした</strong><p>{error}</p><button className="text-button" onClick={() => setError(null)}>閉じる</button></div>}
       {notice && <div className="message success" role="status">{notice}</div>}
@@ -178,7 +180,7 @@ function OperatorApp() {
         </section>
       </>}
       {page === "materials" && <>
-        <section className="card" aria-label="利用できる教材">{activeSession && <p className="help"><a href="#/lecture">講義を終了</a>すると、次の教材を選べます。</p>}{courses.length ? <ul className="course-list">{courses.map(course => <li key={course.id}><div><h3>{course.title}</h3><p className="muted">{course.targetLevel} · {course.durationMinutes}分</p></div><div className="course-actions"><Disclosure title="学習目標">{course.learningGoals.map(goal => <p key={goal.id}>{goal.description}</p>)}</Disclosure>{!activeSession && <a href="#/lecture" onClick={() => {setCourseId(course.id); setDuration(course.durationMinutes);}}>この教材で講義を準備</a>}</div></li>)}</ul> : <p>利用できる教材はまだありません。資料から教材を作成してください。</p>}</section>
+        <section className="card" aria-label="利用できる教材">{activeSession && <p className="help"><a href="#/lecture">講義を終了</a>すると、次の教材を選べます。</p>}{courses.length ? <ul className="course-list">{courses.map(course => <li key={course.id}><div><h3>{course.title}</h3><p className="muted">{course.targetLevel} · {course.durationMinutes}分</p></div><div className="course-actions"><a href={`#/editor/${encodeURIComponent(course.id)}`}>パッケージを編集</a><Disclosure title="学習目標">{course.learningGoals.map(goal => <p key={goal.id}>{goal.description}</p>)}</Disclosure>{!activeSession && <a href="#/lecture" onClick={() => {setCourseId(course.id); setDuration(course.durationMinutes);}}>この教材で講義を準備</a>}</div></li>)}</ul> : <p>利用できる教材はまだありません。資料から教材を作成してください。</p>}</section>
       </>}
       {page === "new" && <section className="card creation-form"><a href="#/materials">教材一覧に戻る</a><h2><HeadingIcon kind="new" />資料と作成条件</h2><fieldset disabled={busy.authoring || Boolean(activeJob)}>
             <div className="upload-zone"><strong>教材ファイル</strong><p>PDF・画像・Markdown・テキスト</p><label className="file-picker"><span className="button">ファイルを選ぶ</span><input aria-label="教材ファイルを選択" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt" onChange={event => {setSourceFiles([...event.target.files ?? []]); event.target.value = "";}} /></label><p className="file-selection" role="status">{sourceFiles.length ? `${sourceFiles.length}件のファイルを選択中` : "ファイルは選択されていません"}</p></div>
@@ -196,9 +198,10 @@ function OperatorApp() {
         {page === "lecture" && !activeSession && <section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle title="講義を準備する" id="prepare-heading"  />
           <SelectField label="使用する教材" value={courseId} disabled={!courses.length || activeSession || Boolean(busy.session)} onChange={value => {setCourseId(value); const next = courses.find(item => item.id === value); if (next) setDuration(next.durationMinutes);}} options={courses.map(course => ({value: course.id, label: course.title}))} />
           {selectedCourse && <div className="course-preview"><h3>{selectedCourse.title}</h3><p className="muted">{selectedCourse.targetLevel} · 標準 {selectedCourse.durationMinutes}分</p><strong>学習目標</strong><ul>{selectedCourse.learningGoals.map(goal => <li key={goal.id}>{goal.description}</li>)}</ul></div>}
-          <label className="field">今回の講義時間<NumberField value={duration} onChange={setDuration} min={1} max={480} unit="分" disabled={activeSession || Boolean(busy.session)} /></label>
+          <label className="field">今回の講義時間<NumberField value={duration} onChange={setDuration} min={1} max={480} unit="分" disabled={selectedCourse?.packageReady || activeSession || Boolean(busy.session)} /></label>
+          {selectedCourse?.packageReady === false && <p><a href={`#/editor/${encodeURIComponent(selectedCourse.id)}`}>台本を準備して公開してください</a></p>}
           {loaded && !connected && <p className="inline-warning"><a href="#/connection">開始にはAI接続が必要</a></p>}
-          <button className="primary full" disabled={!loaded || Boolean(syncError) || busy.session || !selectedCourse || !validDuration(duration) || !connected || activeSession} onClick={() => setConfirmation({title: "講義を開始しますか？", description: `「${selectedCourse?.title}」を${duration}分で開始します。開始後、AIと音声生成を利用して講義が進みます。`, label: "講義を開始する", run: () => void startLecture()})}>{busy.session ? "操作中…" : "講義を開始"}</button>
+          <button className="primary full" disabled={!loaded || Boolean(syncError) || busy.session || !selectedCourse || selectedCourse.packageReady === false || !validDuration(duration) || !connected || activeSession} onClick={() => setConfirmation({title: "講義を開始しますか？", description: `「${selectedCourse?.title}」を${duration}分で開始します。開始後、AIと音声生成を利用して講義が進みます。`, label: "講義を開始する", run: () => void startLecture()})}>{busy.session ? "操作中…" : "講義を開始"}</button>
         </section>}
         {page === "connection" && <section className="card" id="connection" aria-labelledby="connection-heading"><SectionTitle title="AI 接続" id="connection-heading"  />{settings?.chatgpt && <div className="connection-summary"><Badge tone={connected ? "green" : "amber"}>{connected ? "接続済み" : "未接続"}</Badge><strong>{settings?.chatgpt ? "ChatGPT · GPT-6 Luna" : settings?.model || "ChatGPT"}</strong></div>}
           {settings?.chatgpt ? <><Disclosure title="接続の詳細"><p>{settings.chatgpt.message}</p></Disclosure>{settings.chatgpt.email && <p className="account">{settings.chatgpt.email}</p>}{settings.chatgpt.status === "registration-required" || settings.chatgpt.status === "local-authorization-required" ? <><button className="primary full" onClick={() => setSignInHelp(true)}>ChatGPTでサインイン</button>{signInHelp && <LocalSignInDialog onClose={() => setSignInHelp(false)} />}</> : connected ? <><div className="button-row"><button disabled={busy.connection} onClick={() => void connectionAction("check")}>接続テスト（文章生成）</button><button className="text-button" disabled={busy.connection || Boolean(activeJob) || activeSession} onClick={() => setConfirmation({title: "ChatGPTから切断しますか？", description: "再接続するまで、新しい教材作成とAIを使う講義を開始できなくなります。", label: "接続を解除", run: () => void connectionAction("disconnect")})}>切断</button></div>{(activeJob || activeSession) && <p className="help">切断には教材作成と講義の終了が必要です。</p>}</> : <button className="primary full" disabled={busy.connection} onClick={() => void connectionAction("connect")}>ChatGPTでサインイン</button>}<a className="external-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">ChatGPTの利用状況</a></> : <p role="status">{syncError ? "接続情報を取得できません。復旧後に更新してください。" : "接続情報を読み込み中…"}</p>}

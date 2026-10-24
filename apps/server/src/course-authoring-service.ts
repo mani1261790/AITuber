@@ -17,6 +17,7 @@ authoringGenerationSchema.properties.contentHash = {type:'string'};
 authoringGenerationSchema.properties.sources = {type:'array',items:{type:'object'}};
 authoringGenerationSchema.properties.teachingUnits.items.required = authoringGenerationSchema.properties.teachingUnits.items.required.filter((key: string) => key !== 'captionText');
 allowShortAuthoringIdentifiers(authoringGenerationSchema);
+delete authoringGenerationSchema.properties.performance;
 const GATE_IDS = ["source-alignment", "factual-consistency", "goal-alignment", "prerequisites", "references", "renderability", "speech-caption", "safe-content", "rights"] as const;
 interface AuthoringCheckpoint {
   id: string; status: "running" | "available" | "budget-exhausted" | "failed" | "stopped"; createdAt: string; updatedAt: string;
@@ -27,6 +28,7 @@ interface AuthoringCheckpoint {
 }
 
 export class CourseAuthoringService {
+  readonly #preparePackage: ((course:CoursePackage,signal:AbortSignal)=>Promise<CoursePackage>) | undefined;
   readonly #directory: string; readonly #llm: () => LlmProvider; readonly #onAvailable: (course: CoursePackage) => void;
   readonly #running = new Set<string>();
   readonly #active = new Map<string, { checkpoint: AuthoringCheckpoint; controller: AbortController }>();
@@ -37,7 +39,7 @@ export class CourseAuthoringService {
   }
   readonly #viewCache: Map<string, AuthoringJobView> | null;
   readonly #defer: (() => void) | undefined;
-  constructor(options: { directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void; defer?: () => void; cacheViews?: boolean }) { this.#viewCache = options.cacheViews ? new Map() : null; this.#defer = options.defer; this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
+  constructor(options: { preparePackage?: (course:CoursePackage,signal:AbortSignal)=>Promise<CoursePackage>; directory: string; llm: () => LlmProvider; onAvailable?: (course: CoursePackage) => void; defer?: () => void; cacheViews?: boolean }) { this.#preparePackage=options.preparePackage; this.#viewCache = options.cacheViews ? new Map() : null; this.#defer = options.defer; this.#directory = options.directory; this.#llm = options.llm; this.#onAvailable = options.onAvailable ?? (() => undefined); mkdirSync(this.#directory, { recursive: true }); this.#recoverInterruptedJobs(); }
 
   async create(request: CreateAuthoringRequest): Promise<AuthoringJobView> {
     return this.#run(await this.#initialize(request), false);
@@ -154,7 +156,7 @@ export class CourseAuthoringService {
         if (!checkpoint.review) throw new Error("教材の審査結果を取得できませんでした。");
         if (!allGatesPassed(checkpoint.review)) recordFailure(checkpoint);
         markElapsed(); this.#save(checkpoint);
-        if (allGatesPassed(checkpoint.review)) { checkpoint.candidate = makeAvailable(checkpoint.candidate); checkpoint.status = "available"; checkpoint.error = null; this.#onAvailable(checkpoint.candidate); break; }
+        if (allGatesPassed(checkpoint.review)) { if(this.#preparePackage)checkpoint.candidate=await this.#preparePackage(checkpoint.candidate,signal); signal.throwIfAborted(); checkpoint.candidate = makeAvailable(checkpoint.candidate); checkpoint.status = "available"; checkpoint.error = null; this.#onAvailable(checkpoint.candidate); break; }
         forceRegenerate = false;
       }
     } catch (error) { if (controller.signal.aborted) { /* stop() already persisted the stopped checkpoint. */ } else if (deadline.aborted) { stopForBudget(checkpoint); } else { checkpoint.status = error instanceof ResourceBudgetConfigurationError || error instanceof ResourceBudgetExceededError ? "budget-exhausted" : "failed"; checkpoint.error = error instanceof Error ? error.message : "教材作成に失敗しました。"; } }

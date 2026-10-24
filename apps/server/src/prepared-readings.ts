@@ -9,7 +9,8 @@ const partSchema={type:'object',additionalProperties:false,required:['text','rea
 const schema={type:'object',additionalProperties:false,required:['items'],properties:{items:{type:'array',minItems:1,maxItems:24,items:{type:'object',additionalProperties:false,required:['id','parts'],properties:{id:{type:'string'},parts:{type:'array',minItems:1,maxItems:180,items:partSchema}}}}}};
 const reviewSchema={type:'object',additionalProperties:false,required:['passed','reason'],properties:{passed:{type:'boolean'},reason:{type:'string',maxLength:1600}}};
 export class PreparedReadings {
- constructor(private provider:()=>LlmProvider|null,private store:PreparedArtifacts){}
+ private provider:()=>LlmProvider|null;private store:PreparedArtifacts;
+ constructor(provider:()=>LlmProvider|null,store:PreparedArtifacts){this.provider=provider;this.store=store;}
  private key(text:string,dictionary:Dictionary){return 'reading-v1:'+digest([text,dictionary]);}
  async prepare(texts:readonly string[],dictionary:Dictionary,signal:AbortSignal):Promise<void>{
   const missing=[...new Set(texts)].filter(text=>!this.store.read(this.key(text,dictionary)));
@@ -36,6 +37,12 @@ export class PreparedReadings {
    }
   }
  }
+ install(items:readonly PreparedReading[],dictionary:Dictionary){
+  for(const item of items){
+   if(!item.parts.length || item.parts.map(part=>part.text).join('')!==item.text || item.parts.some(part=>!part.reading.trim() || /[\p{Script=Han}A-Za-z0-9<>]/u.test(part.reading)))throw new TypeError('読みと原文が一致しません');
+   if(JSON.stringify(this.store.read(this.key(item.text,dictionary)))!==JSON.stringify(item))this.store.write(this.key(item.text,dictionary),item);
+  }
+ }
  async get(text:string,dictionary:Dictionary,signal:AbortSignal){await this.prepare([text],dictionary,signal);const value=this.store.read<PreparedReading>(this.key(text,dictionary));if(!value)throw Error('準備した読みがありません');return value;}
 }
 const normalized=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
@@ -56,9 +63,11 @@ export function alignOriginal(reading:PreparedReading,segments:readonly SpeechAl
 export class ReadingSpeechProvider implements TextToSpeechProvider {
  readonly transcriptFormat='original' as const;
  get provider(){return this.backing.provider;}get model(){return this.backing.model;}
- constructor(private backing:TextToSpeechProvider,private readings:PreparedReadings,private dictionary:()=>Dictionary){}
+ private backing:TextToSpeechProvider;private readings:PreparedReadings;private dictionary:()=>Dictionary;private packaged:()=>readonly {readonly text:string;readonly parts:readonly ReadingPart[]}[];
+ constructor(backing:TextToSpeechProvider,readings:PreparedReadings,dictionary:()=>Dictionary,packaged:()=>readonly {readonly text:string;readonly parts:readonly ReadingPart[]}[] = ()=>[]){this.backing=backing;this.readings=readings;this.dictionary=dictionary;this.packaged=packaged;}
  async synthesize(request:SpeechRequest,options:{signal:AbortSignal}):Promise<SpeechArtifact>{
-  const prepared=await this.readings.get(request.text,this.dictionary(),options.signal);options.signal.throwIfAborted();
+  const bundled=this.packaged().find(item=>item.text===request.text);
+  const prepared:PreparedReading=bundled?{text:bundled.text,parts:bundled.parts.map(part=>({...part}))}:await this.readings.get(request.text,this.dictionary(),options.signal);options.signal.throwIfAborted();
   const artifact=await this.backing.synthesize({...request,text:prepared.parts.map(part=>part.reading).join(''),dictionaryVersion:digest([request.dictionaryVersion,prepared])},options);
   options.signal.throwIfAborted();return {...artifact,cacheKey:digest([artifact.cacheKey,prepared]),transcriptFormat:'original',segments:alignOriginal(prepared,artifact.segments)};
  }

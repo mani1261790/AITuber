@@ -73,3 +73,10 @@ it('repairs a deterministic content defect with a patch before publishing the fu
  const plan=await createWholeLecturePlanner(()=>provider,t.artifacts,t.readings)(input,new AbortController().signal);
  expect(plan.actions).toContainEqual(expect.objectContaining({type:'speak',text:replacement.beats[0]!.text}));expect(provider.calls).toHaveLength(3);
 });
+it('plays an embedded package script with no generation or review calls',async()=>{
+ const t=setup();const readings=t.units.flatMap(unit=>unit.beats.map(beat=>({text:beat.text,parts:[{text:beat.text,reading:'テスト。'}]})));
+ const session={...t.input.session,course:{...structuredClone(t.input.session.course),performance:{version:1 as const,units:t.units,readings}}};
+ const provider=vi.fn(()=>{throw Error('must not call LLM');});const planner=createWholeLecturePlanner(provider,t.artifacts,t.readings,true);
+ for(const unit of session.course.teachingUnits.filter(unit=>session.course.schedule.orderedUnitIds.includes(unit.id)))await planner({...t.input,session,unit},new AbortController().signal);
+ expect(provider).not.toHaveBeenCalled();expect(t.readings.prepare).not.toHaveBeenCalled();
+});
