@@ -448,6 +448,10 @@ export class FixedLectureService {
       return;
     }
     const neededSpeech = new Set(plan.actions.filter(action=>action.type==="speak").map(action=>applyPronunciationDictionary(action.text,runtime.course.pronunciationDictionary)));
+    // A reviewed answer may become ready while this main-unit plan is pending.
+    // Keep its prewarmed audio when pruning stale main-lecture work.
+    const pendingAnswer = runtime.pendingSupplement?.view.candidate?.speechText;
+    if (pendingAnswer) neededSpeech.add(applyPronunciationDictionary(pendingAnswer,runtime.course.pronunciationDictionary));
     this.#preparedSpeech.get(runtime)?.forEach((item,key,cache)=>{if(!neededSpeech.has(key)){item.controller.abort();cache.delete(key);}});
     for (const action of plan.actions) if (action.type === "speak") this.#prepareSpeech(runtime, action.text);
     const spoken = plan.actions.filter(action=>action.type === "speak").map(action=>action.text).join(" ");
@@ -510,9 +514,17 @@ export class FixedLectureService {
     const projection = this.#projection.get(runtime);
     if (projection) {
       if (!this.#ownsExecution(runtime,participantId)) return;
-      clearTimeout(projection.timer); projection.stageDone=true;
+      clearTimeout(projection.timer);
       const begin = this.#boardSpeechStart.get(runtime); this.#boardSpeechStart.delete(runtime); begin?.();
       const direction=this.#directions.get(runtime)!;
+      if (direction.phase === "drawing") {
+        // The ink is ready; keep speaking while clearing the board for learners.
+        // A new action id prevents a repeated drawing receipt acknowledging the walk.
+        this.#directions.set(runtime,{...direction,actionId:randomUUID(),phase:"moving",position:"right",traveling:true,targetId:null});
+        projection.timer=setTimeout(projection.fail,12000);
+        this.#publish(runtime);return;
+      }
+      projection.stageDone=true;
       this.#directions.set(runtime,{...direction,phase:"speaking",traveling:false,targetId:direction.surface==="board" ? direction.drawing?.id ?? null : null}); this.#publish(runtime);
       if (projection.speechDone) {this.#projection.delete(runtime);projection.next();}
       return;
@@ -566,7 +578,7 @@ export class FixedLectureService {
         const speechIndex = actions.findIndex((item, offset) => offset > index && item.type === "speak");
         const speech = actions[speechIndex];
         if (speech?.type === "speak" && !actions.slice(index + 1, speechIndex).some(item => item.type === "show_slides" || item.type === "show_blackboard" || item.type === "pause")) {
-          const after = () => this.#runAction(runtime,unitId,epoch,[{type:"move_to",position:"right"},{type:"pause",durationMs:2000},...actions.slice(speechIndex+1)],0);
+          const after = () => this.#runAction(runtime,unitId,epoch,[{type:"pause",durationMs:2000},...actions.slice(speechIndex+1)],0);
           const fail = () => this.#haltExecution(runtime,"板書の表示完了を確認できませんでした。教室画面を確認して再開してください。");
           const pending = {started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:after};
           this.#projection.set(runtime,pending);

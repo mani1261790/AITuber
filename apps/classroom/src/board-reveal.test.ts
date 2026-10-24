@@ -12,9 +12,9 @@ it("orders characters and intact formula blocks with a pause between lines",()=>
 });
 
 it("reveals with media time, holds ink on buffering and finishes before the spoken conclusion",()=>{
- expect(boardSpeechRevealElapsed(0,30,{elapsed:8,duration:20})).toBe(15);
+ expect(boardSpeechRevealElapsed(0,30,{elapsed:6,duration:20})).toBe(15);
  expect(boardSpeechRevealElapsed(15,30,null)).toBe(15);
  expect(boardSpeechRevealElapsed(15,30,{elapsed:3,duration:20})).toBe(15);
- expect(boardSpeechRevealElapsed(15,30,{elapsed:16,duration:20})).toBe(30);
+ expect(boardSpeechRevealElapsed(15,30,{elapsed:12,duration:20})).toBe(30);
  expect(boardSpeechRevealElapsed(30,30,{elapsed:20,duration:20})).toBe(30);
 });

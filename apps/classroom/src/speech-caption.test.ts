@@ -14,5 +14,13 @@ describe("speech captions",()=>{
   });
   it("shows technical spelling instead of pronunciation kana",()=>{
     expect(speechCaption([{text:"ラージ・ランゲージ・モデルです。",startMs:0,endMs:3000}],100)).toBe("Large Language Modelです。");
+    expect(speechCaption([{text:"ラージランゲージモデルです",startMs:0,endMs:3000}],100)).toBe("Large Language Modelです");
   });
+});
+
+it("recovers sentence boundaries and technical spelling from punctuation-free alignment",()=>{
+ const words=[{text:"ラージ",startMs:0,endMs:300},{text:"ランゲージ",startMs:300,endMs:700},{text:"モデル",startMs:700,endMs:1000},{text:"です",startMs:1000,endMs:1300},{text:"文章を生成します",startMs:1400,endMs:2500}];
+ const transcript="ラージ・ランゲージ・モデルです。文章を生成します。";
+ expect(speechCaption(words,500,[],transcript)).toBe("Large Language Modelです。");
+ expect(speechCaption(words,1500,[],transcript)).toBe("文章を生成します。");
 });

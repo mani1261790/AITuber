@@ -360,7 +360,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         revealCanvas.getContext("2d")!.drawImage(previousBoard,0,0);
       }
       const speechClock = stageRef.current.readSpeechClock?.();
-      // Finish the ink before the closing spoken sentence, using media time so
+      // Finish the ink during the closing explanation, using media time so
       // buffering does not let the board race ahead of the explanation.
       const revealDuration = currentImage?.boardReveal?.duration ?? 1;
       const synchronizedElapsed = stageRef.current.readSpeechClock

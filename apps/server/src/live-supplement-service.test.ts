@@ -185,6 +185,9 @@ describe("LiveSupplementService", () => {
       expect(current.speech).toMatchObject({text:candidate().speechText,playing:true});
       lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
       expect(lecture.getSession(session.id).speech.text).toBe(candidate().speechText);
+      current=lecture.getSession(session.id);
+      expect(current.direction?.phase).toBe("moving");
+      lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
       vi.advanceTimersByTime(100);
       expect(lecture.getSession(session.id).liveSupplement?.status).toBe("completed");
       expect(questions.list(session.id)[0]?.resolution).toBe("answered");

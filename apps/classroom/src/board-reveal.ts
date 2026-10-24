@@ -40,8 +40,8 @@ export function paintBoardReveal(output:HTMLCanvasElement,source:HTMLCanvasEleme
  }
 }
 
-/** Preserve written ink on buffering/end; leave four seconds for the conclusion. */
+/** Preserve written ink on buffering/end; leave time for stepping aside during the conclusion. */
 export function boardSpeechRevealElapsed(previous:number,duration:number,clock:{elapsed:number;duration:number}|null|undefined):number {
  if(!clock || !Number.isFinite(clock.elapsed) || !Number.isFinite(clock.duration) || clock.duration<=0)return previous;
- return Math.max(previous,Math.min(duration,duration*Math.max(0,clock.elapsed)/Math.max(1,clock.duration-4)));
+ return Math.max(previous,Math.min(duration,duration*Math.max(0,clock.elapsed)/Math.max(1,clock.duration-Math.max(4,Math.min(10,clock.duration*.4)))));
 }
