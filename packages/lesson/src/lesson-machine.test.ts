@@ -80,6 +80,13 @@ describe("lesson state machine", () => {
     expect(pendingProviderActions(finished)).toEqual([]);
   });
 
+  it.each(["PREPARING","TEACHING","CHECKPOINT","ASSESSING","BRANCHING","REJOINING","RECOVERING","PAUSED"] as const)("can stop during %s without completing unfinished work",status=>{
+    const state={...initial(),status,activeUnitId:"unit.one",presentedUnitId:"unit.one"};
+    const finished=transitionLesson(state,{type:"FINISH_REQUESTED",epoch:state.epoch}).state;
+    expect(finished).toMatchObject({status:"FINISHED",activeUnitId:null,presentedUnitId:null,completedUnitIds:[]});
+    expect(pendingProviderActions(finished)).toEqual([]);
+  });
+
   it("rejects impossible transitions and future epochs", () => {
     expect(() => transitionLesson(initial(), { type: "ANSWER_RECEIVED", epoch: 1 })).toThrow(InvalidLessonTransitionError);
     expect(() => transitionLesson(initial(), { type: "PREPARE_REQUESTED", epoch: 2 })).toThrow(InvalidLessonTransitionError);

@@ -156,7 +156,7 @@ function reduceCurrentEpoch(state: LessonState, event: LessonEvent): LessonState
       if (!state.resumeStatus) throw new InvalidLessonTransitionError(state.status, event.type);
       return { ...state, status: state.resumeStatus, resumeStatus: null, lastFailure: null };
     case "FINISH_REQUESTED":
-      requireStatus(state, event, "TEACHING", "CHECKPOINT", "PAUSED");
+      requireStatus(state, event, "PREPARING", "TEACHING", "CHECKPOINT", "ASSESSING", "BRANCHING", "REJOINING", "RECOVERING", "PAUSED");
       return { ...state, status: "FINISHED", activeUnitId: null, presentedUnitId: null, resumeStatus: null };
   }
 }

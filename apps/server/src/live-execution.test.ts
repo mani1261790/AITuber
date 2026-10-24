@@ -184,25 +184,66 @@ it("retains prewarmed answer audio when the main-unit planner finishes later",as
  expect(prepared[1]?.signal?.aborted).toBe(true);
 });
 
-it("waits for a rendered classroom without spending lesson time or generating speech",async()=>{
+it("prepares opening audio once while waiting without spending lesson time or publishing playback",async()=>{
  vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
  const planner=vi.fn<LessonPlanner>(async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText}]}));
- const service=new FixedLectureService({store,requireLiveExecution:true,waitForClassroom:true,planner,speechProvider:new TestToneSpeechProvider(1000),voiceId:"test.voice"});resources.push(service);
+ const speechProvider=new TestToneSpeechProvider(1000), synthesize=vi.spyOn(speechProvider,"synthesize");
+ const service=new FixedLectureService({store,requireLiveExecution:true,waitForClassroom:true,planner,speechProvider,voiceId:"test.voice"});resources.push(service);
  const session=service.createSession(request);
  expect(session).toMatchObject({status:"PREPARING",progress:{completed:0},speech:{playing:false}});
  expect(session.displayUnitId).toBe(session.course.schedule.orderedUnitIds[0]);
  await vi.advanceTimersByTimeAsync(3_600_000);
  expect(service.getSession(session.id).status).toBe("PREPARING");
- expect(service.getRemainingTimeMs(session.id)).toBe(360_000);expect(planner).not.toHaveBeenCalled();
+ expect(service.getRemainingTimeMs(session.id)).toBe(360_000);expect(planner).toHaveBeenCalledTimes(1);
+ expect(synthesize).toHaveBeenCalledTimes(1);
+ expect(service.getSession(session.id).speech).toMatchObject({playing:false,audioUrl:null});
  service.classroomReady(session.id,session.epoch+1,"owner");service.classroomReady(session.id,session.epoch,"");
- expect(planner).not.toHaveBeenCalled();
+ expect(planner).toHaveBeenCalledTimes(1);
  service.classroomReady(session.id,session.epoch,"owner");
  await vi.advanceTimersByTimeAsync(0);
  expect(service.getSession(session.id).status).toBe("TEACHING");
  expect(service.getRemainingTimeMs(session.id)).toBe(360_000);
+ expect(planner.mock.calls.filter(([input])=>input.unit.id===session.displayUnitId)).toHaveLength(1);
+ expect(synthesize.mock.calls.filter(([input])=>input.text===synthesize.mock.calls[0]![0].text)).toHaveLength(1);
  const count=planner.mock.calls.length;
  service.classroomReady(session.id,session.epoch,"owner");service.classroomReady(session.id,session.epoch,"other");
  expect(planner).toHaveBeenCalledTimes(count);
+});
+
+it.each(["pause","finish"] as const)("discards late opening plans after %s while waiting",async command=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ let resolve!: (plan:Awaited<ReturnType<LessonPlanner>>)=>void;
+ const planner=vi.fn<LessonPlanner>(()=>new Promise(done=>{resolve=done;}));
+ const provider=new TestToneSpeechProvider(1000),synthesize=vi.spyOn(provider,"synthesize");
+ const service=new FixedLectureService({store,waitForClassroom:true,planner,speechProvider:provider,voiceId:"test.voice"});resources.push(service);
+ const session=service.createSession(request);
+ const signal=planner.mock.calls[0]![1];
+ service.command(session.id,{command});
+ expect(signal.aborted).toBe(true);
+ resolve({source:"generated",reason:null,actions:[{type:"speak",text:"古い冒頭です。"}]});
+ await vi.advanceTimersByTimeAsync(0);
+ expect(synthesize).not.toHaveBeenCalled();
+ expect(service.getSession(session.id).speech.playing).toBe(false);
+ if(command==="pause"){
+  service.command(session.id,{command:"resume"});
+  expect(planner).toHaveBeenCalledTimes(2);
+  expect(service.getSession(session.id).status).toBe("PREPARING");
+ }
+});
+
+it("joins an in-flight opening plan when the classroom becomes ready",async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ let resolve!: (plan:Awaited<ReturnType<LessonPlanner>>)=>void;
+ const planner=vi.fn<LessonPlanner>(()=>new Promise(done=>{resolve=done;}));
+ const provider=new TestToneSpeechProvider(1000),synthesize=vi.spyOn(provider,"synthesize");
+ const service=new FixedLectureService({store,waitForClassroom:true,planner,speechProvider:provider,voiceId:"test.voice"});resources.push(service);
+ const session=service.createSession(request);
+ service.classroomReady(session.id,session.epoch,"owner");
+ expect(planner).toHaveBeenCalledTimes(1);
+ resolve({source:"generated",reason:null,actions:[{type:"speak",text:"最初の説明です。"}]});
+ await vi.advanceTimersByTimeAsync(0);
+ expect(synthesize.mock.calls.filter(([input])=>input.text==="最初の説明です。")).toHaveLength(1);
+ expect(service.getSession(session.id).speech).toMatchObject({playing:true,text:"最初の説明です。"});
 });
 
 it.each([false,true])("preserves classroom waiting across restart, including operator pause=%s",async paused=>{

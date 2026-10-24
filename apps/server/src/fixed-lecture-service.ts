@@ -250,6 +250,7 @@ export class FixedLectureService {
     if (this.#waitForClassroom) {
       runtime.displayUnitId = runtime.state.orderedUnitIds[0] ?? null;
       this.#publish(runtime);
+      this.#prepareOpening(runtime);
     } else {
       this.#apply(runtime, { type: "PREPARATION_COMPLETED", epoch: runtime.state.epoch });
       this.#schedule(runtime);
@@ -410,6 +411,7 @@ export class FixedLectureService {
     } else if (request.command === "resume") {
       this.#apply(runtime, { type: "RECOVERY_STARTED", epoch: runtime.state.epoch });
       this.#apply(runtime, { type: "RECOVERY_COMPLETED", epoch: runtime.state.epoch });
+      if (runtime.state.status === "PREPARING") this.#prepareOpening(runtime);
       if (runtime.state.status === "BRANCHING" && runtime.pendingSupplement) { if(!runtime.timer && !runtime.speechAbort && !runtime.speech.playing) this.#activateSupplement(runtime); } else this.#schedule(runtime);
     } else if (request.command === "finish") {
       this.#cancelSpeech(runtime);
@@ -451,6 +453,21 @@ export class FixedLectureService {
     const unit = runtime.course.teachingUnits.find((candidate) => candidate.id === unitId)!;
     if (this.#planner) { void this.#direct(runtime, unit); return; }
     this.#speakUnit(runtime,unitId,unit.speechText);
+  }
+
+  #prepareOpening(runtime: RuntimeSession) {
+    if (!this.#planner || runtime.state.status !== "PREPARING" || this.#prefetch.has(runtime)) return;
+    const unit=runtime.course.teachingUnits.find(item=>item.id===runtime.state.orderedUnitIds[0]);
+    if (!unit) return;
+    const epoch=runtime.state.epoch, controller=new AbortController();
+    // Prepare only the opening. Readiness still owns playback and the lesson clock.
+    const plan=this.#planner({session:this.getSession(runtime.id),unit,previousSpeech:"",remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal)
+      .catch(()=>referencePlan(unit,"冒頭の説明を準備できませんでした"));
+    this.#prefetch.set(runtime,{unitId:unit.id,stamp:this.#contextStamp(runtime),controller,plan});
+    void plan.then(result=>{
+      if (controller.signal.aborted || runtime.state.epoch!==epoch || runtime.state.status!=="PREPARING" || result.source!=="generated") return;
+      for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);
+    });
   }
 
   #contextStamp(runtime: RuntimeSession) { return JSON.stringify([runtime.learningEvidence,runtime.lastAssessmentEvaluation,[...runtime.boardCorrections],runtime.liveSupplement?.id]); }
