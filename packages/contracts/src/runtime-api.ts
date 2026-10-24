@@ -48,6 +48,7 @@ export type LessonAction =
   | { type: "pause"; durationMs: number }
   | { type: "camera"; view: StageCamera };
 export interface LessonDirectionView {
+  readonly boardNarrationReady?: boolean;
   readonly gesture?: TeachingGesture;
   readonly traveling?: boolean;
   readonly drawing?: BlackboardDrawing | null;
@@ -107,6 +108,7 @@ export interface SupplementOriginView {
 }
 
 export interface LiveSupplementCandidateView {
+  readonly preparationSpeechText?: string | null;
   readonly blackboardMarkdown?: string | null;
   readonly drawing?: BlackboardDrawing;
   readonly speechText: string;

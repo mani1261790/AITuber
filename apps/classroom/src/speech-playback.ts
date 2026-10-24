@@ -21,3 +21,9 @@ export function trackSpeechPlayback(audio: HTMLMediaElement, estimatedDurationMs
     for(const event of ["ended","error"]) audio.removeEventListener(event,update);
   };
 }
+
+/** A previous utterance's ended element must never advance the next board drawing. */
+export function currentSpeechClock(audio: HTMLMediaElement | null, speech: {playing:boolean;audioUrl?:string|null}) {
+  if (!audio || !speech.playing || !speech.audioUrl || audio.getAttribute("src") !== speech.audioUrl || !Number.isFinite(audio.duration) || audio.duration <= 0) return null;
+  return {elapsed:audio.currentTime,duration:audio.duration};
+}

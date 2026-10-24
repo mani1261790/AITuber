@@ -257,3 +257,35 @@ it("reuses reviewed candidate audio on playback instead of synthesizing it again
  expect(started).toHaveBeenCalledTimes(1);
  expect(synthesize.mock.calls.filter(call=>call[0].text===candidate.speechText)).toHaveLength(1);
 });
+
+it.each([false,true])("speaks an introduction during board preparation and waits for both gates before diagram narration (arrival first=%s)",async arrivalFirst=>{
+ vi.useFakeTimers();const store=new LectureEventStore(":memory:");resources.push(store);
+ const service=new FixedLectureService({store,playbackUnitMs:1000});resources.push(service);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const origin=service.captureSupplementOrigin(session.id,"target.math.vertex-form");
+ const candidate={preparationSpeechText:"検索を行うのは外部のツールです。",speechText:"結果はこの矢印の順番で戻ります。",captionText:"検索結果の戻り道",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[],drawing:{id:"board.intro",markdown:"# 戻り道\nツール → アプリ → モデル",purpose:"往復"}};
+ const preparing={id:"supplement.intro",questionId:"question.intro",status:"preparing" as const,attempt:0,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null};
+ service.announceSupplement(session.id,preparing,{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+ const completed=vi.fn();
+ service.queueSupplement(session.id,{...preparing,status:"ready",candidate},{onPlaybackStarted(){},onCompleted:completed});
+ await vi.advanceTimersByTimeAsync(1000);
+ let current=service.getSession(session.id);
+ expect(current.speech.text).toBe(candidate.preparationSpeechText);
+ expect(current.direction).toMatchObject({phase:"drawing",boardNarrationReady:false});
+ const action=current.direction!.actionId;
+ if(arrivalFirst)service.reportStageProgress(session.id,current.epoch,action,undefined,true);
+ expect(service.getSession(session.id).speech.text).toBe(candidate.preparationSpeechText);
+ await vi.advanceTimersByTimeAsync(1000);
+ if(!arrivalFirst){
+  expect(service.getSession(session.id).speech.playing).toBe(false);
+  service.reportStageProgress(session.id,current.epoch,action,undefined,true);
+ }
+ current=service.getSession(session.id);
+ expect(current.speech.text).toBe(candidate.speechText);
+ expect(current.direction?.boardNarrationReady).toBe(true);
+ expect(completed).not.toHaveBeenCalled();
+ service.completeStageAction(session.id,current.epoch,action);
+ service.completeStageAction(session.id,current.epoch,service.getSession(session.id).direction!.actionId);
+ await vi.advanceTimersByTimeAsync(3100);
+ expect(completed).toHaveBeenCalledTimes(1);
+});

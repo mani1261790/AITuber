@@ -160,3 +160,17 @@ it("writes around the center of the blackboard with the hand within reach",async
  expect(motion.destination({id:"center",kind:"write"}).x).toBeCloseTo((-3.7865+.8465)/2);
  for(let t=0;t<12;t+=.1)expect(Math.abs(loopingHandwritingPoint(t).x-boardWritingX)).toBeLessThan(.8);
 });
+
+it("holds the chalk at the board while the spoken introduction finishes",()=>{
+ const motion=new StagePropMotion();
+ const action={id:"intro",kind:"write" as const,writingPaused:true};
+ let frame=motion.update(action,true,0)!;
+ for(let i=0;i<600;i++)frame=motion.update(action,true,1/60)!;
+ expect(frame.writingElapsed).toBeGreaterThan(0);
+ expect(frame.writingElapsed).toBeLessThan(.03);
+ const held=frame.pose.target.clone();
+ for(let i=0;i<120;i++)frame=motion.update(action,true,1/60)!;
+ expect(frame.pose.target.distanceTo(held)).toBe(0);
+ for(let i=0;i<60;i++)frame=motion.update({...action,writingPaused:false},true,1/60)!;
+ expect(frame.writingElapsed).toBeGreaterThan(1);
+});

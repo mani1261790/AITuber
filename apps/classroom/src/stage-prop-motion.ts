@@ -3,7 +3,7 @@ import { createBlackboardEraser, disposeBlackboardEraser } from "./blackboard-er
 import { eraserWorldPoint, eraserStandingX, eraseDurationFor, type EraseArea } from "./board-erase.ts";
 import { rightStageX } from "./stage-locomotion.ts";
 import * as THREE from "three";
-export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean };
+export type StagePropAction = { id:string; kind:"write"|"screen"|"screen-up"; eraseFirst?:boolean; eraseArea?:EraseArea|undefined; writingDuration?:number; writingComplete?:boolean; writingPaused?:boolean };
 export interface StagePropPose {
  kind:"write"|"screen"|"erase"; weight:number; target:THREE.Vector3; side:"left"|"right";
  grip:number; wristRoll:number;
@@ -79,7 +79,10 @@ export class StagePropMotion {
    return frame;
   }
   if(ready)this.arrived=true;
-  if(this.arrived)this.age+=THREE.MathUtils.clamp(delta,0,1/30);
+  if(this.arrived){
+   this.age+=THREE.MathUtils.clamp(delta,0,1/30);
+   if(this.stage==="write" && action.writingPaused)this.age=Math.min(this.age,1.22);
+  }
   const writing=this.stage==="write",raising=this.stage==="screen-up";
   const writingElapsed=Math.max(0,this.age-1.2);
   if(writing && this.stopAge===null && (action.writingComplete || writingElapsed>=(action.writingDuration??Infinity)))this.stopAge=this.age;

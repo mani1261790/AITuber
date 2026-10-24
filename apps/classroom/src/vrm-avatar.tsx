@@ -360,7 +360,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         revealCanvas=document.createElement("canvas");revealCanvas.width=1280;revealCanvas.height=720;
         revealCanvas.getContext("2d")!.drawImage(previousBoard,0,0);
       }
-      const speechClock = stageRef.current.readSpeechClock?.();
+      const speechClock = drawingDirection?.boardNarrationReady === false ? null : stageRef.current.readSpeechClock?.();
       // Finish the ink during the closing explanation, using media time so
       // buffering does not let the board race ahead of the explanation.
       const revealDuration = currentImage?.boardReveal?.duration ?? 1;
@@ -368,7 +368,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         ? (boardSpeechElapsed = boardSpeechRevealElapsed(boardSpeechElapsed, revealDuration, speechClock))
         : null;
       const propAction:StagePropAction|undefined=stageRef.current.propAction ?? (screenDirection && !screenAlreadyDown ? {id:screenDirection.actionId,kind:"screen"} : drawingDirection?{
-        id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingDuration:synchronizedElapsed === null ? revealDuration : Infinity, writingComplete:synchronizedElapsed !== null && synchronizedElapsed >= revealDuration,
+        id:drawingDirection.actionId,kind:"write",eraseFirst,eraseArea,writingPaused:drawingDirection.boardNarrationReady===false,writingDuration:synchronizedElapsed === null ? revealDuration : Infinity, writingComplete:synchronizedElapsed !== null && synchronizedElapsed >= revealDuration,
       }:undefined);
       const destination=propAction?propMotion.destination(propAction,curtain>.02):null;
       const propReady=reducedMotion || (!!destination && !!locomotion && locomotion.phase==="idle" && Math.abs(locomotion.x-destination.x)<.01 && Math.abs(Math.atan2(Math.sin(locomotion.yaw-destination.yaw),Math.cos(locomotion.yaw-destination.yaw)))<.05);
