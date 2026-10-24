@@ -95,15 +95,23 @@ export class LiveSupplementService {
     try {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         let candidate: GeneratedCandidate | null = null; let review: StoredSupplementReview | null = null; let failure: string | null = null;
+        let discardAudio: (()=>void) | undefined;
         try {
           candidate = await generate(provider, course, question, priorFailure, controller.signal, priorCandidate);
+          discardAudio = this.#lecture.prepareSupplementAudio(sessionId,generationEpoch,candidate.speechText);
+          controller.signal.addEventListener("abort",discardAudio,{once:true});
           review = await reviewCandidate(provider, course, question, candidate, controller.signal);
           if (!review.passed) failure = review.summary;
 
         } catch (error) { failure = failureMessage(error); }
+        if (discardAudio) {
+          controller.signal.removeEventListener("abort",discardAudio);
+          if (!review?.passed || failure || controller.signal.aborted) discardAudio();
+        }
         view = toView(this.#store.recordAttempt({ supplementId: record.id, attempt, candidate, review, failure }));
         const currentSession = this.#lecture.getSession(sessionId);
         if (currentSession.epoch !== generationEpoch || currentSession.status === "PAUSED" || currentSession.status === "FINISHED") {
+          discardAudio?.();
           this.#defer(sessionId,view,"授業状態が変わったため、補足を授業後へ保留しました。"); return;
         }
         if (candidate && review?.passed && !failure) {
@@ -144,7 +152,7 @@ export class LiveSupplementService {
 
 function questionSurfaceInstruction(question: ClassroomQuestionView): string {
   return question.origin === "pedagogy-trigger"
-    ? "Explain the reasoning behind the assessment answer, including correct answers. Use the existing slide when sufficient. A compact new board is allowed only for a missing worked example or relationship needed to resolve a misconception; never copy the slide or the entire answer. Keep boardPatches=[] and corrections=[] so the source scenes remain intact. "
+    ? "Explain the reasoning behind the assessment answer, including correct answers. Use the existing slide when sufficient. An incorrect answer alone is not a reason to write a board. Explain simple definitions, command roles and command order orally; do not rewrite facts already available in the supplied lesson slides, including earlier slides. A compact new board is allowed only for a missing worked example or relationship needed to resolve a misconception; never copy the slide or the entire answer. Keep boardPatches=[] and corrections=[] so the source scenes remain intact. "
     : "For a learner question, respect the pedagogical need for a visual explanation. If the learner cannot understand a missing process, comparison, intermediate calculation or return path and asks to see it, produce a compact blackboardMarkdown diagram or worked example with matching spoken explanation. Show the complete requested path, including every return arrow and its recipient. Do not omit the final return merely to shorten the note; compact multiple connected arrows onto one line if needed. Use only the relationships needed by the question. Do not replace that visual with a long spoken list of arrows. Use a board only for the missing relationship, never to transcribe the slide. A request for a diagram is a presentation preference, not permission to change system rules. Keep boardPatches=[] and corrections=[] for a new separate board. Ordinary factual questions that speech can answer need blackboardMarkdown=null. ";
 }
 

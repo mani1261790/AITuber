@@ -60,6 +60,7 @@ export class FixedLectureService {
   readonly #waitForClassroom: boolean;
   readonly #directions = new WeakMap<RuntimeSession, LessonDirectionView>();
   readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
+  readonly #reviewAudio = new WeakMap<RuntimeSession, {text:string; controller:AbortController; promise:Promise<SpeechArtifact>}>();
   readonly #boardSpeechStart = new WeakMap<RuntimeSession, () => void>();
   readonly #speechNext = new WeakMap<RuntimeSession, () => void>();
   readonly #travelArrived = new WeakSet<RuntimeSession>();
@@ -331,6 +332,19 @@ export class FixedLectureService {
       });
     }
     this.#publish(runtime);
+  }
+
+  /** Synthesize one candidate during review. It cannot play until queueSupplement accepts it. */
+  prepareSupplementAudio(sessionId: string, epoch: number, rawText: string): () => void {
+    const runtime=this.#requireSession(sessionId);
+    if(runtime.state.epoch!==epoch || ["PAUSED","FINISHED"].includes(runtime.state.status) || !this.#speechProvider || !this.#voiceId) return ()=>{};
+    this.#reviewAudio.get(runtime)?.controller.abort();
+    const text=applyPronunciationDictionary(rawText,runtime.course.pronunciationDictionary);
+    const controller=new AbortController();
+    const promise=this.#speechProvider.synthesize({text,language:"ja-JP",voiceId:this.#voiceId,dictionaryVersion:dictionaryVersion(runtime.course.pronunciationDictionary)},{signal:controller.signal});
+    void promise.catch(()=>{});
+    const entry={text,controller,promise};this.#reviewAudio.set(runtime,entry);
+    return ()=>{controller.abort();if(this.#reviewAudio.get(runtime)===entry)this.#reviewAudio.delete(runtime);};
   }
 
   queueSupplement(sessionId: string, view: LiveSupplementView, callbacks: Pick<PendingSupplement, "onPlaybackStarted" | "onCompleted" | "onFailure">): void {
@@ -651,7 +665,7 @@ export class FixedLectureService {
     const normalized = applyPronunciationDictionary(text, runtime.course.pronunciationDictionary);
     let cache = this.#preparedSpeech.get(runtime);
     if (!cache) { cache = new Map(); this.#preparedSpeech.set(runtime,cache); }
-    if (cache.has(normalized) || cache.size >= 6) return;
+    if (this.#reviewAudio.get(runtime)?.text === normalized || cache.has(normalized) || cache.size >= 6) return;
     const controller = new AbortController();
     const promise = this.#speechProvider.synthesize({text:normalized,language:"ja-JP",voiceId:this.#voiceId,dictionaryVersion:dictionaryVersion(runtime.course.pronunciationDictionary)},{signal:controller.signal});
     // Keep failures for the playback error handler; speculative work must not reject unobserved.
@@ -659,7 +673,13 @@ export class FixedLectureService {
     cache.set(normalized,{controller,promise});
   }
 
-  #synthesize(runtime: RuntimeSession, text: string, controller: AbortController) {
+  #synthesize(runtime: RuntimeSession, text: string, controller: AbortController, reviewedAnswer = false) {
+    const reviewed=this.#reviewAudio.get(runtime);
+    if(reviewedAnswer && reviewed?.text===text){
+      this.#reviewAudio.delete(runtime);
+      controller.signal.addEventListener("abort",()=>reviewed.controller.abort(),{once:true});
+      return reviewed.promise;
+    }
     const cache = this.#preparedSpeech.get(runtime);
     const ready = cache?.get(text); cache?.delete(text);
     if (ready) {
@@ -799,7 +819,7 @@ export class FixedLectureService {
     if (!this.#speechProvider || !this.#voiceId) { begin({ ...emptySpeech(epoch), mode: "test", playing: true, unitId: null, text, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs, segments: [{ text, startMs: 0, endMs: this.#playbackUnitMs, semanticTargetIds: candidate.focusTargetIds }] }); return; }
     runtime.speech = { ...emptySpeech(epoch), mode: "preparing", text, segments: [{ text, startMs: 0, endMs: candidate.speechText.length * 80, semanticTargetIds: candidate.focusTargetIds }] }; this.#publish(runtime);
     const controller = new AbortController(); runtime.speechAbort = controller;
-    void this.#synthesize(runtime,text,controller).then((artifact) => {
+    void this.#synthesize(runtime,text,controller,true).then((artifact) => {
       if (controller.signal.aborted || runtime.pendingSupplement?.view.id !== pending.view.id || runtime.state.status !== "BRANCHING") return;
       runtime.speechAbort = null; this.#speechArtifacts.set(artifact.cacheKey, artifact);
       begin({ mode: "fish-audio", playing: true, epoch, unitId: null, text, startedAt: new Date().toISOString(), durationMs: artifact.provider === "test-tone" ? Math.min(5_000, artifact.durationMs) : artifact.durationMs, audioUrl: `/api/sessions/${encodeURIComponent(runtime.id)}/speech/${artifact.cacheKey}?epoch=${epoch}`, failure: null, segments: artifact.segments.map((segment) => ({ ...segment, semanticTargetIds: candidate.focusTargetIds })), provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs });
@@ -907,6 +927,7 @@ export class FixedLectureService {
 
   #cancelSpeech(runtime: RuntimeSession) {
     const projection = this.#projection.get(runtime); if (projection) clearTimeout(projection.timer); this.#projection.delete(runtime);
+    this.#reviewAudio.get(runtime)?.controller.abort(); this.#reviewAudio.delete(runtime);
     this.#preparedSpeech.get(runtime)?.forEach(item=>item.controller.abort()); this.#preparedSpeech.delete(runtime);
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
     this.#boardSpeechStart.delete(runtime); this.#speechNext.delete(runtime); this.#stageNext.delete(runtime); this.#travelArrived.delete(runtime);

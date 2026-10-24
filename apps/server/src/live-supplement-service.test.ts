@@ -107,6 +107,7 @@ describe("LiveSupplementService", () => {
   });
 
   it("defers after two failed reviews and resumes the interrupted main unit", async () => {
+    const discardAudio=vi.fn();const prepareAudio=vi.spyOn(lecture,"prepareSupplementAudio").mockReturnValue(discardAudio);
     const provider = new FixedResponseLlmProvider([candidate(), failReview, candidate(), failReview]); replaceSupplements(provider);
     const session = lecture.createSession({ coursePackageId: quadraticFunctionsFixture.id, durationMinutes: 6 }); vi.advanceTimersByTime(200);
     questions.submit(questionInput(session.id, "なぜ括弧の符号を反対に読むのですか。")); await supplements.drain(session.id);
@@ -115,6 +116,7 @@ describe("LiveSupplementService", () => {
     expect(questions.list(session.id)[0]?.reason).not.toContain("Previous candidate");
     expect(lecture.getSession(session.id)).toMatchObject({ status: "TEACHING", currentUnitId: "unit.math.graph", liveSupplement: { status: "deferred" } });
     vi.advanceTimersByTime(100); expect(lecture.getSession(session.id).completedUnitIds).toContain("unit.math.graph");
+    expect(prepareAudio).toHaveBeenCalledTimes(2);expect(discardAudio).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an arithmetically wrong candidate even when the model review passes", async () => {

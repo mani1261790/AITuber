@@ -171,6 +171,7 @@ it("retains prewarmed answer audio when the main-unit planner finishes later",as
  const preparing={id:"supplement.prewarm",questionId:"question.prewarm",status:"preparing" as const,attempt:1,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null};
  service.announceSupplement(session.id,preparing,{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
  const candidate={speechText:"括弧がゼロになる値を考えます。",captionText:"括弧がゼロになる値",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[]};
+ service.prepareSupplementAudio(session.id,session.epoch,candidate.speechText);
  service.queueSupplement(session.id,{...preparing,status:"ready",candidate},{onPlaybackStarted(){},onCompleted(){}});
  await vi.advanceTimersByTimeAsync(0);
  const prepared=synthesize.mock.calls.find(call=>call[0].text===candidate.speechText)!;
@@ -220,3 +221,22 @@ it.each([false,true])("preserves classroom waiting across restart, including ope
  restored.classroomReady(session.id,epoch,"owner");
  expect(restored.getSession(session.id).status).toBe("TEACHING");
 });
+
+ it("keeps speculative answer audio private and aborts rejected, replaced and paused candidates",async()=>{
+  vi.useFakeTimers();const provider=new TestToneSpeechProvider(1000),synthesize=vi.spyOn(provider,"synthesize");
+  const service=create(async()=>({source:"generated",reason:null,actions:[{type:"speak",text:"本編です。"}]}),provider);
+  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+  const before=service.getSession(session.id).speech;
+  const discard=service.prepareSupplementAudio(session.id,session.epoch,"候補Aです。");
+  const first=synthesize.mock.calls.at(-1)!;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(service.getSession(session.id).speech).toEqual(before);
+  service.prepareSupplementAudio(session.id,session.epoch,"候補Bです。");
+  const second=synthesize.mock.calls.at(-1)!;
+  expect(first[1]?.signal?.aborted).toBe(true);
+  discard();expect(second[1]?.signal?.aborted).toBe(false);
+  service.command(session.id,{command:"pause"});expect(second[1]?.signal?.aborted).toBe(true);
+  const count=synthesize.mock.calls.length;
+  service.prepareSupplementAudio(session.id,session.epoch,"古い候補です。");
+  expect(synthesize).toHaveBeenCalledTimes(count);
+ });
