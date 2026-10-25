@@ -57,6 +57,7 @@ it('reviews and persists an answer patch, preparing readings only for its change
  const restored=createWholeLecturePlanner(()=>null,new PreparedArtifacts(t.directory),t.readings);
  expect(await restored(input,new AbortController().signal)).toEqual(changed);
  expect(provider.calls).toHaveLength(4);
+ const review=JSON.parse(provider.calls[3]!.prompt);expect(review.before.map((unit:ScriptUnit)=>unit.unitId)).toEqual(t.units.slice(0,2).map(unit=>unit.unitId));expect(review.evidence.course).not.toHaveProperty('performance');expect(changed.reason).toContain('台本を修正');
 });
 it('never publishes an aborted preparation as a saved complete script',async()=>{
  const t=setup();const provider=new FixedResponseLlmProvider([{units:t.units},{passed:true,reason:'verified'}]);const controller=new AbortController();
