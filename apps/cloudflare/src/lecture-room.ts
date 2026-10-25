@@ -1,3 +1,4 @@
+import {purgeLegacyCatalog,legacyCourseIds} from '../../server/src/catalog-cleanup';
 import {storedPdfResponse} from "./source-response";
 import { storageQuotaError } from "./storage-error";
 import { LlmProviderError } from '@aituber/providers';
@@ -201,6 +202,17 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(request.method==='POST'&&packageMatch[2]==='publish'){const body=await read<{revision:string}>();return json(202,{draft:packages.begin(id,body.revision)});}
       if(request.method==='POST'&&packageMatch[2]==='readings')return json(200,{readings:await packages.previewReadings(id,await readJson(request,64*1024))});
       if(request.method==='POST'&&packageMatch[2]==='stop')return json(200,{draft:packages.stop(id)});
+    }
+    if(path==='/api/courses/purge-legacy' && request.method==='POST'){
+      const body=await read<{confirm:string}>();
+      if(body.confirm!=='delete-non-ollama-2026-10-25')throw new TypeError('削除対象の確認が必要です。');
+      if(lecture.listCourses().some(course=>course.id!=='local-llm-ollama-intro'&&!legacyCourseIds.includes(course.id as typeof legacyCourseIds[number])))throw new TypeError('新しい教材が追加されています。削除対象を再確認してください。');
+      const current=lecture.getCurrentSession();
+      if(current&&current.course.id!=='local-llm-ollama-intro')throw new TypeError('削除対象の授業が残っています。先に終了・整理してください。');
+      if(this.services.packages.pending||authoring.list().some(job=>job.status==='running'))throw new TypeError('教材の生成・編集が終了してから削除してください。');
+      const result=await purgeLegacyCatalog('/data',hashes=>hashes.length?this.env.STATE.delete(hashes.map(hash=>'sources/'+hash)):Promise.resolve());
+      this.services.lecture.close();this.initialized=false;this.initialize();
+      return json(200,{...result,courses:this.services.lecture.listCourses()});
     }
     if(path==='/api/courses' &&request.method==='GET')return json(200,{courses:lecture.listCourses()});
     if(path==='/api/sessions/current'&&request.method==='GET'){const session=lecture.getCurrentSession();return json(200,{session,classroom:session?this.classrooms.create(session.id):null});}
