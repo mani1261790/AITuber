@@ -524,3 +524,5 @@ button:focus-visible, summary:focus-visible { outline: 3px solid #b6e6c7; outlin
   .broadcast-main { container-type: size; justify-content: center; }
   .broadcast-main .stage { width: min(100cqw, calc(100cqh * 16 / 9)); }
 }
+.assessment-result p { margin: 0; line-height: 1.7; }
+.assessment-result p + p { margin-top: 8px; }
