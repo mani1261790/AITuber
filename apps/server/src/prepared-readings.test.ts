@@ -7,7 +7,7 @@ const directories:string[]=[];function store(){const dir=mkdtempSync(join(tmpdir
 afterEach(()=>directories.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
 const source='Large Language ModelはLLMです。';const parts=[{text:source,reading:'ラージ・ランゲージ・モデルはエルエルエムです。'}];const generated=parts.map((part,index)=>({id:`p${index}`,reading:part.reading}));
 it('prepares and reviews the complete batch once and restores it without model calls',async()=>{
- const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated},{id:digest('2GBです。'),parts:[{id:'p0',reading:'ニギガバイトです。'}]}]},{passed:true,reason:'verified'}]);
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated},{id:digest('2GBです。'),parts:[{id:'p0',reading:'ニギガバイトです。'}]}]},{corrections:[]}]);
  const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,'2GBです。',source],[],new AbortController().signal);
  expect(provider.calls).toHaveLength(2);expect(provider.calls[0]?.prompt).toContain('2GB');
  const restored=new PreparedReadings(()=>{throw Error('must not regenerate');},new PreparedArtifacts(cache.dir));
@@ -20,8 +20,8 @@ it('rejects unknown span ids instead of accepting model-provided source text',as
  expect(provider.calls).toHaveLength(2);
 });
 it('does not persist a reading rejected by the independent reviewer',async()=>{
- const cache=store();const value={items:[{id:digest(source),parts:generated}]};const provider=new FixedResponseLlmProvider([value,{passed:false,reason:'wrong pronunciation'},value,{passed:false,reason:'wrong pronunciation'}]);
- await expect(new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).rejects.toThrow('wrong pronunciation');
+ const cache=store();const value={items:[{id:digest(source),parts:generated}]};const provider=new FixedResponseLlmProvider([value,{corrections:[{utteranceId:'unknown',partId:'p0',expectedReading:'テスト',reading:'テスト',reason:'wrong pronunciation'}]},value,{corrections:[{utteranceId:'unknown',partId:'p0',expectedReading:'テスト',reading:'テスト',reason:'wrong pronunciation'}]}]);
+ await expect(new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).rejects.toThrow('修正対象');
  const next=new PreparedReadings(()=>null,new PreparedArtifacts(cache.dir));await expect(next.get(source,[],new AbortController().signal)).rejects.toThrow('未接続');
 });
 it('maps homophones by their source positions instead of inverse replacement',()=>{
@@ -33,7 +33,7 @@ it('merges cues only when the real audio alignment straddles their boundary',()=
  expect(alignOriginal({text:'AとB',parts:[{text:'Aと',reading:'エート'},{text:'B',reading:'ビー'}]},[{text:'エートビー',startMs:10,endMs:600}])).toEqual([{text:'AとB',startMs:10,endMs:600}]);
 });
 it('sends the prepared pronunciation to TTS and returns original captions with a mapping-specific audio id',async()=>{
- const cache=store();const llm=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated}]},{passed:true,reason:'verified'}]);
+ const cache=store();const llm=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);
  const backing=new TestToneSpeechProvider(1000);const spy=vi.spyOn(backing,'synthesize');
  const provider=new ReadingSpeechProvider(backing,new PreparedReadings(()=>llm,cache.store),()=>[]);
  const result=await provider.synthesize({text:source,voiceId:'test',language:'ja-JP',dictionaryVersion:'test'},{signal:new AbortController().signal});
@@ -47,19 +47,26 @@ it('owns exact original spans including code, whitespace, astral characters and 
 });
 
 it('identifies the invalid reading span in repair feedback while preserving the source',async()=>{
- const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]}]},{items:[{id:digest(source),parts:generated}]},{passed:true,reason:'verified'}]);
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]}]},{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);
  const result=await new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal);
  const feedback=JSON.parse(provider.calls[1]!.prompt).failure;
  expect(feedback).toContain('p0');expect(feedback).toContain('LLMです。');expect(result.text).toBe(source);expect(result.parts).toEqual(parts);
 });
 
 it('resumes a failed reading review with its prior mappings and exact correction feedback',async()=>{
- const cache=store();const value={items:[{id:digest(source),parts:generated}]};const provider=new FixedResponseLlmProvider([value,{passed:false,reason:'correct counter'},value,{passed:false,reason:'correct counter'},value,{passed:true,reason:'verified'}]);
- await expect(new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).rejects.toThrow('correct counter');
+ const cache=store();const value={items:[{id:digest(source),parts:generated}]};const provider=new FixedResponseLlmProvider([value,{corrections:[{utteranceId:'unknown',partId:'p0',expectedReading:'テスト',reading:'テスト',reason:'correct counter'}]},value,{corrections:[{utteranceId:'unknown',partId:'p0',expectedReading:'テスト',reading:'テスト',reason:'correct counter'}]},value,{corrections:[]}]);
+ await expect(new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).rejects.toThrow('修正対象');
  await new PreparedReadings(()=>provider,new PreparedArtifacts(cache.dir)).get(source,[],new AbortController().signal);
- expect(JSON.parse(provider.calls[4]!.prompt)).toMatchObject({candidate:value.items,failure:'correct counter'});
+ expect(JSON.parse(provider.calls[4]!.prompt)).toMatchObject({candidate:value.items,failure:'読み審査の修正対象が一致しません'});
 });
 
 it('patches only invalid reading spans and preserves already valid utterances',async()=>{
- const cache=store(),other='次です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]},{id:digest(other),parts:[{id:'p0',reading:'つぎです。'}]}]},{items:[{id:digest(source),parts:generated}]},{passed:true,reason:'verified'}]);const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,other],[],new AbortController().signal);const retry=JSON.parse(provider.calls[1]!.prompt);expect(retry.items.map((item:{id:string})=>item.id)).toEqual([digest(source)]);expect((await readings.get(other,[],new AbortController().signal)).parts).toEqual([{text:other,reading:'つぎです。'}]);
+ const cache=store(),other='次です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]},{id:digest(other),parts:[{id:'p0',reading:'つぎです。'}]}]},{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,other],[],new AbortController().signal);const retry=JSON.parse(provider.calls[1]!.prompt);expect(retry.items.map((item:{id:string})=>item.id)).toEqual([digest(source)]);expect((await readings.get(other,[],new AbortController().signal)).parts).toEqual([{text:other,reading:'つぎです。'}]);
+});
+
+it('applies a concrete reviewed reading correction and rechecks it without regenerating the utterance',async()=>{
+ const cache=store(),text='略です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(text),parts:[{id:'p0',reading:'りゃっくです。'}]}]},{corrections:[{utteranceId:digest(text),partId:'p0',expectedReading:'りゃっくです。',reading:'りゃくです。',reason:'促音はありません'}]},{corrections:[]}]);const result=await new PreparedReadings(()=>provider,cache.store).get(text,[],new AbortController().signal);expect(result).toEqual({text,parts:[{text,reading:'りゃくです。'}]});expect(provider.calls.map(call=>call.purpose)).toEqual(['generation','review','review']);
+});
+it('treats identical before and after readings as no correction',async()=>{
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated}]},{corrections:[{utteranceId:digest(source),partId:'p0',expectedReading:parts[0]!.reading,reading:parts[0]!.reading,reason:'問題ありません'}]}]);expect((await new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).parts).toEqual(parts);expect(provider.calls).toHaveLength(2);
 });
