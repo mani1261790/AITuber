@@ -37,7 +37,8 @@ export class PreparedReadings {
       const supplied=matches[0]!.parts;
       if(supplied.length!==item.parts.length)throw Error('読みの区間IDが不足または重複しています');
       const parts=item.parts.map(part=>{const candidates=supplied.filter(candidate=>candidate.id===part.id);if(candidates.length!==1)throw Error('読みの区間IDが不足または重複しています');return {text:part.text,reading:candidates[0]!.reading};});
-      if(parts.some(part=>!part.reading.trim() || /[\p{Script=Han}A-Za-z0-9<>]/u.test(part.reading)))throw Error('読みにはカナと句読点を使用してください');
+      const invalid=parts.flatMap((part,index)=>!part.reading.trim() || /[\p{Script=Han}A-Za-z0-9<>]/u.test(part.reading)?[{utteranceId:item.id,partId:item.parts[index]!.id,text:part.text,reading:part.reading}]:[]);
+      if(invalid.length)throw Error('読みにはカナと句読点を使用してください。次の区間の英字・漢字・数字・タグを文脈に合うカナへ直してください: '+JSON.stringify(invalid));
       return {text:item.text,parts};
      });
      if(result.value.items.length!==batch.length)throw Error('読みの対象外のIDがあります');

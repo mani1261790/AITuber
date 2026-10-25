@@ -45,3 +45,10 @@ it('owns exact original spans including code, whitespace, astral characters and 
  const spans=readingSpans(text);expect(spans.map(part=>part.text).join('')).toBe(text);expect(spans.every(part=>part.text.length<=40)).toBe(true);expect(new Set(spans.map(part=>part.id)).size).toBe(spans.length);
  }
 });
+
+it('identifies the invalid reading span in repair feedback while preserving the source',async()=>{
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]}]},{items:[{id:digest(source),parts:generated}]},{passed:true,reason:'verified'}]);
+ const result=await new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal);
+ const feedback=JSON.parse(provider.calls[1]!.prompt).failure;
+ expect(feedback).toContain('p0');expect(feedback).toContain('LLMです。');expect(result.text).toBe(source);expect(result.parts).toEqual(parts);
+});
