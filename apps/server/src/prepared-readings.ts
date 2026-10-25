@@ -18,14 +18,14 @@ export function readingSpans(text:string){return pronunciationSpans(text).map((p
 export class PreparedReadings {
  private provider:()=>LlmProvider|null;private store:PreparedArtifacts;
  constructor(provider:()=>LlmProvider|null,store:PreparedArtifacts){this.provider=provider;this.store=store;}
- private key(text:string,dictionary:Dictionary){return 'reading-latin-v2:'+digest([text,dictionary]);}
+ private key(text:string,dictionary:Dictionary){return 'reading-latin-v3:'+digest([text,dictionary]);}
  async prepare(texts:readonly string[],dictionary:Dictionary,signal:AbortSignal):Promise<void>{
   for(const text of new Set(texts)){if(!pronunciationSpans(text).some(part=>part.latin))this.install([{text,parts:readingSpans(text).map(part=>({text:part.text,reading:part.text}))}],dictionary);}
-  const missing=[...new Set(texts)].filter(text=>!this.store.read(this.key(text,dictionary)));
+  const missing=[...new Set(texts)].filter(text=>{const cached=this.store.read<PreparedReading>(this.key(text,dictionary));return !cached||!isSelectiveReading(cached);});
   for(let offset=0;offset<missing.length;offset+=24){
    signal.throwIfAborted();const batch=missing.slice(offset,offset+24).map(text=>({id:digest(text),text,parts:readingSpans(text).filter(part=>isLatinSpan(part.text))}));
    const llm=this.provider();if(!llm)throw Error('読みの準備に必要なLLMが未接続です');
-   const repairKey='reading-repair-latin-v2:'+digest([batch,dictionary]);
+   const repairKey='reading-repair-latin-v3:'+digest([batch,dictionary]);
    const pending=this.store.read<{failure:string;items:ReadingMapping[]|null}>(repairKey);let failure=pending?.failure??'';let candidate:ReadingMapping[]|null|undefined=pending?.items;let correctionPending=false;
    for(let attempt=0;attempt<2;attempt++){
     try{
@@ -53,7 +53,7 @@ export class PreparedReadings {
      const corrected=structuredClone(mappings);const seen=new Set<string>();let changed=false;
      for(const patch of review.value.corrections){const key=JSON.stringify([patch.utteranceId,patch.partId]);const target=corrected.find(item=>item.id===patch.utteranceId)?.parts.find(part=>part.id===patch.partId);if(!target||target.reading!==patch.expectedReading||seen.has(key)||invalidReading(toKatakana(patch.reading)))throw Error('読み審査の修正対象が一致しません');seen.add(key);if(target.reading!==patch.reading){target.reading=toKatakana(patch.reading);changed=true;}}
      if(changed){candidate=corrected;correctionPending=true;throw Error('読みの差分を適用しました。再審査が必要です: '+JSON.stringify(review.value.corrections));}
-     signal.throwIfAborted();for(const item of prepared)this.store.write(this.key(item.text,dictionary),item);break;
+     signal.throwIfAborted();for(const item of prepared){if(!isSelectiveReading(item))throw Error('未変換の英字が残っています');this.store.write(this.key(item.text,dictionary),item);}break;
     }catch(error){if(signal.aborted || error instanceof LlmProviderError && !["schema_mismatch","invalid_response"].includes(error.code))throw error;failure=error instanceof Error?error.message:'読みを検査できませんでした';this.store.write(repairKey,{failure,items:candidate??null});if(attempt===1)throw error;}
    }
   }
@@ -89,6 +89,7 @@ export class ReadingSpeechProvider implements TextToSpeechProvider {
  async synthesize(request:SpeechRequest,options:{signal:AbortSignal}):Promise<SpeechArtifact>{
   const bundled=this.packaged().find(item=>item.text===request.text);
   const prepared:PreparedReading=bundled&&isSelectiveReading(bundled)?{text:bundled.text,parts:bundled.parts.map(part=>({...part}))}:await this.readings.get(request.text,this.dictionary(),options.signal);options.signal.throwIfAborted();
+  if(!isSelectiveReading(prepared))throw Error('未変換の英字が残っているため音声を生成できません');
   const artifact=await this.backing.synthesize({...request,text:prepared.parts.map(part=>part.reading).join(''),dictionaryVersion:digest([request.dictionaryVersion,prepared])},options);
   options.signal.throwIfAborted();return {...artifact,cacheKey:digest([artifact.cacheKey,prepared]),transcriptFormat:'original',segments:alignOriginal(prepared,artifact.segments)};
  }

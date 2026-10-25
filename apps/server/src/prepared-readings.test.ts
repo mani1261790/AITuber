@@ -78,3 +78,13 @@ it('treats identical before and after readings as no correction',async()=>{
 });
 
 it('keeps leading whitespace and punctuation in original captions',()=>{expect(alignOriginal({text:' LLM。',parts:[{text:' ',reading:' '},{text:'LLM',reading:'エルエルエム'},{text:'。',reading:'。'}]},[{text:'エルエルエム。',startMs:0,endMs:200}])).toEqual([{text:' LLM。',startMs:0,endMs:200}]);});
+
+it('converts all characters at long-phrase chunk boundaries before sending audio',async()=>{
+ const cache=store(),text='a'.repeat(39)+' bを説明します。';
+ const latin=readingSpans(text).filter(part=>/[A-Za-z]/.test(part.text));
+ const llm=new FixedResponseLlmProvider([{items:[{id:digest(text),parts:latin.map(part=>({id:part.id,reading:'テスト'}))}]},{corrections:[]}]);
+ const backing=new TestToneSpeechProvider(1000),spy=vi.spyOn(backing,'synthesize');
+ const provider=new ReadingSpeechProvider(backing,new PreparedReadings(()=>llm,cache.store),()=>[]);
+ await provider.synthesize({text,voiceId:'test',language:'ja-JP',dictionaryVersion:'test'},{signal:new AbortController().signal});
+ expect(spy.mock.calls[0]![0].text).toBe('テストテストを説明します。');
+});
