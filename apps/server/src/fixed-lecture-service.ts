@@ -185,7 +185,9 @@ export class FixedLectureService {
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
-    this.#courses.set(saved.course.id,saved.course); this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
+    const published=this.#courses.get(saved.course.id);
+    if(!published || published.version<saved.course.version)this.#courses.set(saved.course.id,saved.course);
+    this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
     return !terminal && !waiting && !waitForAnswer && !manuallyPaused;
   }
 

@@ -24,3 +24,9 @@ describe('cloud runtime recovery',()=>{
     expect(()=>restored.authenticate(room.code,'invalid')).toThrow();second.close();store.close();
   });
 });
+
+it('keeps the latest published course while restoring a lesson pinned to an older version',()=>{
+ const store=new LectureEventStore(':memory:');const first=new FixedLectureService({store,waitForClassroom:true});const session=first.createSession({coursePackageId:course.id,durationMinutes:6});const saved=first.exportCheckpoint()!;first.close();
+ const second=new FixedLectureService({store,waitForClassroom:true});const latest={...structuredClone(course),version:course.version+1,title:'Updated package'};second.registerCourse(latest);second.restoreCheckpoint(saved);
+ expect(second.getCourse(course.id)).toEqual(latest);expect(second.getSession(session.id).course.version).toBe(course.version);second.close();store.close();
+});
