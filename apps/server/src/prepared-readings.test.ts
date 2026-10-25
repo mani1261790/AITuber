@@ -5,9 +5,9 @@ import {PreparedArtifacts,digest} from './prepared-artifacts.ts';
 import {PreparedReadings,ReadingSpeechProvider,alignOriginal,readingSpans} from './prepared-readings.ts';
 const directories:string[]=[];function store(){const dir=mkdtempSync(join(tmpdir(),'lecture-readings-'));directories.push(dir);return {dir,store:new PreparedArtifacts(dir)};}
 afterEach(()=>directories.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
-const source='Large Language ModelはLLMです。';const parts=[{text:source,reading:'ラージ・ランゲージ・モデルはエルエルエムです。'}];const generated=parts.map((part,index)=>({id:`p${index}`,reading:part.reading}));
+const source='Large Language ModelはLLMです。';const parts=[{text:'Large Language Model',reading:'ラージ ランゲージ モデル'},{text:'は',reading:'は'},{text:'LLM',reading:'エルエルエム'},{text:'です。',reading:'です。'}];const generated=[{id:'p0',reading:parts[0]!.reading},{id:'p2',reading:parts[2]!.reading}];
 it('prepares and reviews the complete batch once and restores it without model calls',async()=>{
- const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated},{id:digest('2GBです。'),parts:[{id:'p0',reading:'ニギガバイトです。'}]}]},{corrections:[]}]);
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated},{id:digest('2GBです。'),parts:[{id:'p1',reading:'ギガバイト'}]}]},{corrections:[]}]);
  const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,'2GBです。',source],[],new AbortController().signal);
  expect(provider.calls).toHaveLength(2);expect(provider.calls[0]?.prompt).toContain('2GB');
  const restored=new PreparedReadings(()=>{throw Error('must not regenerate');},new PreparedArtifacts(cache.dir));
@@ -47,10 +47,10 @@ it('owns exact original spans including code, whitespace, astral characters and 
 });
 
 it('identifies the invalid reading span in repair feedback while preserving the source',async()=>{
- const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]}]},{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);
+ const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'},generated[1]!]}]},{items:[{id:digest(source),parts:[generated[0]!]}]},{corrections:[]}]);
  const result=await new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal);
  const feedback=JSON.parse(provider.calls[1]!.prompt).failure;
- expect(feedback).toContain('p0');expect(feedback).toContain('LLMです。');expect(result.text).toBe(source);expect(result.parts).toEqual(parts);
+ expect(feedback).toContain('p0');expect(feedback).toContain('LLMデス。');expect(result.text).toBe(source);expect(result.parts).toEqual(parts);
 });
 
 it('resumes a failed reading review with its prior mappings and exact correction feedback',async()=>{
@@ -60,13 +60,21 @@ it('resumes a failed reading review with its prior mappings and exact correction
  expect(JSON.parse(provider.calls[4]!.prompt)).toMatchObject({candidate:value.items,failure:'読み審査の修正対象が一致しません'});
 });
 
-it('patches only invalid reading spans and preserves already valid utterances',async()=>{
- const cache=store(),other='次です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]},{id:digest(other),parts:[{id:'p0',reading:'つぎです。'}]}]},{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,other],[],new AbortController().signal);const retry=JSON.parse(provider.calls[1]!.prompt);expect(retry.items.map((item:{id:string})=>item.id)).toEqual([digest(source)]);expect((await readings.get(other,[],new AbortController().signal)).parts).toEqual([{text:other,reading:'つぎです。'}]);
+it('leaves Japanese-only utterances unchanged without an LLM',async()=>{
+ const cache=store(),provider=vi.fn(()=>{throw Error('must not call');});const readings=new PreparedReadings(provider,cache.store);
+ const text='漢字の説明は自然に読みます。数字は123です。';expect((await readings.get(text,[],new AbortController().signal)).parts.map(p=>p.reading).join('')).toBe(text);expect(provider).not.toHaveBeenCalled();
 });
-
-it('applies a concrete reviewed reading correction and rechecks it without regenerating the utterance',async()=>{
- const cache=store(),text='略です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(text),parts:[{id:'p0',reading:'りゃっくです。'}]}]},{corrections:[{utteranceId:digest(text),partId:'p0',expectedReading:'りゃっくです。',reading:'りゃくです。',reason:'促音はありません'}]},{corrections:[]}]);const result=await new PreparedReadings(()=>provider,cache.store).get(text,[],new AbortController().signal);expect(result).toEqual({text,parts:[{text,reading:'りゃくです。'}]});expect(provider.calls.map(call=>call.purpose)).toEqual(['generation','review','review']);
+it('applies a concrete Latin reading correction without regenerating Japanese',async()=>{
+ const cache=store(),text='Ollamaを使う。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(text),parts:[{id:'p0',reading:'オラーマ'}]}]},{corrections:[{utteranceId:digest(text),partId:'p0',expectedReading:'オラーマ',reading:'オラマ',reason:'長音を削除'}]},{corrections:[]}]);const result=await new PreparedReadings(()=>provider,cache.store).get(text,[],new AbortController().signal);expect(result.parts.map(p=>p.reading).join('')).toBe('オラマを使う。');expect(provider.calls.map(c=>c.purpose)).toEqual(['generation','review','review']);
+});
+it('ignores legacy whole-kana packages and caches when synthesizing',async()=>{
+ const cache=store(),legacy={text:source,parts:[{text:source,reading:'ラージランゲージモデルハエルエルエムデス。'}]};cache.store.write('reading-v1:'+digest([source,[]]),legacy);
+ const llm=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated}]},{corrections:[]}]);const readings=new PreparedReadings(()=>llm,cache.store);readings.install([legacy],[]);
+ const backing=new TestToneSpeechProvider(1000),spy=vi.spyOn(backing,'synthesize');const provider=new ReadingSpeechProvider(backing,readings,()=>[],()=>[legacy]);await provider.synthesize({text:source,voiceId:'test',language:'ja-JP',dictionaryVersion:'test'},{signal:new AbortController().signal});expect(spy.mock.calls[0]![0].text).toBe('ラージ ランゲージ モデルはエルエルエムです。');
+ const prompt=JSON.parse(llm.calls[0]!.prompt);expect(prompt.items[0].parts.map((p:{text:string})=>p.text)).toEqual(['Large Language Model','LLM']);
 });
 it('treats identical before and after readings as no correction',async()=>{
  const cache=store();const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:generated}]},{corrections:[{utteranceId:digest(source),partId:'p0',expectedReading:parts[0]!.reading,reading:parts[0]!.reading,reason:'問題ありません'}]}]);expect((await new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).parts).toEqual(parts);expect(provider.calls).toHaveLength(2);
 });
+
+it('keeps leading whitespace and punctuation in original captions',()=>{expect(alignOriginal({text:' LLM。',parts:[{text:' ',reading:' '},{text:'LLM',reading:'エルエルエム'},{text:'。',reading:'。'}]},[{text:'エルエルエム。',startMs:0,endMs:200}])).toEqual([{text:' LLM。',startMs:0,endMs:200}]);});
