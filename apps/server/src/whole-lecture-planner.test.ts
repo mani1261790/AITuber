@@ -91,3 +91,10 @@ it('reviews exact-span pronunciation corrections and excludes obsolete utterance
  const saved=t.artifacts.read<{parts:{text:string;reading:string}[]}>('reading-v1:'+digest([text,course.pronunciationDictionary]));expect(saved!.parts[0]!.reading).toBe('シュウセイ');
  expect(t.artifacts.read('reading-v1:'+digest(['削除済みの台本',course.pronunciationDictionary]))).toBeNull();
 });
+
+it('retains the reviewed whole script when readings fail and retries only pronunciation preparation',async()=>{
+ const t=setup();vi.mocked(t.readings.prepare).mockRejectedValueOnce(Error('reading failure')).mockResolvedValueOnce();const provider=new FixedResponseLlmProvider([{units:t.units},{passed:true,reason:'verified'}]);
+ const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);
+ await expect(planner(t.input,new AbortController().signal)).rejects.toThrow('reading failure');
+ await planner(t.input,new AbortController().signal);expect(provider.calls).toHaveLength(2);expect(t.readings.prepare).toHaveBeenCalledTimes(2);
+});

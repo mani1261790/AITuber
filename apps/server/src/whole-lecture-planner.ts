@@ -52,6 +52,10 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
   if(!result.value.passed)throw Error(result.value.reason);
  }
  async function generate(input:DirectorInput,key:string,signal:AbortSignal):Promise<LectureScript>{
+  const cached=store.read<LectureScript>('reviewed:'+key);
+  if(cached&&cached.version===1&&cached.key===key&&cached.revision===revision(cached.units)){
+   validateScript(cached.units,input,input.session.course.schedule.orderedUnitIds);await readings.prepare(texts(cached),input.session.course.pronunciationDictionary,signal);signal.throwIfAborted();store.write(key,cached);return cached;
+  }
   const ordered=input.session.course.schedule.orderedUnitIds;const units:ScriptUnit[]=[];
   for(let index=0;index<ordered.length;index+=20){
    const ids=ordered.slice(index,index+20);
@@ -66,6 +70,7 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
    const result=await llm().createContext({purpose:'generation',systemInstruction:scriptInstruction+'Repair ONLY the defective units identified by the whole-lecture review. Return replacements with exact expectedHash and baseRevision. Preserve correct units.'}).generate<{baseRevision:string;replacements:{unitId:string;expectedHash:string;beats:Beat[]}[]}>({schemaName:'whole_lecture_repair',schema:patchSchema,prompt:JSON.stringify({evidence:evidence(input),script,hashes:script.units.map(unit=>({unitId:unit.unitId,hash:digest(unit)})),failure:error instanceof Error?error.message:'審査失敗'}),signal,maxOutputTokens:16000,maxOutputBytes:180000});
    script=applyScriptPatch(script,result.value,new Set(ordered));await review(script,input,signal);
   }
+  signal.throwIfAborted();store.write('reviewed:'+key,script);
   await readings.prepare(texts(script),input.session.course.pronunciationDictionary,signal);
   signal.throwIfAborted();store.write(key,script);return script;
  }
@@ -83,7 +88,7 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
     readings.install(edited.readings,course.pronunciationDictionary);
    }
    await readings.prepare(texts(script),course.pronunciationDictionary,signal);
-  }else script=await generate(input,'package:'+digest(course),signal);
+  }else script=await generate(input,'package:'+digest([course,scriptInstruction]),signal);
   const prepared=await Promise.all([...new Set(texts(script))].map(text=>readings.get(text,course.pronunciationDictionary,signal)));
   signal.throwIfAborted();return {...course,performance:{version:1,units:script.units,readings:prepared}};
  }
