@@ -116,21 +116,30 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
   signal.throwIfAborted();
   if(script.version!==1 || script.key!==key || script.revision!==revision(script.units))throw Error('保存台本の整合性を確認できません');
   const answer=input.questionAnswer?.trim();
-  if(answer && !script.handledAnswers.includes(digest(answer))){
+  const interruptionKey=digest(input.interruption?.id??answer??null);let patchFailure:string|null=null;
+  if(answer && !script.handledAnswers.includes(interruptionKey)){
+   try{
    const base=script;const order=input.session.course.schedule.orderedUnitIds;const start=order.indexOf(input.unit.id);
    const forbidden=new Set(input.session.completedUnitIds);
    if(input.session.speech.playing && input.session.speech.unitId)forbidden.add(input.session.speech.unitId);
    const allowed=new Set(order.slice(start,start+3).filter(id=>!forbidden.has(id)));
-   const result=await llm().createContext({purpose:'generation',systemInstruction:scriptInstruction+'A side discussion has finished. Keep the existing lecture unless its UNPLAYED nearby text repeats the answer or needs a concrete pedagogical correction. Usually replacements=[] is correct. Do not add a generic bridge, invent chronology, or rewrite for its own sake. Only replace allowed unit ids, retaining the rest of the full script. Use exact baseRevision and expectedHash.'}).generate<{baseRevision:string;replacements:{unitId:string;expectedHash:string;beats:Beat[]}[]}>({schemaName:'lecture_answer_patch',schema:patchSchema,prompt:JSON.stringify({evidence:evidence(input),script,answer,allowed:[...allowed],hashes:script.units.filter(unit=>allowed.has(unit.unitId)).map(unit=>({unitId:unit.unitId,hash:digest(unit)}))}),signal,maxOutputTokens:7000,maxOutputBytes:80000});
+   const result=await llm().createContext({purpose:'generation',systemInstruction:scriptInstruction+'A side discussion has finished. Keep the existing lecture unless its UNPLAYED nearby text repeats the answer or needs a concrete pedagogical correction. Connect the actual answer to the supplied unplayed script by editing its explanation, not by inserting a stock transition. Remove repetition already covered by the answer, adjust assumptions, and retain required learning content. If the continuation already fits, replacements=[] is correct. Do not add a generic bridge, invent chronology, or rewrite for its own sake. Only replace allowed unit ids, retaining the rest of the full script. Use exact baseRevision and expectedHash.'}).generate<{baseRevision:string;replacements:{unitId:string;expectedHash:string;beats:Beat[]}[]}>({schemaName:'lecture_answer_patch',schema:patchSchema,prompt:JSON.stringify({evidence:evidence(input),script,answer,interruption:input.interruption,previousSpeech:input.previousSpeech,presentation:input.session.direction,completedUnitIds:input.session.completedUnitIds,resumeUnitId:input.unit.id,allowed:[...allowed],hashes:script.units.filter(unit=>allowed.has(unit.unitId)).map(unit=>({unitId:unit.unitId,hash:digest(unit)}))}),signal,maxOutputTokens:7000,maxOutputBytes:80000});
    script=applyScriptPatch(base,result.value,allowed);
    if(result.value.replacements.length){await review(script,input,signal);await readings.prepare(result.value.replacements.flatMap(unit=>unit.beats.map(beat=>beat.text)),input.session.course.pronunciationDictionary,signal);}
    signal.throwIfAborted();
    const current=store.read<LectureScript>(sessionKey);if(current && current.revision!==base.revision)throw Error('台本が更新されたため古い差分を破棄しました');
-   script={...script,handledAnswers:[...base.handledAnswers,digest(answer)].slice(-100)};store.write(sessionKey,script);
+   script={...script,handledAnswers:[...base.handledAnswers,interruptionKey].slice(-100)};store.write(sessionKey,script);
+   }catch(error){
+    signal.throwIfAborted();
+    script=store.read<LectureScript>(sessionKey)??store.read<LectureScript>(key)!;
+    if(!script)throw error;
+    patchFailure='回答後の修正を採用できなかったため、準備済み台本を続けます。';
+    script={...script,handledAnswers:[...script.handledAnswers,interruptionKey].slice(-100)};store.write(sessionKey,script);
+   }
   }
   const unit=script.units.find(unit=>unit.unitId===input.unit.id);if(!unit)throw Error('再生する台本がありません');
   const actions=compileBeats(unit.beats,input.session.direction?.drawing ?? undefined,input.session.direction?.surface);
-  validatePlan(actions,input);return {source:'generated',reason:null,actions};
+  validatePlan(actions,input);return {source:'generated',reason:patchFailure,actions};
  };
  return Object.assign(planner,{preparesWholeLecture:true,requiresPackage,preparePackage});
 }

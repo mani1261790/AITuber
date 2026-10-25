@@ -530,3 +530,30 @@ it("keeps all beats of only the most recent main unit in continuation context",a
   expect(runtime.service.exportCheckpoint()?.previousSpeech).toBe("unit.math.parts first");
  } finally {runtime.close();}
 });
+
+it("continues the prepared script without waiting for a slow interruption patch",async()=>{
+ vi.useFakeTimers();
+ const planner=Object.assign(vi.fn<LessonPlanner>(async input=>input.questionAnswer?new Promise<DirectedPlan>(()=>{}):({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText,surface:"slides"}]})),{preparesWholeLecture:true});
+ const runtime=setup(planner);
+ try {
+  await vi.advanceTimersByTimeAsync(0);
+  const started=runtime.service.getSession(runtime.session.id);
+  runtime.service.completeStageAction(started.id,started.epoch,started.direction!.actionId);
+  const origin=runtime.service.captureSupplementOrigin(started.id,"target.math.vertex-form");
+  const preparing={id:"supplement.oral",questionId:"question.oral",status:"preparing" as const,attempt:1,origin,candidate:null,failure:null,adoptedAt:new Date().toISOString(),firstAudioAt:null};
+  runtime.service.announceSupplement(started.id,preparing,{interrupt:false,bridgeText:null,bridgeTargetIds:[]});
+  const candidate={speechText:"そうです。括弧の中がゼロになる値を考えます。",captionText:"括弧の中がゼロになる値",sceneId:"scene.math.form",focusTargetIds:["target.math.vertex-form"],boardPatches:[],sourceIds:["source.quadratic"],knowledgeBasis:"course" as const,calculations:[],corrections:[]};
+  runtime.service.queueSupplement(started.id,{...preparing,status:"ready",candidate},{interruptionQuestion:{text:"質問本文",origin:"learner"},onPlaybackStarted(){},onCompleted(){}});
+  expect(runtime.service.getSession(started.id).speech.text).toBe(started.speech.text);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.service.getSession(started.id)).toMatchObject({direction:{surface:"slides"},liveSupplement:{status:"playing"},speech:{text:candidate.speechText}});
+  const continuation=planner.mock.calls.find(call=>call[0].questionAnswer===candidate.speechText)![0];
+  expect(continuation.unit.id).toBe("unit.math.parts");
+  const patchSignal=planner.mock.calls.find(call=>call[0].questionAnswer===candidate.speechText)![1];expect(continuation.interruption).toMatchObject({id:preparing.id,question:"質問本文"});
+  planner.mockClear();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(patchSignal.aborted).toBe(true);
+  expect(runtime.service.getSession(started.id).speech).toMatchObject({playing:true,unitId:continuation.unit.id});
+  expect(planner.mock.calls.every(call=>call[0].unit.id!==continuation.unit.id)).toBe(true);
+ } finally {runtime.close();}
+});

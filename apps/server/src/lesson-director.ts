@@ -6,7 +6,7 @@ import { LlmProviderError, type LlmProvider } from "@aituber/providers";
 
 type Unit = ReadonlyCoursePackage["teachingUnits"][number];
 export interface DirectedPlan { actions: LessonAction[]; source: "generated" | "reference"; reason: string | null }
-export interface DirectorInput { session: Pick<FixedSessionView,"id"|"course"|"configuredDurationMinutes"|"completedUnitIds"|"direction"|"learningEvidence"> & {speech: Pick<FixedSessionView["speech"],"playing"|"unitId">}; unit: Unit; previousSpeech: string; questionAnswer?: string; remainingMs: number }
+export interface DirectorInput { session: Pick<FixedSessionView,"id"|"course"|"configuredDurationMinutes"|"completedUnitIds"|"direction"|"learningEvidence"> & {speech: Pick<FixedSessionView["speech"],"playing"|"unitId">}; unit: Unit; previousSpeech: string; questionAnswer?: string; interruption?: {id:string;question:string;kind:string}; remainingMs: number }
 export type LessonPlanner = ((input: DirectorInput, signal: AbortSignal) => Promise<DirectedPlan>) & {preparesWholeLecture?: boolean; requiresPackage?: boolean};
 
 export function referencePlan(unit: Unit, reason: string | null = null, currentPosition: StagePosition = "right"): DirectedPlan {

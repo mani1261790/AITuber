@@ -134,7 +134,9 @@ export class LiveSupplementService {
     const deadline = setTimeout(() => this.#defer(sessionId, view, "制限時間内に音声を開始できなかったため、授業後の回答へ保留しました。"), remaining);
     this.#audioDeadlines.set(view.id, deadline);
     try {
+      const question=this.#questions.list(sessionId).find(question=>question.id===view.questionId);
       this.#lecture.queueSupplement(sessionId, view, {
+        ...(question?{interruptionQuestion:{text:question.text,origin:question.origin}}:{}),
         onPlaybackStarted: (occurredAt, audible) => { const active = this.#audioDeadlines.get(view.id); if (active) clearTimeout(active); this.#audioDeadlines.delete(view.id); const current = this.#store.get(view.id); this.#store.update({ id: view.id, status: "playing", firstAudioAt: current.firstAudioAt ?? (audible ? occurredAt : null) }); },
         onFailure: (reason) => this.#defer(sessionId,view,reason),
         onCompleted: () => { this.#store.update({ id: view.id, status: "completed" }); this.#questions.markAnswered(view.questionId); },

@@ -1,4 +1,4 @@
-import { referencePlan, type LessonPlanner, type DirectedPlan } from "./lesson-director.ts";
+import { referencePlan, type LessonPlanner, type DirectorInput, type DirectedPlan } from "./lesson-director.ts";
 import type { LessonDirectionView, LessonAction } from "@aituber/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type {
@@ -50,6 +50,7 @@ interface PendingSupplement {
   readonly onPlaybackStarted: (occurredAt: string, audible: boolean) => void;
   readonly onCompleted: () => void;
   readonly onFailure?: (reason: string) => void;
+  readonly interruptionQuestion?: {text:string;origin:string};
 }
 
 type SessionListener = (sessionId: string, snapshot: ClassroomSnapshot) => void;
@@ -66,13 +67,14 @@ export class FixedLectureService {
   readonly #travelArrived = new WeakSet<RuntimeSession>();
   readonly #drawingWait = new WeakMap<RuntimeSession, {started:number; fail:()=>void}>();
   readonly #stageNext = new WeakMap<RuntimeSession, () => void>();
+  readonly #interruption = new WeakMap<RuntimeSession,NonNullable<DirectorInput["interruption"]>>();
   readonly #questionAnswer = new WeakMap<RuntimeSession,string>();
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #preparedSpeech = new WeakMap<RuntimeSession, Map<string, {controller:AbortController; promise:Promise<SpeechArtifact>}>>();
   readonly #projection = new WeakMap<RuntimeSession, {started:number; timer:ReturnType<typeof setTimeout>; fail:()=>void; stageDone:boolean; speechDone:boolean; next:()=>void}>();
   readonly #openingPrepared = new WeakSet<RuntimeSession>();
   readonly #waitingParticipant = new WeakMap<RuntimeSession,string>();
-  readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan> }>();
+  readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan>; fallback?:Promise<DirectedPlan>; ready?:boolean }>();
   readonly #playbackDeadlines = new WeakMap<RuntimeSession, { deadline: number; maxDeadline: number; complete: () => void; audioUrl: string | null; epoch: number; owner?: string; ended?: boolean }>();
 
   readonly #executionOwner = new WeakMap<RuntimeSession,{epoch:number;participantId:string}>();
@@ -162,7 +164,7 @@ export class FixedLectureService {
     const direction=this.#directions.get(runtime);
     return { liveSupplement:runtime.liveSupplement,
       presentation:direction ? {surface:direction.surface ?? "slides",drawing:direction.drawing ?? null,position:direction.position,camera:direction.camera} : null,
-      previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null,
+      previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null, interruption:this.#interruption.get(runtime) ?? null,
       executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
       state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
       startedAtMs: runtime.startedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
@@ -185,6 +187,7 @@ export class FixedLectureService {
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
+    if(saved.interruption)this.#interruption.set(runtime,saved.interruption);
     const published=this.#courses.get(saved.course.id);
     if(!published || published.version<saved.course.version)this.#courses.set(saved.course.id,saved.course);
     this.#sessions.set(saved.id,runtime); this.#currentSessionId=saved.id;
@@ -365,7 +368,7 @@ export class FixedLectureService {
     return ()=>{entries.forEach(entry=>entry.controller.abort());if(this.#reviewAudio.get(runtime)===entries)this.#reviewAudio.delete(runtime);};
   }
 
-  queueSupplement(sessionId: string, view: LiveSupplementView, callbacks: Pick<PendingSupplement, "onPlaybackStarted" | "onCompleted" | "onFailure">): void {
+  queueSupplement(sessionId: string, view: LiveSupplementView, callbacks: Pick<PendingSupplement, "onPlaybackStarted" | "onCompleted" | "onFailure" | "interruptionQuestion">): void {
     const runtime = this.#requireSession(sessionId);
     if (!runtime.liveSupplement || runtime.liveSupplement.id !== view.id) throw new TypeError("Unknown active live supplement");
     runtime.liveSupplement = { ...view, firstAudioAt: runtime.liveSupplement.firstAudioAt ?? view.firstAudioAt, status: runtime.liveSupplement.status === "bridging" ? "bridging" : "ready" };
@@ -508,15 +511,15 @@ export class FixedLectureService {
     try {
       if (prefetched?.unitId === unit.id && (prefetched.stamp === this.#contextStamp(runtime) || ["preparing","ready"].includes(runtime.liveSupplement?.status ?? ""))) {
         controller.signal.addEventListener("abort",()=>prefetched.controller.abort(),{once:true});
-        plan = await prefetched.plan;
+        if(prefetched.fallback&&!prefetched.ready){prefetched.controller.abort();plan=await prefetched.fallback;}else plan = await prefetched.plan;
       } else {
         prefetched?.controller.abort();
-        plan = await this.#planner!({session:this.getSession(runtime.id),unit,previousSpeech:this.#previousSpeech.get(runtime) ?? "",...(this.#questionAnswer.has(runtime) ? {questionAnswer:this.#questionAnswer.get(runtime)!} : {}),remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal);
+        plan = await this.#planner!({session:this.getSession(runtime.id),unit,previousSpeech:this.#previousSpeech.get(runtime) ?? "",...(this.#questionAnswer.has(runtime) ? {questionAnswer:this.#questionAnswer.get(runtime)!,...(this.#interruption.has(runtime)?{interruption:this.#interruption.get(runtime)!}:{})} : {}),remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal);
       }
     } catch (error) { if (controller.signal.aborted) return; plan = referencePlan(unit,error instanceof Error ? error.message : "台本生成失敗"); }
     if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
     runtime.speechAbort = null;
-    this.#questionAnswer.delete(runtime);
+    this.#questionAnswer.delete(runtime);this.#interruption.delete(runtime);
     const stored = this.#store.getSession(runtime.id);
     this.#store.appendEvent({eventId:`event.${randomUUID()}`,sessionId:runtime.id,coursePackageId:runtime.course.id,coursePackageVersion:runtime.course.version,epoch:stored.epoch,seq:stored.lastSeq+1,occurredAt:new Date().toISOString(),type:"lesson.direction-planned",payload:{unitId:unit.id,source:plan.source,reason:plan.reason,actions:plan.actions}});
     const base = this.#directions.get(runtime)!;
@@ -828,6 +831,8 @@ export class FixedLectureService {
     this.#prefetch.get(runtime)?.controller.abort(); this.#prefetch.delete(runtime);
     const candidate = pending.view.candidate;
     runtime.liveSupplement = { ...pending.view, status: "playing" };
+    const interruption={id:pending.view.id,question:pending.interruptionQuestion?.text??"",kind:pending.interruptionQuestion?.origin??"question"};
+    this.#interruption.set(runtime,interruption);
     // Prepare the continuation while the answer is drawn/spoken, using its actual content.
     const nextUnit = runtime.course.teachingUnits.find(unit=>unit.id===runtime.state.activeUnitId);
     if (this.#planner && nextUnit && (!runtime.assessmentId || runtime.lastAssessmentEvaluation?.outcome === "correct")) {
@@ -836,9 +841,14 @@ export class FixedLectureService {
       const direction=this.#directions.get(runtime);
       const projected:FixedSessionView={...session,...(direction ? {direction:{...direction,phase:"complete",targetId:null,traveling:false,...(candidate.drawing ? {surface:"board",drawing:candidate.drawing,position:"right"} : {})}} : {})};
       const previousSpeech=this.#previousSpeech.get(runtime) ?? "";
-      const plan=this.#planner({session:projected,unit:nextUnit,previousSpeech,questionAnswer:[candidate.preparationSpeechText,candidate.speechText].filter(Boolean).join(" "),remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal).catch(()=>referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
-      void plan.then(result=>{if(!controller.signal.aborted) for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);});
-      this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller,plan});
+      const plan=this.#planner({session:projected,unit:nextUnit,previousSpeech,questionAnswer:[candidate.preparationSpeechText,candidate.speechText].filter(Boolean).join(" "),interruption,remainingMs:this.getRemainingTimeMs(runtime.id)},controller.signal).catch(()=>fallback??referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
+      const fallback=this.#planner.preparesWholeLecture?this.#planner({session:projected,unit:nextUnit,previousSpeech,remainingMs:this.getRemainingTimeMs(runtime.id)},new AbortController().signal):undefined;
+      const prefetch={unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller,plan,ready:false,...(fallback?{fallback}:{})};
+      const epoch=runtime.state.epoch;
+      const warm=async(result:DirectedPlan)=>{if(controller.signal.aborted||runtime.state.epoch!==epoch||["PAUSED","FINISHED"].includes(runtime.state.status))return result;const texts=result.actions.filter(action=>action.type==="speak").map(action=>action.text);for(const text of texts)this.#prepareSpeech(runtime,text);await Promise.all(texts.map(text=>this.#preparedSpeech.get(runtime)?.get(this.#speechText(runtime,text))?.promise));return result;};
+      if(fallback)void fallback.then(warm).catch(()=>{});
+      prefetch.plan=plan.then(async result=>{if(controller.signal.aborted)return result;await warm(result);prefetch.ready=true;return result;}).catch(()=>fallback??referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
+      this.#prefetch.set(runtime,prefetch);
     }
     this.#publish(runtime);
     if (candidate.drawing) {

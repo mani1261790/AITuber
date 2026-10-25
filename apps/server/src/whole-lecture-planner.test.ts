@@ -108,3 +108,17 @@ it('bounds repairs and resumes the saved candidate instead of regenerating the l
  await planner(t.input,new AbortController().signal);
  expect(provider.calls).toHaveLength(7);expect(provider.calls.at(-1)?.purpose).toBe('review');expect(t.readings.prepare).toHaveBeenCalledTimes(1);
 });
+
+it('passes interruption context and patches each distinct question only once without changing the package',async()=>{
+ const t=setup(),original=structuredClone(t.input.session.course);const patch={baseRevision:digest(t.units),replacements:[]};
+ const provider=new FixedResponseLlmProvider([{units:t.units},{passed:true,reason:'verified'},patch,patch]);const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);await planner(t.input,new AbortController().signal);
+ const input={...t.input,previousSpeech:'直前の説明',questionAnswer:'実際の回答',interruption:{id:'question1',question:'なぜですか？',kind:'learner'}};
+ await planner(input,new AbortController().signal);await planner(input,new AbortController().signal);
+ const prompt=JSON.parse(provider.calls[2]!.prompt);expect(prompt).toMatchObject({answer:input.questionAnswer,interruption:input.interruption,previousSpeech:input.previousSpeech,resumeUnitId:input.unit.id});expect(prompt.script.units).toEqual(t.units);
+ await planner({...input,interruption:{...input.interruption,id:'question2'}},new AbortController().signal);expect(provider.calls).toHaveLength(4);expect(t.input.session.course).toEqual(original);
+});
+it('keeps the prepared script when a patch fails review and does not repeat the failed interruption',async()=>{
+ const t=setup(),first=t.units[0]!;const replacement={unitId:first.unitId,expectedHash:digest(first),beats:[beat(first.beats[0]!.text+'補足です。')]};
+ const provider=new FixedResponseLlmProvider([{units:t.units},{passed:true,reason:'verified'},{baseRevision:digest(t.units),replacements:[replacement]},{passed:false,reason:'bad patch'}]);const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);await planner(t.input,new AbortController().signal);
+ const input={...t.input,questionAnswer:'回答済み'};const result=await planner(input,new AbortController().signal);expect(result.source).toBe('generated');expect(result.reason).toContain('準備済み');expect(result.actions).toContainEqual(expect.objectContaining({type:'speak',text:first.beats[0]!.text}));await planner(input,new AbortController().signal);expect(provider.calls).toHaveLength(4);expect(t.readings.prepare).toHaveBeenCalledTimes(1);
+});
