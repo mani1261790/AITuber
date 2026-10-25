@@ -1,3 +1,4 @@
+import {assessmentIntroduction} from '@aituber/contracts';
 import {afterEach,expect,it,vi} from 'vitest';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {FixedResponseLlmProvider} from '@aituber/providers';
@@ -89,6 +90,7 @@ it('reviews exact-span pronunciation corrections and excludes obsolete utterance
  const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);
  const result=await planner.preparePackage(course,new AbortController().signal,{version:1,units:t.units,readings:[{text,parts:[{text:surface,reading:'テスト'},{text:text.slice(10),reading:'テスト'}]},{text:'削除済みの台本',parts:[{text:'削除済みの台本',reading:'サクジョズミ'}]}]});
  expect(result.performance!.units).toEqual(t.units);
+ for(const question of course.assessments)expect(result.performance!.readings.some(reading=>reading.text===assessmentIntroduction(question))).toBe(true);
  const saved=t.artifacts.read<{parts:{text:string;reading:string}[]}>('reading-v1:'+digest([text,course.pronunciationDictionary]));expect(saved!.parts[0]!.reading).toBe('シュウセイ');
  expect(t.artifacts.read('reading-v1:'+digest(['削除済みの台本',course.pronunciationDictionary]))).toBeNull();
 });

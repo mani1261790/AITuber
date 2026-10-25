@@ -21,6 +21,37 @@ describe("FixedLectureService", () => {
     vi.useRealTimers();
   });
 
+  it("reads the authored exercise introduction, waits for an answer, and resumes safely", async()=>{
+    service.close();
+    const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;
+    const question=course.assessments[0]!;question.introductionText='画面下の問題で、頂点を読み取ってみましょう。';
+    course.assessments=[question];course.schedule.orderedItemIds=[question.id,...course.schedule.orderedUnitIds];
+    service=new FixedLectureService({store,courses:[course],playbackUnitMs:100});
+    const {id}=service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes});
+    expect(service.getSession(id)).toMatchObject({status:'CHECKPOINT',speech:{playing:true,text:question.introductionText}});
+    service.command(id,{command:'pause'});service.command(id,{command:'resume'});
+    expect(service.getSession(id).speech.playing).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(service.getSession(id)).toMatchObject({status:'CHECKPOINT',speech:{playing:false},progress:{completed:0}});
+    service.command(id,{command:'answer',answer:'回答'});
+    expect(service.getSession(id).status).toBe('TEACHING');
+    expect(service.getSession(id).speech.text).not.toBe(question.introductionText);
+  });
+
+  it("cancels a pending exercise voice when an early answer starts the lesson",async()=>{
+    service.close();const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;
+    const question=course.assessments[0]!;course.assessments=[question];course.schedule.orderedItemIds=[question.id,...course.schedule.orderedUnitIds];
+    const synthesize=vi.fn((_request:unknown,options:{signal?:AbortSignal})=>new Promise<SpeechArtifact>((_resolve,reject)=>options.signal?.addEventListener('abort',()=>reject(Error('aborted')))));
+    const provider={provider:'fish-audio',model:'test',synthesize} as TextToSpeechProvider;
+    service=new FixedLectureService({store,courses:[course],speechProvider:provider,voiceId:'test'});
+    const {id}=service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes});
+    const introSignal=synthesize.mock.calls[0]![1].signal!;
+    service.command(id,{command:'answer',answer:'回答'});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(introSignal.aborted).toBe(true);expect(synthesize).toHaveBeenCalledTimes(2);
+    expect(service.getSession(id)).toMatchObject({status:'TEACHING',speech:{mode:'preparing'}});
+  });
+
   it("plays initial, consecutive and final questions in the authored order and restores progress",()=>{
     service.close();
     const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;

@@ -1,3 +1,4 @@
+import {assessmentIntroduction} from '@aituber/contracts';
 import type {CoursePackage, LecturePerformance} from '@aituber/contracts';
 import {LlmProviderError} from '@aituber/providers';
 import type {LlmProvider} from '@aituber/providers';
@@ -98,7 +99,9 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
    }
    await readings.prepare(texts(script),course.pronunciationDictionary,signal);
   }else script=await generate(input,'package:'+digest([course,scriptInstruction]),signal);
-  const prepared=await Promise.all([...new Set(texts(script))].map(text=>readings.get(text,course.pronunciationDictionary,signal)));
+  const allTexts=[...texts(script),...course.assessments.map(assessmentIntroduction)];
+  await readings.prepare(allTexts,course.pronunciationDictionary,signal);
+  const prepared=await Promise.all([...new Set(allTexts)].map(text=>readings.get(text,course.pronunciationDictionary,signal)));
   signal.throwIfAborted();return {...course,performance:{version:1,units:script.units,readings:prepared}};
  }
  const planner:LessonPlanner=async(input,signal)=>{

@@ -131,6 +131,7 @@ export const AssessmentSchema = closedObject({
   learningGoalIds: Type.Array(Identifier, { minItems: 1, maxItems: MAX_GOALS, uniqueItems: true }),
   afterUnitId: Identifier,
   prompt: NonEmptyText,
+  introductionText: Type.Optional(Type.String({minLength:1,maxLength:600})),
   responseKind: Type.Union([Type.Literal("multiple-choice"), Type.Literal("short-answer")]),
   options: Type.Array(ShortText, { maxItems: 12, uniqueItems: true }),
   rubric: closedObject({
@@ -410,4 +411,11 @@ function stableStringify(value: unknown): string {
     return `{${entries.join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+/** Also used by older packages without an authored introduction. */
+export function assessmentIntroduction(assessment: {introductionText?:string;responseKind:string}) {
+  return assessment.introductionText ?? (assessment.responseKind === 'multiple-choice'
+    ? 'ここで練習問題に取り組んでみましょう。画面下の問題を読んで、当てはまる答えを選んでください。回答が終わるまで、ここで待っていますね。'
+    : 'ここで練習問題に取り組んでみましょう。画面下の問題を読んで、答えを入力してください。回答が終わるまで、ここで待っていますね。');
 }

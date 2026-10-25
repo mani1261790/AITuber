@@ -359,3 +359,17 @@ it("makes whole-script preparation failures visible instead of leaving an endles
  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  expect(service.getSession(session.id)).toMatchObject({status:"PAUSED",speech:{playing:false,failure:expect.any(String)}});
 });
+
+it("plays exercise guidance through audio receipts and stays at the question after the end",async()=>{
+ vi.useFakeTimers();const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;
+ const question=course.assessments[0]!;question.introductionText='画面下の問題を考えてみましょう。';course.assessments=[question];course.schedule.orderedItemIds=[question.id,...course.schedule.orderedUnitIds];
+ const store=new LectureEventStore(':memory:');resources.push(store);
+ const service=new FixedLectureService({store,courses:[course],requireLiveExecution:true,speechProvider:new TestToneSpeechProvider(1000),voiceId:'test.voice',planner:async()=>({source:'generated',reason:null,actions:[{type:'speak',text:'説明します。'}]})});resources.push(service);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const speech=service.getSession(session.id).speech;expect(speech.audioUrl).toBeTruthy();expect(speech.text).toBe(question.introductionText);
+ service.reportPlayback(session.id,speech.epoch,speech.audioUrl!,0,'viewer','playing',speech.startedAt!);
+ await vi.advanceTimersByTimeAsync(2000);expect(service.getSession(session.id).speech.playing).toBe(true);
+ service.reportPlayback(session.id,speech.epoch,speech.audioUrl!,0,'viewer','ended',speech.startedAt!);
+ await vi.advanceTimersByTimeAsync(850);expect(service.getSession(session.id)).toMatchObject({status:'CHECKPOINT',speech:{playing:false},progress:{completed:0}});
+ await vi.advanceTimersByTimeAsync(30000);expect(service.getSession(session.id).status).toBe('CHECKPOINT');
+});

@@ -1,4 +1,4 @@
-import {lessonItemIds} from "@aituber/contracts";
+import {assessmentIntroduction,lessonItemIds} from "@aituber/contracts";
 import { referencePlan, type LessonPlanner, type DirectorInput, type DirectedPlan } from "./lesson-director.ts";
 import type { LessonDirectionView, LessonAction } from "@aituber/contracts";
 import { createHash, randomUUID } from "node:crypto";
@@ -431,6 +431,7 @@ export class FixedLectureService {
       this.#apply(runtime, { type: "RECOVERY_STARTED", epoch: runtime.state.epoch });
       this.#apply(runtime, { type: "RECOVERY_COMPLETED", epoch: runtime.state.epoch });
       if (runtime.state.status === "PREPARING") this.#prepareOpening(runtime);
+      if (runtime.state.status === "CHECKPOINT" && runtime.assessmentId) {const assessment=runtime.course.assessments.find(item=>item.id===runtime.assessmentId);if(assessment)this.#presentAssessment(runtime,assessment);}
       if (runtime.state.status === "BRANCHING" && runtime.pendingSupplement) { if(!runtime.timer && !runtime.speechAbort && !runtime.speech.playing) this.#activateSupplement(runtime); } else this.#schedule(runtime);
     } else if (request.command === "finish") {
       this.#cancelSpeech(runtime);
@@ -440,6 +441,7 @@ export class FixedLectureService {
         throw new TypeError("The session is not waiting for an answer");
       }
       if (!request.answer?.trim()) throw new TypeError("answer is required");
+      this.#cancelSpeech(runtime);
       this.#apply(runtime, { type: "ANSWER_RECEIVED", epoch: runtime.state.epoch });
       this.#recordAnswer(runtime, request.answer.trim());
       const supplementRequired = Boolean(request.assessmentEvaluation && (request.assessmentEvaluation.outcome !== "correct" || !request.assessmentEvaluation.linkedSupplementId));
@@ -464,10 +466,19 @@ export class FixedLectureService {
     return runtime.course.assessments.find(item=>item.id===next);
   }
 
+  #presentAssessment(runtime:RuntimeSession, assessment:ReadonlyCoursePackage['assessments'][number]) {
+    runtime.assessmentId=assessment.id;
+    if(runtime.state.status!=="CHECKPOINT")this.#apply(runtime,{type:"CHECKPOINT_PRESENTED",epoch:runtime.state.epoch});
+    this.#restDirection(runtime);
+    this.#speechNext.set(runtime,()=>{this.#restDirection(runtime);this.#publish(runtime);if(runtime.pendingSupplement)this.#activateSupplement(runtime);});
+    // Reuse speech receipts/cancellation, but never complete a teaching unit here.
+    this.#speakUnit(runtime,assessment.afterUnitId,assessmentIntroduction(assessment),true);
+  }
+
   #schedule(runtime: RuntimeSession) {
     if (runtime.state.status !== "TEACHING") return;
     const question=this.#nextAssessment(runtime);
-    if(question){runtime.assessmentId=question.id;this.#apply(runtime,{type:"CHECKPOINT_PRESENTED",epoch:runtime.state.epoch});return;}
+    if(question){this.#presentAssessment(runtime,question);return;}
     const unitId = runtime.state.activeUnitId;
     if (!unitId) {
       if (this.#beforeFinish?.(runtime.id)) return;
@@ -751,10 +762,14 @@ export class FixedLectureService {
     return this.#speechProvider!.synthesize({text,language:"ja-JP",voiceId:this.#voiceId!,dictionaryVersion:dictionaryVersion(runtime.course.pronunciationDictionary)},{signal:controller.signal});
   }
 
-  #speakUnit(runtime: RuntimeSession, unitId: string, text: string) {
+  #speakUnit(runtime: RuntimeSession, unitId: string, text: string, checkpoint = false) {
     const unit = runtime.course.teachingUnits.find(candidate => candidate.id === unitId)!;
     const finalizedText = this.#speechText(runtime,text);
     const epoch = runtime.state.epoch;
+    const assessmentId=runtime.assessmentId;
+    const active=()=>runtime.state.epoch===epoch && (checkpoint
+      ? runtime.state.status==='CHECKPOINT' && runtime.assessmentId===assessmentId
+      : runtime.state.status==='TEACHING' && runtime.state.presentedUnitId===unitId);
     if (!this.#speechProvider || !this.#voiceId) {
       this.#startPlayback(runtime, unitId, epoch, {
         ...emptySpeech(epoch), mode: "test", playing: true, unitId, text: finalizedText, startedAt: new Date().toISOString(), durationMs: this.#playbackUnitMs,
@@ -767,7 +782,7 @@ export class FixedLectureService {
     const controller = new AbortController();
     runtime.speechAbort = controller;
     void this.#synthesize(runtime, finalizedText, controller).then((artifact) => {
-      if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING" || runtime.state.presentedUnitId !== unitId) return;
+      if (controller.signal.aborted || !active()) return;
       runtime.speechAbort = null;
       this.#speechArtifacts.set(artifact.cacheKey, artifact);
       this.#startPlayback(runtime, unitId, epoch, {
@@ -777,7 +792,7 @@ export class FixedLectureService {
         provider: artifact.provider, model: artifact.model, voiceId: artifact.voiceId, firstAudioMs: artifact.firstAudioMs, synthesisMs: artifact.synthesisMs,
       });
     }).catch((error: unknown) => {
-      if (controller.signal.aborted || runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING" || runtime.state.presentedUnitId !== unitId) return;
+      if (controller.signal.aborted || !active()) return;
       runtime.speechAbort = null;
       if (this.#requireLiveExecution) {
         this.#haltExecution(runtime, `音声を生成できませんでした: ${error instanceof Error ? error.message : "TTS failed"}`);
@@ -826,8 +841,7 @@ export class FixedLectureService {
       return;
     }
     if (assessment) {
-      runtime.assessmentId = assessment.id;
-      this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch });
+      this.#presentAssessment(runtime,assessment);
       return;
     }
     this.#schedule(runtime);
