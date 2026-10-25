@@ -29,6 +29,7 @@ export class PackageEditorService {
   if(course.id!==id)throw new TypeError('教材IDは変更できません');
   const original=this.lookup(id);
   if(JSON.stringify(course.sources)!==JSON.stringify(original.sources))throw new TypeError('元資料・利用権の変更には教材の再作成が必要です');
+  if(original.performance&&current.baseHash===original.contentHash&&digest({...course,status:original.status,version:original.version,contentHash:original.contentHash})===digest(original)){const restored=structuredClone(original) as CoursePackage;return this.write({course:restored,baseHash:original.contentHash,revision:digest(restored),status:'published',error:null});}
   // Status, publication version and content hash are server owned.
   course.status='draft';course.version=original.version;course.contentHash=original.contentHash;
   return this.write({course,baseHash:current.baseHash,revision:digest(course),status:'draft',error:null});
