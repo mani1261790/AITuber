@@ -59,3 +59,7 @@ it('resumes a failed reading review with its prior mappings and exact correction
  await new PreparedReadings(()=>provider,new PreparedArtifacts(cache.dir)).get(source,[],new AbortController().signal);
  expect(JSON.parse(provider.calls[4]!.prompt)).toMatchObject({candidate:value.items,failure:'correct counter'});
 });
+
+it('patches only invalid reading spans and preserves already valid utterances',async()=>{
+ const cache=store(),other='次です。';const provider=new FixedResponseLlmProvider([{items:[{id:digest(source),parts:[{id:'p0',reading:'LLMです。'}]},{id:digest(other),parts:[{id:'p0',reading:'つぎです。'}]}]},{items:[{id:digest(source),parts:generated}]},{passed:true,reason:'verified'}]);const readings=new PreparedReadings(()=>provider,cache.store);await readings.prepare([source,other],[],new AbortController().signal);const retry=JSON.parse(provider.calls[1]!.prompt);expect(retry.items.map((item:{id:string})=>item.id)).toEqual([digest(source)]);expect((await readings.get(other,[],new AbortController().signal)).parts).toEqual([{text:other,reading:'つぎです。'}]);
+});
