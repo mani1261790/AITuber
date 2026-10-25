@@ -98,3 +98,13 @@ it('retains the reviewed whole script when readings fail and retries only pronun
  await expect(planner(t.input,new AbortController().signal)).rejects.toThrow('reading failure');
  await planner(t.input,new AbortController().signal);expect(provider.calls).toHaveLength(2);expect(t.readings.prepare).toHaveBeenCalledTimes(2);
 });
+
+it('bounds repairs and resumes the saved candidate instead of regenerating the lecture',async()=>{
+ const t=setup();const patch={baseRevision:digest(t.units),replacements:[]};
+ const provider=new FixedResponseLlmProvider([{units:t.units},{passed:false,reason:'missing relation'},patch,{passed:false,reason:'missing relation'},patch,{passed:false,reason:'missing relation'},{passed:true,reason:'verified'}]);
+ const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);
+ await expect(planner(t.input,new AbortController().signal)).rejects.toThrow('missing relation');
+ expect(provider.calls).toHaveLength(6);expect(t.readings.prepare).not.toHaveBeenCalled();
+ await planner(t.input,new AbortController().signal);
+ expect(provider.calls).toHaveLength(7);expect(provider.calls.at(-1)?.purpose).toBe('review');expect(t.readings.prepare).toHaveBeenCalledTimes(1);
+});
