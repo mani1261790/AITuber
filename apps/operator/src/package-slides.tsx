@@ -8,7 +8,7 @@ export function usePackageSlides(id:string){
   const existing=cache.current.get(sourceId);if(existing)return existing.promise;
   const controller=new AbortController();let dispose=()=>controller.abort();
   const promise=(async()=>{const {getDocument,GlobalWorkerOptions}=await import('pdfjs-dist');GlobalWorkerOptions.workerSrc=workerUrl;
-   const response=await fetch(`/api/packages/${encodeURIComponent(id)}/source?sourceId=${encodeURIComponent(sourceId)}`,{signal:controller.signal,headers:{'x-aituber-surface':'operator'}});if(!response.ok)throw Error('スライドを取得できません');const data=new Uint8Array(await response.arrayBuffer());controller.signal.throwIfAborted();
+   const response=await fetch(`/api/packages/${encodeURIComponent(id)}/source?sourceId=${encodeURIComponent(sourceId)}&representation=pdf`,{signal:controller.signal,headers:{'x-aituber-surface':'operator'}});if(!response.ok)throw Error('スライドを取得できません');const data=new Uint8Array(await response.arrayBuffer());controller.signal.throwIfAborted();
    const base=import.meta.env.BASE_URL;const task=getDocument({data,cMapUrl:`${base}pdfjs/cmaps/`,cMapPacked:true,standardFontDataUrl:`${base}pdfjs/standard_fonts/`,wasmUrl:`${base}pdfjs/wasm/`});dispose=()=>{controller.abort();void task.destroy();};return task.promise;
   })();cache.current.set(sourceId,{promise,dispose:()=>dispose()});return promise;
  };

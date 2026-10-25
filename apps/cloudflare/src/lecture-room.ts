@@ -1,7 +1,8 @@
+import {storedPdfResponse} from "./source-response";
 import { storageQuotaError } from "./storage-error";
 import { LlmProviderError } from '@aituber/providers';
 import { ChatGptAuthError } from "../../server/src/chatgpt-connection.ts";
-import { lessonPdfSource, pdfSourceHeaders } from "../../server/src/lesson-pdf-source";
+import { lessonPdfSource } from "../../server/src/lesson-pdf-source";
 import { previewBoard } from "../../server/src/board-preview";
 import { audioResponse } from './audio-response';
 import { DurableObject } from 'cloudflare:workers';
@@ -138,7 +139,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:26,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:27,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
@@ -190,7 +191,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const packageSource=path.match(/^\/api\/packages\/([^/]+)\/source$/);
     if(packageSource&&request.method==='GET'){
       const source=this.services.packages.get(decodeURIComponent(packageSource[1])).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
-      if(!source)throw new RangeError('PDFがありません');const bytes=authoring.readSource(source.contentHash);return new Response(bytes.slice().buffer,{headers:{'content-type':'application/pdf','cache-control':'private, max-age=3600'}});
+      if(!source)throw new RangeError('PDFがありません');await flushSourceFiles();return storedPdfResponse(()=>this.env.STATE.get(`sources/${source.contentHash.slice(7)}`));
     }
     const packageMatch=path.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop))?$/);
     if(packageMatch){
@@ -223,9 +224,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       const access=this.classrooms.authenticate(sourceMatch[1],body.accessToken);
       const source=lessonPdfSource(lecture.getSession(access.sessionId).course,body.sourceId);
       await flushSourceFiles();
-      const object=await this.env.STATE.get(`sources/${source.contentHash.slice(7)}`);
-      if(!object)throw new RangeError('Source file unavailable');
-      return new Response(object.body,{headers:{...pdfSourceHeaders,'content-length':String(object.size)}});
+      return storedPdfResponse(()=>this.env.STATE.get(`sources/${source.contentHash.slice(7)}`));
     }
     const roomMatch=path.match(/^\/api\/classrooms\/([^/]+)\/(reconnect|stream|ready|playback|stage-complete|stage-progress|questions|answer|evidence|survey)$/);
     if(roomMatch){
