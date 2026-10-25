@@ -80,3 +80,14 @@ it('plays an embedded package script with no generation or review calls',async()
  for(const unit of session.course.teachingUnits.filter(unit=>session.course.schedule.orderedUnitIds.includes(unit.id)))await planner({...t.input,session,unit},new AbortController().signal);
  expect(provider).not.toHaveBeenCalled();expect(t.readings.prepare).not.toHaveBeenCalled();
 });
+it('reviews exact-span pronunciation corrections and excludes obsolete utterances',async()=>{
+ const t=setup();const course=structuredClone(t.input.session.course) as import('@aituber/contracts').CoursePackage;
+ const text=t.units[0]!.beats[0]!.text;const surface=text.slice(0,10);course.pronunciationDictionary=[{surface,reading:'シュウセイ'}];
+ vi.spyOn(t.readings,'get').mockImplementation(async text=>({text,parts:[{text,reading:'テスト'}]}));
+ const provider=new FixedResponseLlmProvider([{passed:true,reason:'verified'},{passed:true,reason:'verified'}]);
+ const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);
+ const result=await planner.preparePackage(course,new AbortController().signal,{version:1,units:t.units,readings:[{text,parts:[{text:surface,reading:'テスト'},{text:text.slice(10),reading:'テスト'}]},{text:'削除済みの台本',parts:[{text:'削除済みの台本',reading:'サクジョズミ'}]}]});
+ expect(result.performance!.units).toEqual(t.units);
+ const saved=t.artifacts.read<{parts:{text:string;reading:string}[]}>('reading-v1:'+digest([text,course.pronunciationDictionary]));expect(saved!.parts[0]!.reading).toBe('シュウセイ');
+ expect(t.artifacts.read('reading-v1:'+digest(['削除済みの台本',course.pronunciationDictionary]))).toBeNull();
+});
