@@ -139,7 +139,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:36,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:37,authoringFailure:authoring.failure,settings:settings.get()});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {
@@ -193,12 +193,13 @@ export class LectureRoom extends DurableObject<AppEnv> {
       const source=this.services.packages.get(decodeURIComponent(packageSource[1])).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
       if(!source)throw new RangeError('PDFがありません');await flushSourceFiles();return storedPdfResponse(()=>this.env.STATE.get(`sources/${source.contentHash.slice(7)}`));
     }
-    const packageMatch=path.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop))?$/);
+    const packageMatch=path.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop|readings))?$/);
     if(packageMatch){
       const id=decodeURIComponent(packageMatch[1]);const packages=this.services.packages;
       if(request.method==='GET'&&!packageMatch[2])return json(200,{draft:packages.get(id)});
       if(request.method==='PUT'&&!packageMatch[2])return json(200,{draft:packages.save(id,await readJson(request,4*1024*1024))});
       if(request.method==='POST'&&packageMatch[2]==='publish'){const body=await read<{revision:string}>();return json(202,{draft:packages.begin(id,body.revision)});}
+      if(request.method==='POST'&&packageMatch[2]==='readings')return json(200,{readings:await packages.previewReadings(id,await readJson(request,64*1024))});
       if(request.method==='POST'&&packageMatch[2]==='stop')return json(200,{draft:packages.stop(id)});
     }
     if(path==='/api/courses' &&request.method==='GET')return json(200,{courses:lecture.listCourses()});

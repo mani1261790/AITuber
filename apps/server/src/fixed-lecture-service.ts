@@ -1,3 +1,4 @@
+import {lessonItemIds} from "@aituber/contracts";
 import { referencePlan, type LessonPlanner, type DirectorInput, type DirectedPlan } from "./lesson-director.ts";
 import type { LessonDirectionView, LessonAction } from "@aituber/contracts";
 import { createHash, randomUUID } from "node:crypto";
@@ -32,6 +33,7 @@ interface RuntimeSession {
   state: LessonState;
   displayUnitId: string | null;
   assessmentId: string | null;
+  completedAssessmentIds: string[];
   timer: ReturnType<typeof setTimeout> | null;
   speechAbort: AbortController | null;
   speech: FixedSessionView["speech"];
@@ -166,7 +168,7 @@ export class FixedLectureService {
       presentation:direction ? {surface:direction.surface ?? "slides",drawing:direction.drawing ?? null,position:direction.position,camera:direction.camera} : null,
       previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null, interruption:this.#interruption.get(runtime) ?? null,
       executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
-      state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
+      completedAssessmentIds: runtime.completedAssessmentIds, state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
       startedAtMs: runtime.startedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
       lastAssessmentEvaluation: runtime.lastAssessmentEvaluation, afterClassAnswers: runtime.afterClassAnswers };
   }
@@ -183,7 +185,7 @@ export class FixedLectureService {
     const recoverable = saved.liveSupplement?.candidate && ["ready","playing","rejoining"].includes(saved.liveSupplement.status) ? saved.liveSupplement : null;
     const resumedStatus = saved.state.resumeStatus === "PREPARING" ? "PREPARING" as const : recoverable && (["BRANCHING","REJOINING"].includes(saved.state.status) || saved.state.resumeStatus === "BRANCHING") ? "BRANCHING" as const : saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
     const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waiting?"PREPARING":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waiting||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
-    const runtime: RuntimeSession = {...saved,state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:recoverable,pendingSupplement:null};
+    const runtime: RuntimeSession = {...saved,completedAssessmentIds:saved.completedAssessmentIds??saved.course.assessments.filter(item=>item.id!==saved.assessmentId&&saved.state.completedUnitIds.includes(item.afterUnitId)).map(item=>item.id),state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:recoverable,pendingSupplement:null};
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
@@ -244,6 +246,7 @@ export class FixedLectureService {
       state: createLessonState({ sessionId: id, orderedUnitIds: course.schedule.orderedUnitIds }),
       displayUnitId: null,
       assessmentId: null,
+      completedAssessmentIds: [],
       timer: null,
       speechAbort: null,
       speech: emptySpeech(1),
@@ -442,7 +445,7 @@ export class FixedLectureService {
       const supplementRequired = Boolean(request.assessmentEvaluation && (request.assessmentEvaluation.outcome !== "correct" || !request.assessmentEvaluation.linkedSupplementId));
       this.#apply(runtime, { type: "BRANCH_SELECTED", epoch: runtime.state.epoch, supplementRequired });
       if (request.assessmentEvaluation) runtime.lastAssessmentEvaluation = request.assessmentEvaluation;
-      if (!supplementRequired) runtime.assessmentId = null;
+      if (!supplementRequired) {runtime.completedAssessmentIds.push(runtime.assessmentId);runtime.assessmentId = null;}
       this.#publish(runtime);
       if (!supplementRequired) this.#schedule(runtime);
     }
@@ -455,8 +458,16 @@ export class FixedLectureService {
     this.#retiredSpeechArtifacts.clear();
   }
 
+  #nextAssessment(runtime:RuntimeSession){
+    const completed=new Set([...runtime.state.completedUnitIds,...runtime.completedAssessmentIds]);
+    const next=lessonItemIds(runtime.course).find(id=>!completed.has(id));
+    return runtime.course.assessments.find(item=>item.id===next);
+  }
+
   #schedule(runtime: RuntimeSession) {
     if (runtime.state.status !== "TEACHING") return;
+    const question=this.#nextAssessment(runtime);
+    if(question){runtime.assessmentId=question.id;this.#apply(runtime,{type:"CHECKPOINT_PRESENTED",epoch:runtime.state.epoch});return;}
     const unitId = runtime.state.activeUnitId;
     if (!unitId) {
       if (this.#beforeFinish?.(runtime.id)) return;
@@ -808,7 +819,7 @@ export class FixedLectureService {
     this.#discardSpeechArtifact(runtime);
     runtime.speech = { ...runtime.speech, playing: false, startedAt: null, audioUrl: null };
     this.#publish(runtime);
-    const assessment = runtime.course.assessments.find((item) => item.afterUnitId === unitId);
+    const assessment = this.#nextAssessment(runtime);
     if (runtime.pendingSupplement) {
       runtime.assessmentId = assessment?.id ?? null;
       this.#activateSupplement(runtime);
@@ -913,7 +924,7 @@ export class FixedLectureService {
     runtime.liveSupplement = runtime.liveSupplement ? { ...runtime.liveSupplement, status: "completed" } : null;
     this.#questionAnswer.set(runtime,[pending.view.candidate?.preparationSpeechText,pending.view.candidate?.speechText].filter(Boolean).join(" "));
     runtime.pendingSupplement = null; this.#restDirection(runtime); this.#publish(runtime); pending.onCompleted();
-    if (runtime.assessmentId && runtime.lastAssessmentEvaluation?.assessmentId === runtime.assessmentId && runtime.lastAssessmentEvaluation.outcome === "correct") runtime.assessmentId = null;
+    if (runtime.assessmentId && runtime.lastAssessmentEvaluation?.assessmentId === runtime.assessmentId && runtime.lastAssessmentEvaluation.outcome === "correct") {runtime.completedAssessmentIds.push(runtime.assessmentId);runtime.assessmentId = null;}
     if (runtime.assessmentId) this.#apply(runtime, { type: "CHECKPOINT_PRESENTED", epoch: runtime.state.epoch }); else this.#schedule(runtime);
   }
 

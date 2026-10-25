@@ -195,6 +195,7 @@ export const CoursePackageSchema = closedObject({
   ),
   schedule: closedObject({
     orderedUnitIds: Type.Array(Identifier, { minItems: 1, maxItems: MAX_UNITS, uniqueItems: true }),
+    orderedItemIds: Type.Optional(Type.Array(Identifier, {minItems:1,maxItems:MAX_UNITS+MAX_QUESTIONS,uniqueItems:true})),
     optionalUnitIds: Type.Array(Identifier, { maxItems: MAX_UNITS, uniqueItems: true }),
   }),
 });
@@ -349,6 +350,11 @@ function validateReferences(coursePackage: CoursePackage): ValidationIssue[] {
   checkReferences(coursePackage.schedule.orderedUnitIds, unitIds, "/schedule/orderedUnitIds", issues);
   checkReferences(coursePackage.schedule.optionalUnitIds, unitIds, "/schedule/optionalUnitIds", issues);
 
+  const items=coursePackage.schedule.orderedItemIds;
+  if(items){
+    const expected=[...coursePackage.schedule.orderedUnitIds,...coursePackage.assessments.map(item=>item.id)];
+    if(new Set(expected).size!==expected.length || items.length!==expected.length || expected.some(id=>!items.includes(id)) || JSON.stringify(items.filter(id=>unitIds.has(id)))!==JSON.stringify(coursePackage.schedule.orderedUnitIds))issues.push({path:'/schedule/orderedItemIds',message:'授業の順番に説明と練習問題を重複なく含めてください'});
+  }
   const scheduled = new Set(coursePackage.schedule.orderedUnitIds);
   coursePackage.teachingUnits.forEach((unit, index) => {
     if (unit.kind === "main" && !scheduled.has(unit.id)) {

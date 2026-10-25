@@ -153,12 +153,13 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         const source=packages.get(decodeURIComponent(packageSource[1]!)).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
         if(!source)throw new RangeError('PDFがありません');const bytes=authoring.readSource(source.contentHash);response.writeHead(200,{'content-type':'application/pdf','cache-control':'private, max-age=3600'});response.end(bytes);return;
       }
-      const packageMatch=url.pathname.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop))?$/);
+      const packageMatch=url.pathname.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop|readings))?$/);
       if(packageMatch){
         requireSurface(request,"operator");if(!packages)throw new RangeError('パッケージ編集は利用できません');const id=decodeURIComponent(packageMatch[1]!);
         if(request.method==='GET'&&!packageMatch[2])return json(response,200,{draft:packages.get(id)});
         if(request.method==='PUT'&&!packageMatch[2])return json(response,200,{draft:packages.save(id,await readJson(request,4*1024*1024))});
         if(request.method==='POST'&&packageMatch[2]==='publish'){const body=await readJson<{revision:string}>(request);return json(response,202,{draft:packages.begin(id,body.revision)});}
+        if(request.method==='POST'&&packageMatch[2]==='readings')return json(response,200,{readings:await packages.previewReadings(id,await readJson(request))});
         if(request.method==='POST'&&packageMatch[2]==='stop')return json(response,200,{draft:packages.stop(id)});
       }
       if (request.method === "GET" && url.pathname === "/api/courses") { requireSurface(request, "operator"); return json(response, 200, { courses: api.listCourses() }); }

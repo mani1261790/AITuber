@@ -2,10 +2,12 @@ import {CoursePackageValidationError,parseCoursePackage,type CoursePackage,type 
 import type {LlmProvider} from '@aituber/providers';
 import {PreparedArtifacts,digest} from './prepared-artifacts.ts';
 import type {createWholeLecturePlanner} from './whole-lecture-planner.ts';
+import {PreparedReadings} from './prepared-readings.ts';
 import {validateAuthoredPlan} from './authoring-plan-validation.ts';
 
 type Planner=ReturnType<typeof createWholeLecturePlanner>;
 export class PackageEditorService {
+ private readingActive=false;
  private active=new Map<string,AbortController>();
  private store:PreparedArtifacts;private planner:Planner;private provider:()=>LlmProvider;private lookup:(id:string)=>ReadonlyCoursePackage;private register:(course:CoursePackage)=>void;private schedule:(()=>void)|undefined;
  constructor(store:PreparedArtifacts,planner:Planner,provider:()=>LlmProvider,lookup:(id:string)=>ReadonlyCoursePackage,register:(course:CoursePackage)=>void,schedule?:()=>void){
@@ -33,6 +35,15 @@ export class PackageEditorService {
   // Status, publication version and content hash are server owned.
   course.status='draft';course.version=original.version;course.contentHash=original.contentHash;
   return this.write({course,baseHash:current.baseHash,revision:digest(course),status:'draft',error:null});
+ }
+ async previewReadings(id:string,request:{texts:string[];dictionary?:CoursePackage['pronunciationDictionary']}){
+  this.get(id);
+  if(!Array.isArray(request.texts)||request.texts.length<1||request.texts.length>3||request.texts.some(text=>typeof text!=='string'||!text.trim()||text.length>600))throw new TypeError('台本は1〜600文字、3件までです');
+  const dictionary=request.dictionary??this.get(id).course.pronunciationDictionary;
+  if(!Array.isArray(dictionary)||dictionary.length>2048||dictionary.some(item=>typeof item.surface!=='string'||!item.surface||item.surface.length>256||typeof item.reading!=='string'||!item.reading||item.reading.length>512))throw new TypeError('読みの指定を確認してください');
+  if(this.readingActive)throw new TypeError('ルビを準備中です。少し待って再試行してください');
+  this.readingActive=true;
+  try{const readings=new PreparedReadings(this.provider,this.store);const signal=AbortSignal.timeout(120000);await readings.prepare(request.texts,dictionary,signal);return await Promise.all(request.texts.map(text=>readings.get(text,dictionary,signal)));}finally{this.readingActive=false;}
  }
  begin(id:string,revision:string){
   const draft=this.get(id);this.assertEditable(draft,revision);if(draft.status==='published')return draft;

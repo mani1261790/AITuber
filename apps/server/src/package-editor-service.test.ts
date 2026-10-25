@@ -45,3 +45,11 @@ it('restores an exactly matching published package without another generation or
  const restored=t.service.save(id,{revision:edited.revision,course:original});expect(restored.status).toBe('published');expect(restored.course).toEqual(original);
  t.service.begin(id,restored.revision);await t.service.runPendingStep();expect(t.planner.preparePackage).toHaveBeenCalledTimes(calls);expect(t.published.version).toBe(original.version);
 });
+
+it('reading previews do not modify the package or publish it and reject oversized input',async()=>{
+ const t=setup(),id=t.original.id,before=t.service.get(id);
+ const prepared={text:'テストです。',parts:[{text:'テストです。',reading:'テストデス。'}]};
+ const get=vi.spyOn(PreparedReadings.prototype,'get').mockResolvedValue(prepared);
+ const prepare=vi.spyOn(PreparedReadings.prototype,'prepare').mockResolvedValue();
+ try{expect(await t.service.previewReadings(id,{texts:[prepared.text]})).toEqual([prepared]);expect(t.service.get(id)).toEqual(before);expect(t.published).toEqual(t.original);await expect(t.service.previewReadings(id,{texts:['x'.repeat(601)]})).rejects.toThrow('600');}finally{get.mockRestore();prepare.mockRestore();}
+});

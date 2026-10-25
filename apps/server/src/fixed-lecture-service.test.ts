@@ -21,6 +21,27 @@ describe("FixedLectureService", () => {
     vi.useRealTimers();
   });
 
+  it("plays initial, consecutive and final questions in the authored order and restores progress",()=>{
+    service.close();
+    const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;
+    const original=course.assessments[0]!;
+    course.assessments=['first','second','last'].map(id=>({...structuredClone(original),id:'question.'+id}));
+    course.schedule.orderedItemIds=['question.first','question.second',...course.schedule.orderedUnitIds,'question.last'];
+    service=new FixedLectureService({store,courses:[course],playbackUnitMs:100});
+    const session=service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes});
+    expect(service.getSession(session.id).assessment?.id).toBe('question.first');
+    service.command(session.id,{command:'answer',answer:'回答'});
+    expect(service.getSession(session.id).assessment?.id).toBe('question.second');
+    const checkpoint=service.exportCheckpoint()!;service.close();
+    service=new FixedLectureService({store,courses:[course],playbackUnitMs:100});service.restoreCheckpoint(checkpoint);
+    expect(service.getSession(session.id).assessment?.id).toBe('question.second');
+    service.command(session.id,{command:'answer',answer:'回答'});
+    vi.advanceTimersByTime(course.schedule.orderedUnitIds.length*100);
+    expect(service.getSession(session.id).assessment?.id).toBe('question.last');
+    service.command(session.id,{command:'answer',answer:'回答'});
+    expect(service.getSession(session.id).status).toBe('FINISHED');
+  });
+
   it.each([true,false])("overlaps projection and speech and waits for both (stage finishes first: %s)", async stageFirst => {
     service.close();
     service = new FixedLectureService({store,courses:[quadraticFunctionsFixture],playbackUnitMs:100,planner:async input=>({source:"generated",reason:null,actions:[{type:"speak",text:input.unit.speechText,surface:"slides"}]})});
