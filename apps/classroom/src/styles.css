@@ -438,8 +438,6 @@ button { cursor: pointer; }
 .lesson-image-source--board .board-markdown .formula { overflow: visible; padding: 4px 10px; }
 
 /* Keep the whole question and its answer controls visible together. */
-.broadcast-main:has(.checkpoint) { overflow-y: auto; container-type: inline-size; justify-content: flex-start; }
-.broadcast-main:has(.checkpoint) .stage { width: min(100%, 68vh); flex-shrink: 0; }
 .checkpoint { flex: none; max-height: none; overflow: visible; width: 100%; padding: 20px; }
 .checkpoint h2 { font-size: 1.2rem; margin-bottom: 12px; }
 .checkpoint-prompt { font-size: 1rem; line-height: 1.7; }
@@ -458,3 +456,71 @@ button { cursor: pointer; }
 .checkpoint input[type=radio] { appearance: none; box-sizing: border-box; padding: 0; height: 20px; border: 2px solid #b6bfd3; border-radius: 50%; background: transparent; }
 .checkpoint input[type=radio]:checked { background: #e8eeff; box-shadow: inset 0 0 0 4px #22243d; }
 .checkpoint input[type=radio]:focus-visible { outline: 3px solid #aacbff; outline-offset: 3px; }
+
+/* Keep the lecture viewport stable; questions and exercises share the side panel. */
+:root { font-family: "Zen Kaku Gothic New", system-ui, sans-serif; --night: #141b1a; --night-raised: #202a28; }
+body { background: #141b1a; }
+.classroom-shell { width: 100%; padding: 16px; background: #141b1a; }
+.classroom-shell--expanded { position: fixed; inset: 0; z-index: 1000; }
+.classroom-shell:fullscreen { width: 100%; height: 100dvh; }
+.lesson-header { grid-template-columns: 100px minmax(0, 1fr) auto; height: 48px; gap: 16px; }
+.studio-brand, .lesson-status, .connection, .join-card input { font-family: inherit; letter-spacing: normal; }
+.studio-brand { font-size: 18px; font-weight: 700; }
+.lesson-heading { border: 0; padding: 0; }
+.lesson-status { color: #aabcb6; font-size: 12px; }
+.lesson-heading h1 { font-size: 17px; }
+.fullscreen-button { min-height: 44px; padding: 8px 14px; border: 1px solid #53625c; border-radius: 10px; background: #25332e; color: #f6f7f4; white-space: nowrap; }
+.broadcast-layout { grid-template-columns: minmax(0, 1fr) clamp(300px, 27vw, 400px); gap: 16px; }
+.broadcast-main { position: relative; justify-content: center; container-type: size; gap: 0; }
+.broadcast-main .stage { width: min(100cqw, calc(100cqh * 16 / 9)); flex: none; aspect-ratio: 16 / 9; padding: 0; }
+.broadcast-main > .notice, .broadcast-main > .error, .lesson-ended { position: absolute; top: 8px; left: 8px; right: 8px; width: auto; z-index: 10; border: 1px solid #65736b; border-radius: 8px; padding: 10px 14px; background: #202a28; }
+.lecture-rail { display: flex; flex-direction: column; gap: 0; min-height: 0; overflow: hidden; border: 1px solid #3c4943; border-radius: 14px; background: #202a28; }
+.rail-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; border-bottom: 1px solid #3c4943; flex: none; }
+.rail-tabs button { min-height: 44px; padding: 8px; border: 0; border-radius: 8px; color: #b9c6bf; background: transparent; font-weight: 700; }
+.rail-tabs button[aria-pressed="true"] { color: #fff; background: #3b5147; }
+.lecture-rail [hidden] { display: none !important; }
+.lecture-rail .chat-panel { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; }
+.chat-panel > h2 { font: 700 15px/1.5 "Zen Kaku Gothic New", sans-serif; padding: 16px; margin: 0; color: #edf1ed; }
+.chat-messages { padding: 0 16px 16px; }
+.chat-message { padding: 12px; border-radius: 10px; background: #2b3832; border: 0; }
+.chat-message strong { color: #edf1ed; }
+.chat-message small, .chat-empty { color: #b7c5bc; }
+.chat-composer { padding: 12px; border-top: 1px solid #3c4943; background: #202a28; }
+.question-targets { margin-bottom: 8px; font-size: 13px; color: #c6d3ca; }
+.question-targets summary { min-height: 44px; cursor: pointer; padding: 12px 4px; }
+.question-targets > div { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; }
+.question-targets button { min-height: 44px; padding: 8px; border: 1px solid #60776a; border-radius: 8px; background: transparent; color: inherit; }
+.question-targets button[aria-pressed="true"] { background: #405e4d; color: white; }
+.lecture-rail .checkpoint { min-height: 0; flex: 1; overflow-y: auto; padding: 20px; border: 0; background: transparent; color: #f3f5ef; }
+.checkpoint h2, .empty-exercise h2 { font-size: 16px; margin: 0 0 16px; }
+.checkpoint-prompt { font-size: 17px; line-height: 1.8; }
+.lecture-rail .checkpoint form { display: grid; gap: 18px; }
+.lecture-rail .checkpoint fieldset { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.lecture-rail .checkpoint fieldset label { display: flex; min-height: 52px; gap: 10px; padding: 12px; border: 1px solid #607267; border-radius: 10px; background: #2a3830; color: #f3f5ef; }
+.lecture-rail .checkpoint fieldset label:has(input:checked) { background: #3d5e49; border-color: #b0d4bc; }
+.lecture-rail .checkpoint button[type="submit"] { width: 100%; min-height: 48px; border-radius: 10px; background: #c9e7d2; color: #193725; }
+.empty-exercise { padding: 20px; color: #bdcdc1; }
+.stage-controls button { min-height: 44px; padding: 8px 14px; font-size: 13px; }
+button:focus-visible, summary:focus-visible { outline: 3px solid #b6e6c7; outline-offset: 3px; }
+@media (max-width: 900px) {
+  .classroom-shell { padding: 10px; }
+  .lesson-header { grid-template-columns: minmax(0,1fr) auto; gap: 8px; height: 48px; }
+  .lesson-header .studio-brand { display: none; }
+  .lesson-heading { grid-column: auto; gap: 8px; }
+  .lesson-heading h1 { font-size: 14px; }
+  .lesson-status { display: none; }
+  .broadcast-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); gap: 10px; }
+  .broadcast-main { container-type: inline-size; justify-content: flex-start; }
+  .broadcast-main .stage { width: min(100%, calc(42dvh * 16 / 9)); }
+  .lecture-rail { width: 100%; min-height: 0; }
+  .stage-controls { left: 4px; bottom: 4px; gap: 4px; }
+  .stage-controls button { padding: 4px 10px; font-size: 12px; }
+  .chat-panel > h2 { display: none; }
+  .lecture-rail .checkpoint { padding: 16px; }
+  .connection { display: none; }
+}
+@media (max-height: 500px) and (min-width: 650px) {
+  .broadcast-layout { grid-template-columns: minmax(0,1fr) 300px; grid-template-rows: minmax(0,1fr); }
+  .broadcast-main { container-type: size; justify-content: center; }
+  .broadcast-main .stage { width: min(100cqw, calc(100cqh * 16 / 9)); }
+}
