@@ -52,3 +52,10 @@ it('identifies the invalid reading span in repair feedback while preserving the 
  const feedback=JSON.parse(provider.calls[1]!.prompt).failure;
  expect(feedback).toContain('p0');expect(feedback).toContain('LLMです。');expect(result.text).toBe(source);expect(result.parts).toEqual(parts);
 });
+
+it('resumes a failed reading review with its prior mappings and exact correction feedback',async()=>{
+ const cache=store();const value={items:[{id:digest(source),parts:generated}]};const provider=new FixedResponseLlmProvider([value,{passed:false,reason:'correct counter'},value,{passed:false,reason:'correct counter'},value,{passed:true,reason:'verified'}]);
+ await expect(new PreparedReadings(()=>provider,cache.store).get(source,[],new AbortController().signal)).rejects.toThrow('correct counter');
+ await new PreparedReadings(()=>provider,new PreparedArtifacts(cache.dir)).get(source,[],new AbortController().signal);
+ expect(JSON.parse(provider.calls[4]!.prompt)).toMatchObject({candidate:value.items,failure:'correct counter'});
+});
