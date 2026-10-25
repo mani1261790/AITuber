@@ -1,7 +1,7 @@
 import {expect,it} from 'vitest';
-import {lessonItemIds,setLessonItemIds} from './package-editor.ts';
-import {parseCoursePackage,type CoursePackage} from './course-package.ts';
-import {quadraticFunctionsFixture} from '../../content/src/fixtures.ts';
+import {lessonItemIds,setLessonItemIds} from '@aituber/contracts';
+import {parseCoursePackage,type CoursePackage} from '@aituber/contracts';
+import {quadraticFunctionsFixture} from '@aituber/content';
 it('round-trips mixed pages and questions including first and consecutive questions',()=>{
  const course=structuredClone(quadraticFunctionsFixture) as CoursePackage;
  const q=course.assessments[0]!;course.assessments.push({...structuredClone(q),id:'question.extra'});
