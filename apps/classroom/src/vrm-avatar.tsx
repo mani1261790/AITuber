@@ -31,7 +31,7 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress, onReady }: { materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export function VrmAvatar({ autoPointTarget = null, materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress, onReady }: { autoPointTarget?: string | null; materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -41,8 +41,8 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
   const lookRef = useRef(look);
   useEffect(() => { lookRef.current = look; }, [look]);
   const hostRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef({ readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview });
-  useEffect(() => { stageRef.current = { readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview }; }, [readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview]);
+  const stageRef = useRef({ autoPointTarget, readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview });
+  useEffect(() => { stageRef.current = { autoPointTarget, readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview }; }, [autoPointTarget, readSpeechClock, materialReady, propAction, listening, lessonImage, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady, preview]);
   const motionRef = useRef({ state, mouthOpen, speaking: speaking ?? mouthOpen, targetId });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -414,7 +414,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         if (motionReady && stageRef.current.materialReady && time-lastReadyReport>2) { lastReadyReport=time;stageRef.current.onReady?.(); }
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
         const listening = stageRef.current.listening && !motionRef.current.speaking;
-        const targetId = listening ? null : direction ? direction.targetId : motionRef.current.targetId;
+        const targetId = listening ? null : direction ? direction.targetId ?? (direction.phase === "speaking" ? stageRef.current.autoPointTarget : null) : motionRef.current.targetId;
         const gesture = listening ? "listen" : direction?.gesture ?? (motionRef.current.speaking ? "explain" : "idle");
         const region = regions?.find(r=>r.id===targetId);
         // A supplemental answer may have a focus but no stage command. Keep the
@@ -456,7 +456,7 @@ export function VrmAvatar({ materialReady = true, propAction, modelUrl = teacher
         gaitPhase += Math.abs(step)*8.2/(stageRef.current.preview?.stride ?? 1);
         const targetY = region ? 3.44-(region.y+region.height/2)*2.61 : 1.6;
         const elevation = teacherMotion && !stageRef.current.preview ? 0 : fallbackPointingElevation(avatar,avatar.scene.position.x < -1,targetY);
-        const gestureMotion = { ...motionRef.current, state: direction ? (direction.targetId && direction.phase !== "moving" ? "pointing" as const : "normal" as const) : region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
+        const gestureMotion = { ...motionRef.current, state: direction ? (targetId && direction.phase !== "moving" ? "pointing" as const : "normal" as const) : region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
         const activeGesture = gestureMotion.state === "pointing" ? targetId ?? null : null;
         if (activeGesture !== gestureTarget) { gestureTarget=activeGesture; gestureStarted=time; }
         const gestureAge=time-gestureStarted;

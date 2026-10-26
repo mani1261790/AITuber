@@ -583,7 +583,9 @@ it("presents in front of the torso with elbows below the hands for either VRM co
    const wrist=nodes[`${side}Hand`]!.getWorldPosition(new THREE.Vector3());
    const bend=shoulder.clone().sub(elbow).angleTo(wrist.clone().sub(elbow))*180/Math.PI;
    expect(bend).toBeGreaterThan(70);expect(bend).toBeLessThan(110);
-   expect(wrist.y).toBeGreaterThan(shoulder.y-.1);expect(elbow.y).toBeLessThan(wrist.y-.15);
+   expect(wrist.y).toBeGreaterThan(shoulder.y-.1);expect(elbow.y).toBeLessThan(wrist.y-.10);
+   const lateral=new THREE.Vector3(side==="left"?1:-1,0,0).applyQuaternion(scene.quaternion);
+   expect(elbow.clone().sub(shoulder).dot(lateral)).toBeGreaterThan(.06);
   }
  }
 });
@@ -637,5 +639,17 @@ it("relaxes the walking upper back in both VRM conventions without altering pelv
   expect(new THREE.Euler().setFromQuaternion(delta).x).toBeCloseTo(version==="0"?-.055:.055);
   expect(nodes.hips!.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
   expect(nodes.leftUpperLeg!.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
+ }
+});
+
+it("bounds sudden head and neck turns at multiple frame rates",()=>{
+ for(const fps of [30,60,120]){
+  const scene=new THREE.Group(),neck=new THREE.Bone(),head=new THREE.Bone();neck.name="neck";head.name="head";scene.add(neck);neck.add(head);
+  const vrm={scene,humanoid:{update(){},getNormalizedBoneNode:(name:string)=>name==="head"?head:name==="neck"?neck:null}} as unknown as VRM;
+  const clip=(name:string)=>new THREE.AnimationClip(name,2,[new THREE.QuaternionKeyframeTrack("head.quaternion",[0,.1,2],[0,0,0,1,0,.84,0,.54,0,.84,0,.54]),new THREE.QuaternionKeyframeTrack("neck.quaternion",[0,.1,2],[0,0,0,1,0,.48,0,.88,0,.48,0,.88])]);
+  const controller=new TeacherMotion(vrm,clip("idle"),clip("talk"),clip("walk"),1);
+  let maxHead=0,maxNeck=0;
+  for(let i=0;i<fps;i++){const h=head.quaternion.clone(),n=neck.quaternion.clone();controller.update(1/fps,{speed:0,moving:false,speaking:false,target:null,side:"right",reducedMotion:false});maxHead=Math.max(maxHead,h.angleTo(head.quaternion)*fps);maxNeck=Math.max(maxNeck,n.angleTo(neck.quaternion)*fps);}
+  expect(maxHead).toBeLessThanOrEqual(.901);expect(maxNeck).toBeLessThanOrEqual(.451);controller.dispose();
  }
 });

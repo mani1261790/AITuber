@@ -1,3 +1,4 @@
+import {inferredPdfRegion} from "./slide-pointing.ts";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfSlideLayout, projectedPdfRegion } from "./pdf-slide-layout.ts";
 import type { StageScene } from "@aituber/presentation";
@@ -27,8 +28,16 @@ export async function renderPdfSlide(scene: StageScene, access: SlideAccess, sig
     const canvas=document.createElement("canvas");canvas.width=1280;canvas.height=720;
     const ctx=canvas.getContext("2d")!;ctx.fillStyle="#fff";ctx.fillRect(0,0,1280,720);
     ctx.drawImage(pageCanvas,layout.x,layout.y,layout.width,layout.height);
-    // Without a known location, omit pointing rather than inventing a region.
-    const regions=scene.targets.filter(t=>t.visible && t.pageRegion).map(t=>({id:t.id,...projectedPdfRegion(layout,t.pageRegion!)}));
+    const textContent=await page.getTextContent().catch(()=>{signal.throwIfAborted();return {items:[]};});
+    const boxes=textContent.items.flatMap(item=>{
+      if(!("str" in item)||Math.abs(item.transform[1]!)>.001||Math.abs(item.transform[2]!)>.001)return [];
+      const [x,y]=size.convertToViewportPoint(item.transform[4]!,item.transform[5]!);
+      return [{text:item.str,x:x!,y:y!-item.height,width:item.width,height:item.height}];
+    });
+    const regions=scene.targets.filter(t=>t.visible).flatMap(t=>{
+      const region=t.pageRegion??inferredPdfRegion(t.label,boxes,size.width,size.height);
+      return region?[{id:t.id,...projectedPdfRegion(layout,region)}]:[];
+    });
     return {canvas,regions};
   } finally {signal.removeEventListener("abort",abort);await task.destroy();}
 }

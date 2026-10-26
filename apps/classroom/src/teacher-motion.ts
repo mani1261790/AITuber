@@ -87,7 +87,7 @@ export class TeacherMotion {
   get footSupportState() { return this.footContact.supportState.map((state,i)=>({...state,postBlendError:this.postIkError[i]??0})); }
   private mixerPositions = new Map<THREE.Object3D, THREE.Vector3>();
   turnRotationProgress = (progress:number,sign:number) => (sign < 0 ? this.turnTiming?.right : this.turnTiming?.left)?.(progress) ?? defaultTurnProgress(progress);
-  get turnDurations() { return [this.actions.turnLeft.getClip().duration*.6, this.actions.turnRight.getClip().duration*.6] as const; }
+  get turnDurations() { return [THREE.MathUtils.clamp(this.actions.turnLeft.getClip().duration*.6,1,1.8), THREE.MathUtils.clamp(this.actions.turnRight.getClip().duration*.6,1,1.8)] as const; }
   private speakingHold = 0;
   private speechGesture = new SpeechGesture();
   private speechStrength = 0;
@@ -199,14 +199,17 @@ export class TeacherMotion {
       .map(name => vrm.humanoid.getNormalizedBoneNode(name)));
     // Keep a suddenly withdrawn gesture from whipping the elbow back to rest.
     // Fingers retain their quicker response, and gait timing is unchanged.
-    this.transition = new PoseTransition(this.overlayBases.keys(), 10, bone => armBones.has(bone) ? (["listen","idle"].includes(this.gestureKind??"")?2.4:3) : 5);
+    const attentionBones = (["spine","chest","upperChest","neck","head"] as const).flatMap(name=>{const bone=vrm.humanoid.getNormalizedBoneNode(name);return bone?[bone]:[];});
+    const attentionSpeeds = new Map(attentionBones.map(bone=>[bone, bone===vrm.humanoid.getNormalizedBoneNode("neck") ? .45 : .9]));
+    const angularLimit=(bone:THREE.Object3D)=>attentionSpeeds.get(bone)??5;
+    this.transition = new PoseTransition(this.overlayBases.keys(), 10, bone => armBones.has(bone) ? (["listen","idle"].includes(this.gestureKind??"")?2.4:3) : angularLimit(bone));
     const legBones = new Set((["leftUpperLeg","leftLowerLeg","leftFoot","rightUpperLeg","rightLowerLeg","rightFoot"] as const).map(name=>this.vrm.humanoid.getNormalizedBoneNode(name)));
     const legs = (["left", "right"] as const).map(side =>
       (["UpperLeg", "LowerLeg", "Foot"] as const).flatMap(part => {
         const bone=this.vrm.humanoid.getNormalizedBoneNode(`${side}${part}`);
         return bone ? [bone] : [];
       }));
-    this.outputLimit = new PoseTransition(this.overlayBases.keys(), Infinity, bone=>legBones.has(bone) && this.state === "walk" ? 8 : 5, legs);
+    this.outputLimit = new PoseTransition(this.overlayBases.keys(), Infinity, bone=>legBones.has(bone) && this.state === "walk" ? 8 : angularLimit(bone), [...legs,attentionBones]);
     const arms=(["left","right"] as const).map(side=>(["UpperArm","LowerArm","Hand"] as const).flatMap(part=>{
       const bone=vrm.humanoid.getNormalizedBoneNode(`${side}${part}`);return bone?[bone]:[];
     }));
@@ -500,8 +503,8 @@ export function presentingHandTarget(vrm: VRM, side: "left"|"right", emphasis: b
   const length=shoulder.distanceTo(elbow)+elbow.distanceTo(hand.getWorldPosition(new THREE.Vector3()));
   // Keep the hands in front of the chest; flex the elbows during the held beat.
   // A narrow lateral reach prevents the old wide shoulder sweep.
-  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.10:.30))
-    .addScaledVector(up,length*(emphasis?-.13+.15*flex:-.42))
+  return shoulder.addScaledVector(lateral,(side==="left"?1:-1)*length*(emphasis?.25:.42))
+    .addScaledVector(up,length*(emphasis?-.13+.15*flex:-.30))
     .addScaledVector(forward,length*(emphasis?.70-.13*flex:.65));
 }
 
@@ -528,7 +531,7 @@ export function aimArm(vrm: VRM, side: "left" | "right", target: THREE.Vector3, 
   const pole=handPose === "grip"
     ? frame.up.clone().multiplyScalar(cord?-1:-.55).addScaledVector(frame.forward,cord?.15:.8).addScaledVector(frame.lateral,side==="left"?.7:-.7)
     : handPose !== "point"
-    ? frame.up.clone().negate().addScaledVector(frame.forward,-.25).addScaledVector(frame.lateral,side==="left"?.2:-.2)
+    ? frame.up.clone().negate().addScaledVector(frame.forward,.25).addScaledVector(frame.lateral,side==="left"?.65:-.65)
     : new THREE.Vector3(0,-1,.35).applyQuaternion(vrm.scene.quaternion);
   pole.addScaledVector(axis,-pole.dot(axis)).normalize();
   const along=(a*a-b*b+reach*reach)/(2*reach);
