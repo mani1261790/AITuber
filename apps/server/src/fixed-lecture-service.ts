@@ -39,7 +39,7 @@ interface RuntimeSession {
   speech: FixedSessionView["speech"];
   revision: number;
   startedAtMs: number;
-  pausedAtMs?: number | null;
+  pausedAtMs?: number | null | undefined;
   liveSupplement: LiveSupplementView | null;
   pendingSupplement: PendingSupplement | null;
   boardCorrections: Map<string, { readonly sceneId: string; readonly content: string }>;
