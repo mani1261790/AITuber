@@ -30,3 +30,22 @@ it('keeps the latest published course while restoring a lesson pinned to an olde
  const second=new FixedLectureService({store,waitForClassroom:true});const latest={...structuredClone(course),version:course.version+1,title:'Updated package'};second.registerCourse(latest);second.restoreCheckpoint(saved);
  expect(second.getCourse(course.id)).toEqual(latest);expect(second.getSession(session.id).course.version).toBe(course.version);second.close();store.close();
 });
+
+it('freezes the lecture time budget during a long pause and across restart',()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-28T00:00:00Z'));
+ const store=new LectureEventStore(':memory:');const first=new FixedLectureService({store,playbackUnitMs:100_000});
+ const session=first.createSession({coursePackageId:course.id,durationMinutes:6});vi.advanceTimersByTime(10_000);
+ first.command(session.id,{command:'pause'});const remaining=first.getRemainingTimeMs(session.id);const saved=first.exportCheckpoint()!;
+ vi.advanceTimersByTime(3_600_000);expect(first.getRemainingTimeMs(session.id)).toBe(remaining);first.close();
+ const second=new FixedLectureService({store,playbackUnitMs:100_000});second.restoreCheckpoint(saved);expect(second.getRemainingTimeMs(session.id)).toBe(remaining);
+ second.command(session.id,{command:'resume'});vi.advanceTimersByTime(1_000);expect(second.getRemainingTimeMs(session.id)).toBe(remaining-1_000);
+ second.close();store.close();vi.useRealTimers();
+});
+it('migrates legacy paused checkpoints from pause/resume events without counting pauses twice',()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-28T00:00:00Z'));
+ const store=new LectureEventStore(':memory:');const first=new FixedLectureService({store,playbackUnitMs:100_000});
+ const session=first.createSession({coursePackageId:course.id,durationMinutes:6});vi.advanceTimersByTime(10_000);first.command(session.id,{command:'pause'});vi.advanceTimersByTime(60_000);first.command(session.id,{command:'resume'});vi.advanceTimersByTime(10_000);first.command(session.id,{command:'pause'});
+ const saved={...first.exportCheckpoint()!,startedAtMs:Date.parse('2026-10-28T00:00:00Z'),pausedAtMs:undefined};first.close();vi.advanceTimersByTime(3_600_000);
+ const second=new FixedLectureService({store});second.restoreCheckpoint(saved);expect(second.getRemainingTimeMs(session.id)).toBe(340_000);const migrated=second.exportCheckpoint()!;second.close();
+ const third=new FixedLectureService({store});third.restoreCheckpoint(migrated);expect(third.getRemainingTimeMs(session.id)).toBe(340_000);third.close();store.close();vi.useRealTimers();
+});

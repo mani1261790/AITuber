@@ -39,6 +39,7 @@ interface RuntimeSession {
   speech: FixedSessionView["speech"];
   revision: number;
   startedAtMs: number;
+  pausedAtMs?: number | null;
   liveSupplement: LiveSupplementView | null;
   pendingSupplement: PendingSupplement | null;
   boardCorrections: Map<string, { readonly sceneId: string; readonly content: string }>;
@@ -169,7 +170,7 @@ export class FixedLectureService {
       previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null, interruption:this.#interruption.get(runtime) ?? null,
       executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
       completedAssessmentIds: runtime.completedAssessmentIds, state: runtime.state, displayUnitId: runtime.displayUnitId, assessmentId: runtime.assessmentId, revision: runtime.revision,
-      startedAtMs: runtime.startedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
+      startedAtMs: runtime.startedAtMs, pausedAtMs: runtime.pausedAtMs, boardCorrections: [...runtime.boardCorrections], learningEvidence: runtime.learningEvidence,
       lastAssessmentEvaluation: runtime.lastAssessmentEvaluation, afterClassAnswers: runtime.afterClassAnswers };
   }
 
@@ -186,6 +187,19 @@ export class FixedLectureService {
     const resumedStatus = saved.state.resumeStatus === "PREPARING" ? "PREPARING" as const : recoverable && (["BRANCHING","REJOINING"].includes(saved.state.status) || saved.state.resumeStatus === "BRANCHING") ? "BRANCHING" as const : saved.assessmentId ? "CHECKPOINT" as const : "TEACHING" as const;
     const state: LessonState = {...saved.state,epoch,status:terminal?"FINISHED":waiting?"PREPARING":waitForAnswer?"CHECKPOINT":"PAUSED",resumeStatus:terminal||waiting||waitForAnswer?null:resumedStatus,branchOriginUnitId:null,lastFailure:null};
     const runtime: RuntimeSession = {...saved,completedAssessmentIds:saved.completedAssessmentIds??saved.course.assessments.filter(item=>item.id!==saved.assessmentId&&saved.state.completedUnitIds.includes(item.afterUnitId)).map(item=>item.id),state,boardCorrections:new Map(saved.boardCorrections),timer:null,speechAbort:null,speech:{...emptySpeech(epoch),failure:typeof saved.executionFailure === "string" ? saved.executionFailure : null},liveSupplement:recoverable,pendingSupplement:null};
+    // Old checkpoints did not account for pauses. Read only clock events once,
+    // then persist the migrated clock with subsequent checkpoints.
+    if (saved.pausedAtMs === undefined) {
+      let paused: number | null = null;
+      for (const event of this.#store.loadTimingEvents(saved.id)) {
+        const at = Date.parse(event.occurredAt);
+        if (at < saved.startedAtMs || !Number.isFinite(at)) continue;
+        if (event.type === "lesson.pause_requested") paused ??= at;
+        else if (paused !== null) { runtime.startedAtMs += Math.max(0, at - paused); paused = null; }
+      }
+      runtime.pausedAtMs = manuallyPaused ? paused ?? Date.now() : null;
+    }
+    if (state.status === "PAUSED") runtime.pausedAtMs ??= Date.now();
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);
@@ -251,7 +265,7 @@ export class FixedLectureService {
       speechAbort: null,
       speech: emptySpeech(1),
       revision: 0,
-      startedAtMs: Date.now(),
+      startedAtMs: Date.now(), pausedAtMs: null,
       liveSupplement: null,
       pendingSupplement: null,
       boardCorrections: new Map(),
@@ -290,7 +304,7 @@ export class FixedLectureService {
     return this.#currentSessionId ? this.getSession(this.#currentSessionId) : null;
   }
 
-  getRemainingTimeMs(sessionId: string): number { const runtime = this.#requireSession(sessionId); return runtime.state.status === "PREPARING" || runtime.state.resumeStatus === "PREPARING" ? runtime.configuredDurationMinutes * 60_000 : Math.max(0, runtime.configuredDurationMinutes * 60_000 - (Date.now() - runtime.startedAtMs)); }
+  getRemainingTimeMs(sessionId: string): number { const runtime = this.#requireSession(sessionId); return runtime.state.status === "PREPARING" || runtime.state.resumeStatus === "PREPARING" ? runtime.configuredDurationMinutes * 60_000 : Math.max(0, runtime.configuredDurationMinutes * 60_000 - ((runtime.pausedAtMs ?? Date.now()) - runtime.startedAtMs)); }
 
   getSession(sessionId: string): FixedSessionView {
     const runtime = this.#requireSession(sessionId);
@@ -988,6 +1002,11 @@ export class FixedLectureService {
       type: `lesson.${event.type.toLowerCase()}`,
       payload: event,
     });
+    if (runtime.state.status !== "PAUSED" && nextState.status === "PAUSED") runtime.pausedAtMs = Date.now();
+    if (runtime.pausedAtMs != null && runtime.state.status === "RECOVERING" && nextState.status !== "RECOVERING") {
+      runtime.startedAtMs += Math.max(0, Date.now() - runtime.pausedAtMs);
+      runtime.pausedAtMs = null;
+    }
     runtime.state = nextState;
     this.#publish(runtime);
   }

@@ -172,6 +172,10 @@ export class LectureEventStore {
     );
   }
 
+  loadTimingEvents(sessionId: string): readonly { type: string; occurredAt: string }[] {
+    return this.#database.prepare("SELECT type, occurred_at AS occurredAt FROM lecture_events WHERE session_id = ? AND type IN ('lesson.pause_requested', 'lesson.recovery_completed') ORDER BY epoch ASC, seq ASC").all(sessionId) as {type:string;occurredAt:string}[];
+  }
+
   loadEvents(sessionId: string): readonly LectureEvent[] {
     const rows = this.#database.prepare(`
       SELECT * FROM lecture_events WHERE session_id = ? ORDER BY epoch ASC, seq ASC
