@@ -486,11 +486,6 @@ body { background: #141b1a; }
 .chat-message strong { color: #edf1ed; }
 .chat-message small, .chat-empty { color: #b7c5bc; }
 .chat-composer { padding: 12px; border-top: 1px solid #3c4943; background: #202a28; }
-.question-targets { margin-bottom: 8px; font-size: 13px; color: #c6d3ca; }
-.question-targets summary { min-height: 44px; cursor: pointer; padding: 12px 4px; }
-.question-targets > div { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; }
-.question-targets button { min-height: 44px; padding: 8px; border: 1px solid #60776a; border-radius: 8px; background: transparent; color: inherit; }
-.question-targets button[aria-pressed="true"] { background: #405e4d; color: white; }
 .lecture-rail .checkpoint { min-height: 0; flex: 1; overflow-y: auto; padding: 20px; border: 0; background: transparent; color: #f3f5ef; }
 .checkpoint h2, .empty-exercise h2 { font-size: 16px; margin: 0 0 16px; }
 .checkpoint-prompt { font-size: 17px; line-height: 1.8; }

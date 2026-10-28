@@ -29,7 +29,6 @@ function ClassroomApp() {
   const [connection, setConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
   const [joining, setJoining] = useState(false);
   const [audioFloorMs, setAudioFloorMs] = useState(0);
-  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [captions, setCaptions] = useState(false);
   const [projecting, setProjecting] = useState(true);
   const shellRef = useRef<HTMLElement>(null);
@@ -55,7 +54,6 @@ function ClassroomApp() {
   const [questions, setQuestions] = useState<readonly ClassroomQuestionView[]>([]);
   const [questionText, setQuestionText] = useState("");
   const [questioning, setQuestioning] = useState(false);
-  const [, setEvidenceSubmitting] = useState(false);
   const [surveyAnswers, setSurveyAnswers] = useState({ questionHelpfulness: 0, rejoinNaturalness: 0, comment: "" });
   const [surveySubmitting, setSurveySubmitting] = useState(false);
   const [surveySubmitted, setSurveySubmitted] = useState(false);
@@ -206,11 +204,10 @@ function ClassroomApp() {
     board = applyBoardPatches(session.course, board, supplementCandidate?.boardPatches ?? []);
     const targetIds = activeSpeechSegment?.semanticTargetIds.length
       ? activeSpeechSegment.semanticTargetIds
-      : selectedTargetId ? [selectedTargetId] : supplementCandidate?.focusTargetIds ?? displayUnit.focusTargetIds;
+      : supplementCandidate?.focusTargetIds ?? displayUnit.focusTargetIds;
     board = focusSemanticTargets(session.course, board, targetIds);
     return resolveStageScene(session.course, sceneId, board);
-  }, [session, displayUnit, supplementCandidate, selectedTargetId, activeSpeechSegment]);
-  const evidenceTargetId = selectedTargetId ?? displayUnit?.focusTargetIds[0] ?? null;
+  }, [session, displayUnit, supplementCandidate, activeSpeechSegment]);
   const slideScene = useMemo(() => {
     if (!session || !displayUnit) return null;
     return resolveStageScene(session.course, displayUnit.sceneId, applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches));
@@ -220,7 +217,7 @@ function ClassroomApp() {
     ...(session?.boardCorrections.filter(patch => patch.sceneId === scene?.id).map(patch => patch.targetId) ?? []),
   ]);
   const boardNotes = scene?.targets.filter(target => noteTargetIds.has(target.id)) ?? [];
-  const focusedTarget = scene?.targets.find((target) => target.visible && target.id === (selectedTargetId ?? scene.focusedTargetId)) ?? null;
+  const focusedTarget = scene?.targets.find((target) => target.visible && target.id === scene.focusedTargetId) ?? null;
   const mascotPresentation = resolveMascotPresentation({
     audiblePlayback: audioPlaybackActive && session?.speech.mode !== "caption-fallback",
     elapsedMs: speechElapsedMs,
@@ -230,7 +227,6 @@ function ClassroomApp() {
     reactionActive,
   });
 
-  useEffect(() => { setSelectedTargetId(null); }, [scene?.id, displayUnit?.id]);
   useEffect(() => {
     setProjecting(session?.direction?.surface ? session.direction.surface === "slides" : !supplementCandidate);
   }, [displayUnit?.id, Boolean(supplementCandidate), session?.direction?.surface]);
@@ -253,22 +249,10 @@ function ClassroomApp() {
     if (!session || !participant || !room || !scene || !questionText.trim()) return;
     setQuestioning(true); setError(null);
     try {
-      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id, ...(selectedTargetId ? { semanticTargetId: selectedTargetId } : {}) }) });
+      const result = await fetchJson<SubmitQuestionResponse>(`/api/classrooms/${encodeURIComponent(room.code)}/questions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, text: questionText.trim(), sceneId: scene.id }) });
       setQuestions(result.questions); setSession(result.snapshot.session); setQuestionText("");
     } catch (reason) { setError(errorMessage(reason)); } finally { setQuestioning(false); }
   }
-
-  async function submitEvidence(kind: "self-report" | "explicit-action", value: "understood" | "need-help" | "recheck" | "target-selected", targetId = evidenceTargetId) {
-    if (!session || !participant || !room || !targetId) return;
-    const target = session.course.semanticTargets.find((item) => item.id === targetId); if (!target) return;
-    setEvidenceSubmitting(true); setError(null);
-    try {
-      const result = await fetchJson<{ snapshot: ClassroomStreamMessage["snapshot"] }>(`/api/classrooms/${encodeURIComponent(room.code)}/evidence`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessToken: participant.accessToken, kind, value, sceneId: target.sceneId, semanticTargetId: target.id }) });
-      setSession(result.snapshot.session);
-    } catch (reason) { setError(errorMessage(reason)); } finally { setEvidenceSubmitting(false); }
-  }
-
-  function selectTarget(targetId: string) { setRail("chat"); setSelectedTargetId(targetId); void submitEvidence("explicit-action", "target-selected", targetId); }
 
   async function submitSurvey(event: FormEvent) {
     event.preventDefault(); if (!participant || !room || !surveyAnswers.questionHelpfulness || !surveyAnswers.rejoinNaturalness) return;
@@ -304,7 +288,7 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={selectTarget} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
+            <LessonStage spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={() => setRail("chat")} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
             <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button>{audioBlocked && session.speech.audioUrl && <button onClick={() => retrySpeechRef.current?.()}>音声を再生</button>}</div>
             {(captions || session.speech.mode === "caption-fallback") && session.speech.playing && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />字幕</h2><p>{speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") || (session.speech.audioUrl ? "" : session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText)}</p></section>}
           </section>}
@@ -339,12 +323,10 @@ function ClassroomApp() {
           {scene && <section id="chat-panel" hidden={rail !== "chat"} className="chat-panel" aria-label="コメントと質問">
             <h2>質問・コメント <small>{room?.participantCount ?? 0}人</small></h2>
             <div className="chat-messages" role="log" aria-label="質問の受付状況">
-              {questions.length === 0 && <p className="chat-empty">気になる箇所をクリックして質問できます。</p>}
               {[...questions].sort((a,b)=>a.submittedAt.localeCompare(b.submittedAt)).map((question) => <article className="chat-message" key={question.id}><strong>{question.origin !== "learner-question" ? "先生" : question.triage === "comment" || question.triage === "ignore" || question.triage === "pending" ? "コメント" : "質問"} <small>{question.triage === "ignore" ? "" : question.triage === "pending" ? "受付済み" : question.triage === "comment" ? "授業後にお返事" : question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.origin === "pedagogy-trigger" ? "確認問題の補足" : question.text} /></article>)}
               {session.afterClassAnswers.map(item => <article className="chat-message" key={item.id}><strong>先生 <small>{item.status === "preparing" ? "回答を準備中" : item.status === "unanswered" ? "回答できませんでした" : "授業後の回答"}</small></strong><blockquote>{item.questionText}</blockquote>{item.answerText && <RichText text={item.answerText} />}{item.failure && <p>{item.failure}</p>}</article>)}
             </div>
             {<form className="chat-composer" onSubmit={(event) => void submitQuestion(event)}>
-              <details className="question-targets"><summary>{selectedTargetId ? scene.targets.find(target => target.id === selectedTargetId)?.label ?? "質問する箇所" : "質問する箇所を指定"}</summary><div><button type="button" aria-pressed={!selectedTargetId} onClick={() => setSelectedTargetId(null)}>指定なし</button>{scene.targets.filter(target => target.visible).map(target => <button type="button" key={target.id} aria-pressed={selectedTargetId === target.id} onClick={() => selectTarget(target.id)}>{target.label}</button>)}</div></details>
               <QuestionInput value={questionText} onChange={setQuestionText} sending={questioning} />
             </form>}
           </section>}
