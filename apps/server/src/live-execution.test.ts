@@ -373,15 +373,15 @@ it("plays exercise guidance through audio receipts and stays at the question aft
  await vi.advanceTimersByTimeAsync(850);expect(service.getSession(session.id)).toMatchObject({status:'CHECKPOINT',speech:{playing:false},progress:{completed:0}});
  await vi.advanceTimersByTimeAsync(30000);expect(service.getSession(session.id).status).toBe('CHECKPOINT');
 });
-it('continues the same audio through screen lowering and arrival at the planned speaking position',async()=>{
+it.each(['left','right'] as const)('continues the same audio through screen lowering and arrival at %s',async(position)=>{
  vi.useFakeTimers();
- const service=create(async()=>({source:'generated',reason:null,actions:[{type:'speak',text:'モデルの使い方を見ていきましょう。',surface:'slides',position:'left'}]}),new TestToneSpeechProvider(10000));
+ const service=create(async()=>({source:'generated',reason:null,actions:[{type:'speak',text:'モデルの使い方を見ていきましょう。',surface:'slides',position}]}),new TestToneSpeechProvider(10000));
  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  const projecting=service.getSession(session.id);expect(projecting.direction?.phase).toBe('projecting');expect(projecting.speech.playing).toBe(true);
  service.completeStageAction(session.id,projecting.epoch,projecting.direction!.actionId,'viewer');
- const moving=service.getSession(session.id);expect(moving.direction).toMatchObject({phase:'moving',position:'left',traveling:true});expect(moving.speech).toEqual(projecting.speech);
+ const moving=service.getSession(session.id);expect(moving.direction).toMatchObject({phase:'moving',position,traveling:true});expect(moving.speech).toEqual(projecting.speech);
  service.completeStageAction(session.id,moving.epoch,moving.direction!.actionId,'viewer');
- expect(service.getSession(session.id).direction).toMatchObject({phase:'speaking',position:'left',traveling:false});
+ expect(service.getSession(session.id).direction).toMatchObject({phase:'speaking',position,traveling:false});
  expect(service.getSession(session.id).speech).toEqual(projecting.speech);
 });
 it('stops arrival acknowledgements while continuing speech and skips a no-op speaking move',async()=>{

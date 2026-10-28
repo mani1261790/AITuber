@@ -641,7 +641,9 @@ export class FixedLectureService {
         projection.started=Date.now();projection.timer=setTimeout(projection.fail,12000);
         this.#publish(runtime);return;
       }
-      if (direction.phase === "projecting" && projection.position && direction.position !== projection.position) {
+      // The screen prop may have taken the teacher to its cord regardless of
+      // the previous semantic position. Confirm the actual final stance.
+      if (direction.phase === "projecting" && projection.position) {
         this.#directions.set(runtime,{...direction,actionId:randomUUID(),phase:"moving",position:projection.position,traveling:true,targetId:null});
         projection.started=Date.now();projection.timer=setTimeout(projection.fail,12000);
         this.#publish(runtime);return;
