@@ -33,8 +33,9 @@ function ClassroomApp() {
   const [projecting, setProjecting] = useState(true);
   const shellRef = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [rail, setRail] = useState<"chat" | "exercise">("chat");
-  useEffect(() => { if (session?.assessment?.id) setRail("exercise"); }, [session?.assessment?.id]);
+  useEffect(() => { if (session?.assessment?.id) { setRail("exercise"); setPanelOpen(true); } }, [session?.assessment?.id]);
   useEffect(() => {
     const sync = () => setExpanded(Boolean(document.fullscreenElement));
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && !document.fullscreenElement) setExpanded(false); };
@@ -45,6 +46,7 @@ function ClassroomApp() {
   async function toggleFullscreen() {
     if (document.fullscreenElement) { await document.exitFullscreen(); return; }
     if (expanded) { setExpanded(false); return; }
+    setPanelOpen(false);
     try { if (shellRef.current?.requestFullscreen) await shellRef.current.requestFullscreen(); else setExpanded(true); }
     catch { setExpanded(true); }
   }
@@ -276,20 +278,27 @@ function ClassroomApp() {
         </div>
         <div className="lesson-meta">
           {connection !== "live" && <p className="connection" role="status">接続を確認しています</p>}
-          <button className="fullscreen-button" aria-pressed={expanded} onClick={() => void toggleFullscreen()}>{expanded ? "全画面を終了" : "全画面表示"}</button>
+
         </div>
       </header>
 
       <div className="broadcast-layout">
         <div className="broadcast-main">
           {session.speech.failure && <p className="error" role="alert">{session.speech.failure}</p>}
-          {session.status === "PAUSED" && <p className="notice" role="status">講義は一時停止中です。再開すると、この説明から続きます。</p>}
+          {session.status === "PAUSED" && <p className="notice" role="status">一時停止中</p>}
           {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} hidden preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onWaiting={() => setAudioPlaybackActive(false)} onSeeking={() => setAudioPlaybackActive(false)} onEmptied={() => setAudioPlaybackActive(false)} onError={() => setAudioPlaybackActive(false)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={() => setRail("chat")} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
-            <div className="stage-controls"><button aria-pressed={projecting} onClick={() => setProjecting(!projecting)}>{projecting ? "黒板" : "スライド"}</button><button aria-pressed={captions} onClick={() => setCaptions(!captions)}>字幕 {captions ? "ON" : "OFF"}</button>{audioBlocked && session.speech.audioUrl && <button onClick={() => retrySpeechRef.current?.()}>音声を再生</button>}</div>
+            <LessonStage spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={() => { setRail("chat"); setPanelOpen(true); }} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
+            <div className="stage-controls" role="group" aria-label="講義の操作">
+              <button title={projecting ? "黒板を見る" : "スライドを見る"} aria-label={projecting ? "黒板を見る" : "スライドを見る"} onClick={() => setProjecting(!projecting)}><ControlIcon name="board" /></button>
+              <button title="字幕" aria-label="字幕" aria-pressed={captions} onClick={() => setCaptions(!captions)}><ControlIcon name="captions" /></button>
+              {audioBlocked && session.speech.audioUrl && <button title="音声を再生" aria-label="音声を再生" onClick={() => retrySpeechRef.current?.()}><ControlIcon name="audio" /></button>}
+              <span className="stage-controls-spacer" />
+              {expanded && <><button title="質問・コメント" aria-label="質問・コメント" aria-controls="lecture-panel" aria-expanded={panelOpen && rail === "chat"} onClick={() => { setPanelOpen(!panelOpen || rail !== "chat"); setRail("chat"); }}><ControlIcon name="chat" /></button><button title="確認問題" aria-label="確認問題" aria-controls="lecture-panel" aria-expanded={panelOpen && rail === "exercise"} onClick={() => { setPanelOpen(!panelOpen || rail !== "exercise"); setRail("exercise"); }}><ControlIcon name="exercise" />{session.assessment && <span className="control-badge" />}</button></>}
+              <button title={expanded ? "全画面を終了" : "全画面表示"} aria-label={expanded ? "全画面を終了" : "全画面表示"} aria-pressed={expanded} onClick={() => void toggleFullscreen()}><ControlIcon name={expanded ? "collapse" : "expand"} /></button>
+            </div>
             {(captions || session.speech.mode === "caption-fallback") && session.speech.playing && displayUnit && (session.speech.text || !session.direction) && <section className="caption" aria-labelledby="caption-title" aria-live="polite"><h2 id="caption-title"><span aria-hidden="true" />字幕</h2><p>{speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") || (session.speech.audioUrl ? "" : session.speech.text ?? supplementCandidate?.captionText ?? displayUnit.captionText ?? displayUnit.speechText)}</p></section>}
           </section>}
 
@@ -301,13 +310,14 @@ function ClassroomApp() {
             <div className="exit-actions"><button onClick={() => surveyDialog.current?.close()}>教室に戻る</button><button onClick={() => { window.sessionStorage.removeItem("aituber.classroom.participant"); window.location.assign("/"); }}>{surveySubmitted ? "退出する" : "回答せずに退出する"}</button></div>
           </div></dialog>
         </div>
-        <aside className="lecture-rail" aria-label="質問と確認問題">
+        <aside id="lecture-panel" className="lecture-rail" hidden={expanded && !panelOpen} aria-label="質問と確認問題">
           <nav className="rail-tabs" aria-label="パネルの切り替え">
-            <button aria-pressed={rail === "chat"} aria-controls="chat-panel" onClick={() => setRail("chat")}>質問・コメント</button>
-            <button aria-pressed={rail === "exercise"} aria-controls="exercise-panel" onClick={() => setRail("exercise")}>確認問題{session.assessment && rail !== "exercise" ? "あり" : ""}</button>
+            <button aria-pressed={rail === "chat"} aria-controls="chat-panel" onClick={() => setRail("chat")}><ControlIcon name="chat" />質問</button>
+            <button aria-pressed={rail === "exercise"} aria-controls="exercise-panel" onClick={() => setRail("exercise")}><ControlIcon name="exercise" />確認問題</button>
+            {expanded && <button className="panel-close" title="パネルを閉じる" aria-label="パネルを閉じる" onClick={() => setPanelOpen(false)}><ControlIcon name="close" /></button>}
           </nav>
           {session.assessment && <section id="exercise-panel" hidden={rail !== "exercise"} className="checkpoint" aria-labelledby="checkpoint-title">
-            <h2 id="checkpoint-title">確認問題</h2><div className="checkpoint-prompt"><RichText text={session.assessment.prompt} /></div>
+            <h2 id="checkpoint-title" className="visually-hidden">確認問題</h2><div className="checkpoint-prompt"><RichText text={session.assessment.prompt} /></div>
             {!answering && session.lastAssessmentEvaluation?.assessmentId === session.assessment.id && <div role="status" className={`assessment-result assessment-result--${session.lastAssessmentEvaluation.outcome}`}>
               <p><strong>{session.lastAssessmentEvaluation.outcome === "correct" ? "正解です。" : "前回の回答へのコメント"}</strong></p>
               <p>{session.lastAssessmentEvaluation.rationale}</p>
@@ -319,9 +329,9 @@ function ClassroomApp() {
               <button type="submit" disabled={answering || session.status !== "CHECKPOINT" || !answer.trim()}>{answering ? "回答を確認中…" : session.status !== "CHECKPOINT" ? session.liveSupplement?.status === "playing" ? "解説中" : "回答を送る" : "回答を送る"}</button>
             </form>
           </section>}
-          {!session.assessment && <section id="exercise-panel" className="empty-exercise" hidden={rail !== "exercise"}><h2>確認問題</h2><p>問題が出ると、ここで回答できます。</p></section>}
+          {!session.assessment && <section id="exercise-panel" className="empty-exercise" hidden={rail !== "exercise"}><p>まだ問題はありません</p></section>}
           {scene && <section id="chat-panel" hidden={rail !== "chat"} className="chat-panel" aria-label="コメントと質問">
-            <h2>質問・コメント <small>{room?.participantCount ?? 0}人</small></h2>
+
             <div className="chat-messages" role="log" aria-label="質問の受付状況">
               {[...questions].sort((a,b)=>a.submittedAt.localeCompare(b.submittedAt)).map((question) => <article className="chat-message" key={question.id}><strong>{question.origin !== "learner-question" ? "先生" : question.triage === "comment" || question.triage === "ignore" || question.triage === "pending" ? "コメント" : "質問"} <small>{question.triage === "ignore" ? "" : question.triage === "pending" ? "受付済み" : question.triage === "comment" ? "授業後にお返事" : question.resolution === "answered" ? "回答済み" : question.resolution === "deferred" ? "授業後に回答" : "受付済み"}</small></strong><RichText text={question.origin === "pedagogy-trigger" ? "確認問題の補足" : question.text} /></article>)}
               {session.afterClassAnswers.map(item => <article className="chat-message" key={item.id}><strong>先生 <small>{item.status === "preparing" ? "回答を準備中" : item.status === "unanswered" ? "回答できませんでした" : "授業後の回答"}</small></strong><blockquote>{item.questionText}</blockquote>{item.answerText && <RichText text={item.answerText} />}{item.failure && <p>{item.failure}</p>}</article>)}
@@ -336,6 +346,20 @@ function ClassroomApp() {
   );
 }
 
+
+function ControlIcon({name}: {name: "board" | "captions" | "audio" | "chat" | "exercise" | "expand" | "collapse" | "close"}) {
+  const paths = {
+    board: "M3 4h18v13H3z M8 21l4-4 4 4",
+    captions: "M3 5h18v14H3z M10 10H7v4h3 M17 10h-3v4h3",
+    audio: "M4 9h4l5-4v14l-5-4H4z M17 8c3 2 3 6 0 8",
+    chat: "M4 4h16v12H9l-5 4z",
+    exercise: "M9 3h6v4H9z M9 5H5v16h14V5h-4 M8 13l3 3 5-6",
+    expand: "M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5",
+    collapse: "M3 8h5V3 M21 8h-5V3 M16 21v-5h5 M8 21v-5H3",
+    close: "M6 6l12 12 M18 6 6 18",
+  };
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}
 
 function JoinClassroom({ code, setCode, joining, error, onSubmit }: { code: string; setCode(value: string): void; joining: boolean; error: string | null; onSubmit(event: FormEvent): void }) {
   return <main className="centered-message join-card"><div className="studio-brand"><span className="studio-sigil" aria-hidden="true"><span /></span><span>AITuber</span></div><h1>教室に入る</h1><p>運営画面に表示された6文字の教室コードを入力してください。</p><form onSubmit={onSubmit}><label>教室コード<input autoFocus autoComplete="off" inputMode="text" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ABC234" /></label><button disabled={joining || code.replaceAll(/[-\s]/g, "").length !== 6}>{joining ? "接続中…" : "参加する"}</button></form>{error && <p className="error" role="alert">{error}</p>}</main>;
