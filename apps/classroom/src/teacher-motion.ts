@@ -290,7 +290,7 @@ export class TeacherMotion {
     // Retract the old arm before switching sides, rather than snapping between arms.
     const sameSide = input.side === this.pointSide;
     // A departure already rotates the torso; lower the arm more gently during that turn.
-    const pointDuration = !pointing && (input.moving || input.turning) ? 1.15 : .8;
+    const pointDuration = pointing ? 1.2 : (input.moving || input.turning) ? 1.15 : .8;
     this.pointBlend = THREE.MathUtils.clamp(this.pointBlend + (pointing && sameSide ? 1 : -1)*delta/pointDuration,0,1);
     if (this.pointBlend < .01) this.pointSide = input.side;
     if (input.target) {
@@ -428,7 +428,7 @@ export class TeacherMotion {
       this.poseOffsetAge=0;
       this.turnPoseOffset=enteringTurn;
       // Let a finished speech beat settle gently; keep locomotion and pointing responsive.
-      this.poseOffsetDuration = endingBeat && !enteringPoint && !enteringTurn ? .95 : .65;
+      this.poseOffsetDuration = enteringPoint ? 1.2 : endingBeat && !enteringTurn ? .95 : .65;
       this.poseOffsets.clear();
       entryPose.forEach((pose,bone)=>this.poseOffsets.set(bone,{rotation:pose.rotation.multiply(bone.quaternion.clone().invert()),position:pose.position.sub(bone.position)}));
     }

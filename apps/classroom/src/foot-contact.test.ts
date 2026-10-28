@@ -290,3 +290,31 @@ it("reduces outward knee bend while preserving the foot target and bone lengths"
   expect(lower.position.length()).toBeCloseTo(a);expect(foot.position.length()).toBeCloseTo(b);
  }
 });
+
+it("releases a trailing support before the pelvis stretches past it and can plant again",()=>{
+ for(const yaw of [0,Math.PI/2,-Math.PI/2]){
+  const root=new THREE.Group();root.rotation.y=yaw;root.scale.setScalar(1.4);
+  const nodes:Record<string,THREE.Bone>={};
+  for(const side of ["left","right"]){
+   const hip=new THREE.Bone(),knee=new THREE.Bone(),foot=new THREE.Bone();
+   root.add(hip);hip.add(knee);knee.add(foot);
+   hip.position.set(side==="left"?-.15:.15,1,0);knee.position.set(0,-.45,.1);foot.position.set(0,-.45,-.1);
+   nodes[`${side}UpperLeg`]=hip;nodes[`${side}LowerLeg`]=knee;nodes[`${side}Foot`]=foot;
+  }
+  const vrm={scene:root,humanoid:{getNormalizedBoneNode:(name:string)=>nodes[name]??null}} as unknown as VRM;
+  const contact=new FootContact(vrm),forward=new THREE.Vector3(0,0,1).applyQuaternion(root.quaternion);
+  const tick=()=>{Object.values(nodes).forEach(b=>b.quaternion.identity());contact.apply(1/60,true);};
+  for(let i=0;i<60;i++)tick();
+  expect(contact.supportState.every(s=>s.planted)).toBe(true);
+  let released=false;
+  for(let i=0;i<50;i++){
+   root.position.addScaledVector(forward,.009);tick();
+   if(contact.supportState.some(s=>s.reason==="toe-off"&&!s.planted)){released=true;break;}
+  }
+  expect(released).toBe(true);
+  // With the authored foot back under the hip, a stale rear anchor must not
+  // prevent acquisition of the next support phase.
+  for(let i=0;i<90;i++)tick();
+  expect(contact.supportState.every(s=>s.planted)).toBe(true);
+ }
+});

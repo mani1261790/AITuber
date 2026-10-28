@@ -33,7 +33,7 @@ export function withLightWalk(vrm: VRM, source: THREE.AnimationClip) {
         const reach=(hip.distanceTo(knee)+knee.distanceTo(goal))*.998;
         const horizontalSq=(goal.x-hip.x)**2+(goal.z-hip.z)**2;
         const reachableY=hip.y-Math.sqrt(Math.max(0,reach*reach-horizontalSq));
-        goal.y=Math.max(reachableY,floor+(goal.y-floor)*.65);
+        goal.y=Math.max(reachableY,floor+(goal.y-floor)*.85);
         solveLeg(vrm.scene,leg.upper!,leg.lower!,leg.foot!,goal);
       }
       rotations.forEach((values,bone)=>values.push(...bone.quaternion.toArray()));

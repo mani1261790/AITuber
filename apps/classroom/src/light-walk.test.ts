@@ -25,7 +25,8 @@ it("lowers swing clearance without shortening the stride or changing ankle roll 
   mixer.stopAllAction();mixer.uncacheRoot(scene);return values;
  };
  const original=sample(source),light=sample(result);
- expect(light[0]!.p.y-light[1]!.p.y).toBeLessThan((original[0]!.p.y-original[1]!.p.y)*.75);
+ expect(light[0]!.p.y-light[1]!.p.y).toBeLessThan((original[0]!.p.y-original[1]!.p.y)*.95);
+ expect(light[0]!.p.y-light[1]!.p.y).toBeGreaterThan((original[0]!.p.y-original[1]!.p.y)*.75);
  for(let i=0;i<2;i++){
   expect(light[i]!.p.x).toBeCloseTo(original[i]!.p.x,4);expect(light[i]!.p.z).toBeCloseTo(original[i]!.p.z,4);
   expect(light[i]!.q.angleTo(original[i]!.q)).toBeLessThan(.001);

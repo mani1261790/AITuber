@@ -63,9 +63,14 @@ export class FootContact {
         return support;
       };
       const crossing=turning&&(!stanceSafe(state.anchor)||side*supportPosition().sub(hipCenter).dot(lateral)<length*.02);
+      // Release before the pelvis passes too far beyond the supporting ankle.
+      // Waiting for forward swing keeps a long, straight trailing leg locked down.
+      const forward=new THREE.Vector3(0,0,1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+      const trailing=hip.clone().sub(supportPosition()).dot(forward)/Math.max(length,.001);
+      const toeOff=!turning && trailing>.22;
       const drift=Math.hypot(p.x-state.anchor.x,p.z-state.anchor.z);
-      if(state.planted&&(!moving||swinging||lift>liftLimit||crossing||drift>length*.28)) {state.reason=!moving?"stopped":swinging?"swing":lift>liftLimit?"lift":crossing?"crossing":"drift";state.planted=false;state.cooldown=.15;if(moving){state.releaseAge=0;state.releaseWeight=state.weight;}}
-      if(!state.planted&&state.weight<.03&&moving&&!swinging&&lift<.025&&state.cooldown===0&&(!turning||stanceSafe(p))){state.anchor.copy(p);foot.getWorldQuaternion(state.orientation);state.planted=true;
+      if(state.planted&&(!moving||toeOff||swinging||lift>liftLimit||crossing||drift>length*.28)) {state.reason=!moving?"stopped":toeOff?"toe-off":swinging?"swing":lift>liftLimit?"lift":crossing?"crossing":"drift";state.planted=false;state.cooldown=.15;if(moving){state.releaseAge=0;state.releaseWeight=state.weight;}}
+      if(!state.planted&&state.weight<.03&&moving&&!swinging&&(turning || hip.clone().sub(p).dot(forward)<length*.18)&&lift<.025&&state.cooldown===0&&(!turning||stanceSafe(p))){state.anchor.copy(p);foot.getWorldQuaternion(state.orientation);state.planted=true;
         state.pivot=null;
         // Prefer a toe pivot among grounded sole points; when the toe is raised,
         // use the grounded heel instead. Keep the authored ankle rotation.
@@ -95,7 +100,7 @@ export class FootContact {
       // Keep most of the stance orientation: ankle-only locking still lets the sole skate.
       // Retain some authored roll and release into swing; pivots keep their recorded rotation.
       if(turning)foot.getWorldQuaternion(state.orientation);
-      state.rotationWeight=THREE.MathUtils.damp(state.rotationWeight,state.planted && !turning && this.soles[i]?.length ? .8 : 0,moving ? 16 : 6,dt);
+      state.rotationWeight=THREE.MathUtils.damp(state.rotationWeight,state.planted && !turning && this.soles[i]?.length ? .8*(1-THREE.MathUtils.smoothstep(trailing,.08,.22)) : 0,moving ? 16 : 6,dt);
       // Retargeting locomotion onto a model wearing heels can leave the swing toe on the
       // floor. Add only missing clearance, proportional to forward swing speed;
       // fade out before stance instead of lifting a planted support foot.
