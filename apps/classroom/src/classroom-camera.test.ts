@@ -85,3 +85,9 @@ it("prioritizes material visibility when requested without bypassing the cut hol
  expect(selectClassroomCamera(16/9,teacher,board,"front",11,0,"board")).toBe(material);
  expect(selectClassroomCamera(16/9,teacher,board,lecture,9,0,"material")).toBe(lecture);
 });
+it('uses the rendered lens and teaching position to compose left, center and right explanations',()=>{
+ for(const fov of [35,46,60])for(const [x,expected] of [[1.95,'left-front'],[-4.2,'right-front'],[-.65,'front']] as const){
+  const teacher=new Box3(new Vector3(x-.5,1,.35),new Vector3(x+.5,3.1,1.1));
+  expect(selectClassroomCamera(16/9,teacher,board,'front',11,0,'lecture',fov)).toBe(expected);
+ }
+});

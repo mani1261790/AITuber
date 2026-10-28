@@ -430,7 +430,7 @@ export function VrmAvatar({ autoPointTarget = null, materialReady = true, propAc
             if (bone) teacherBounds.expandByPoint(bone.getWorldPosition(new THREE.Vector3()));
           }
           teacherBounds.expandByScalar(.16);
-          const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut,destinationX-avatar.scene.position.x,direction?.camera ?? "lecture");
+          const next = selectClassroomCamera(camera.aspect,teacherBounds,new THREE.Box3(new THREE.Vector3(-3.9,.7,-.25),new THREE.Vector3(.95,3.45,0)),currentCamera,time-lastCameraCut,destinationX-avatar.scene.position.x,direction?.camera ?? "lecture",camera.fov);
           if (next !== currentCamera) { currentCamera=next; lastCameraCut=time; }
           renderer.domElement.dataset.camera=currentCamera;
         }

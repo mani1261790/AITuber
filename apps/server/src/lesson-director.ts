@@ -44,7 +44,7 @@ export function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, cu
     const target=surface === "board" ? previous!.id : beat.targetId;
     const travel = beat.walkWhileSpeaking === true && !target;
     const requestedPosition = surface === "board" || (beat.position === "center" && target) ? "right" : beat.position;
-    const position: Beat["position"] = previousPosition && target === previousTarget ? previousPosition : requestedPosition;
+    const position: Beat["position"] = previousPosition && target !== null && target === previousTarget ? previousPosition : requestedPosition;
     previousTarget=target;previousPosition=position;
     if (beat.gesture && !["idle","listen","explain","emphasize","nod"].includes(beat.gesture)) throw new Error("Unknown teaching gesture");
     actions.push(
@@ -58,8 +58,13 @@ export function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, cu
     if (actions[i]!.type === "show_slides") {
       const speechIndex=actions.findIndex((action,index)=>index>i && action.type==="speak");
       const speech=actions[speechIndex];
-      if (speech?.type==="speak" && !speech.position && !actions.slice(i+1,speechIndex).some(action=>action.type==="show_blackboard" || action.type==="pause" || action.type==="point_at")) {
-        concurrent.push({type:"speak",text:speech.text,gesture:speech.gesture ?? "explain",surface:"slides"});
+      if (speech?.type==="speak" && !actions.slice(i+1,speechIndex).some(action=>action.type==="show_blackboard" || action.type==="pause" || action.type==="point_at")) {
+        const setup=actions.slice(i+1,speechIndex);
+        const camera=setup.findLast(action=>action.type==="camera");
+        const move=setup.findLast(action=>action.type==="move_to");
+        if(camera)concurrent.push(camera);
+        const position=speech.position ?? (move?.type==="move_to" ? move.position : undefined);
+        concurrent.push({type:"speak",text:speech.text,gesture:speech.gesture ?? "explain",surface:"slides",...(position?{position}:{})});
         // Pointing at an unseen slide is invalid; following beats may point once projected.
         i=speechIndex;continue;
       }

@@ -17,9 +17,9 @@ function projected(box: THREE.Box3, camera: THREE.PerspectiveCamera) {
   const points = [box.min.x,box.max.x].flatMap(x => [box.min.y,box.max.y].flatMap(y => [box.min.z,box.max.z].map(z => new THREE.Vector3(x,y,z).project(camera))));
   return { left: Math.min(...points.map(p=>p.x)), right: Math.max(...points.map(p=>p.x)), top: Math.max(...points.map(p=>p.y)), bottom: Math.min(...points.map(p=>p.y)) };
 }
-export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, material: THREE.Box3, current: ClassroomCameraId, elapsed: number, travelX = 0, intent: StageCamera = "lecture"): ClassroomCameraId {
+export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, material: THREE.Box3, current: ClassroomCameraId, elapsed: number, travelX = 0, intent: StageCamera = "lecture", fov = 35): ClassroomCameraId {
   if (elapsed < CAMERA_HOLD_SECONDS) return current;
-  const probe = new THREE.PerspectiveCamera(35,aspect,.1,30);
+  const probe = new THREE.PerspectiveCamera(fov,aspect,.1,30);
   // Sample the coming crossing, not a union box: a union would count empty space as occlusion.
   const ahead=THREE.MathUtils.clamp(travelX,-.95*CAMERA_HOLD_SECONDS,.95*CAMERA_HOLD_SECONDS);
   const teachers=[0,.25,.5,.75,1].map(t=>teacher.clone().translate(new THREE.Vector3(ahead*t,0,0)));
@@ -36,7 +36,12 @@ export function selectClassroomCamera(aspect: number, teacher: THREE.Box3, mater
       // retaining the teacher crop guard and the same three fixed viewpoints.
       return occlusion*(intent === "lecture" ? 10 : 30)+teacherCrop*30;
     });
-    return { id: preset.id, score: Math.max(...samples)+crop*30+preset.bias+(preset.id===current ? -.015 : 0) };
+    const standingX=(teacher.min.x+teacher.max.x)/2;
+    const preferred: ClassroomCameraId = Math.abs(travelX)>.5 ? "front" : standingX>1 ? "left-front" : standingX< -3 ? "right-front" : "front";
+    // Use composition as a tie-breaker, never at the expense of clipping or
+    // material visibility. Audience-facing center explanations get a front shot.
+    const composition=preset.id===preferred ? (intent==="lecture" ? -.35 : -.15) : 0;
+    return { id: preset.id, score: Math.max(...samples)+crop*30+preset.bias+composition+(preset.id===current ? -.015 : 0) };
   });
   scores.sort((a,b)=>a.score-b.score);
   return scores[0]!.id;

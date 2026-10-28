@@ -199,7 +199,7 @@ it("compiles a semantic gesture and concurrent audience-facing explanation, but 
     const plan=await createLessonPlanner(()=>llm)({session:runtime.session,unit,previousSpeech:"",remainingMs:1000},new AbortController().signal);
     expect(plan.source).toBe("generated");
     expect(plan.actions.some(action=>action.type==="move_to")).toBe(false);
-    expect(plan.actions).toContainEqual({type:"speak",text:unit.speechText,gesture:"emphasize",position:"center"});
+    expect(plan.actions).toContainEqual({type:"speak",text:unit.speechText,gesture:"emphasize",position:"center",surface:"slides"});
     const pointing=new FixedResponseLlmProvider([{beats:[{text:unit.speechText,targetId:unit.focusTargetIds[0],camera:"lecture",position:"center",gesture:"explain",surface:"slides",blackboardMarkdown:null,walkWhileSpeaking:true}]}]);
     const safe=await createLessonPlanner(()=>pointing)({session:runtime.session,unit,previousSpeech:"",remainingMs:1000},new AbortController().signal);
     expect(safe.actions).toContainEqual({type:"move_to",position:"right"});
@@ -353,7 +353,7 @@ it("keeps the completed board through its explanation and lowers the screen only
   const slideIndex=plan.actions.findIndex(a=>a.type==="speak" && a.surface==="slides");
   expect(plan.actions.slice(0,slideIndex).filter(a=>a.type==="speak")).toHaveLength(2);
   expect(plan.actions.filter(a=>a.type==="show_blackboard")).toHaveLength(1);
-  expect(plan.actions[slideIndex-1]).toEqual({type:"pause",durationMs:2000});
+  expect(plan.actions.slice(slideIndex-2,slideIndex)).toEqual([{type:"pause",durationMs:2000},{type:"camera",view:"lecture"}]);
  }finally{runtime.close();}
 });
 

@@ -74,7 +74,7 @@ export class FixedLectureService {
   readonly #questionAnswer = new WeakMap<RuntimeSession,string>();
   readonly #previousSpeech = new WeakMap<RuntimeSession, string>();
   readonly #preparedSpeech = new WeakMap<RuntimeSession, Map<string, {controller:AbortController; promise:Promise<SpeechArtifact>}>>();
-  readonly #projection = new WeakMap<RuntimeSession, {started:number; timer:ReturnType<typeof setTimeout>; fail:()=>void; stageDone:boolean; speechDone:boolean; next:()=>void}>();
+  readonly #projection = new WeakMap<RuntimeSession, {started:number; timer:ReturnType<typeof setTimeout>; fail:()=>void; position?: LessonDirectionView["position"]; stageDone:boolean; speechDone:boolean; next:()=>void}>();
   readonly #openingPrepared = new WeakSet<RuntimeSession>();
   readonly #waitingParticipant = new WeakMap<RuntimeSession,string>();
   readonly #prefetch = new WeakMap<RuntimeSession, { unitId: string; stamp: string; controller: AbortController; plan: Promise<DirectedPlan>; fallback?:Promise<DirectedPlan>; ready?:boolean }>();
@@ -641,6 +641,11 @@ export class FixedLectureService {
         projection.started=Date.now();projection.timer=setTimeout(projection.fail,12000);
         this.#publish(runtime);return;
       }
+      if (direction.phase === "projecting" && projection.position && direction.position !== projection.position) {
+        this.#directions.set(runtime,{...direction,actionId:randomUUID(),phase:"moving",position:projection.position,traveling:true,targetId:null});
+        projection.started=Date.now();projection.timer=setTimeout(projection.fail,12000);
+        this.#publish(runtime);return;
+      }
       projection.stageDone=true;
       this.#directions.set(runtime,{...direction,phase:"speaking",traveling:false,targetId:direction.surface==="board" ? direction.drawing?.id ?? null : null}); this.#publish(runtime);
       if (projection.speechDone) {this.#projection.delete(runtime);projection.next();}
@@ -649,7 +654,8 @@ export class FixedLectureService {
     if (!this.#stageNext.has(runtime) && !this.#directions.get(runtime)?.traveling) return;
     if (!this.#ownsExecution(runtime,participantId)) return;
     if (this.#directions.get(runtime)?.traveling && this.#speechNext.has(runtime)) {
-      this.#travelArrived.add(runtime); return;
+      this.#travelArrived.add(runtime);
+      this.#directions.set(runtime,{...this.#directions.get(runtime)!,traveling:false});this.#publish(runtime);return;
     }
     if (!runtime.timer) return;
     const next = this.#stageNext.get(runtime); if (!next) return;
@@ -726,22 +732,24 @@ export class FixedLectureService {
       case "camera": update({camera:action.view,phase:"resting"}); wait(100); return;
       case "release_point": update({targetId:null,phase:"resting"}); wait(350); return;
       case "pause": update({phase:"resting"}); wait(action.durationMs); return;
-      case "speak":
+      case "speak": {
         if (action.surface === "slides" && direction.surface !== "slides") {
           update({phase:"projecting",surface:"slides",targetId:null,gesture:action.gesture ?? "explain"});
           const fail=()=>this.#haltExecution(runtime,"スライド投影の完了を確認できませんでした。教室画面を確認して再開してください。");
-          const pending={started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next};
+          const pending={started:Date.now(),timer:setTimeout(fail,12000),fail,...(action.position?{position:action.position}:{}),stageDone:false,speechDone:false,next};
           this.#projection.set(runtime,pending);
           this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
           this.#speechNext.set(runtime,()=>{pending.speechDone=true;if(pending.stageDone){this.#projection.delete(runtime);next();}});
           this.#speakUnit(runtime,unitId,action.text);return;
         }
         this.#travelArrived.delete(runtime);
-        update({phase:"speaking",gesture:action.gesture ?? "explain",...(action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
+        const traveling=Boolean(action.position && action.position!==direction.position);
+        update({phase:"speaking",gesture:action.gesture ?? "explain",...(traveling && action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
         this.#speechNext.set(runtime, () => {
-          if (!action.position || this.#travelArrived.has(runtime)) { this.#travelArrived.delete(runtime); next(); }
+          if (!traveling || this.#travelArrived.has(runtime)) { this.#travelArrived.delete(runtime); next(); }
           else { waitForMove(); }
         }); this.#speakUnit(runtime,unitId,action.text); return;
+      }
     }
   }
 
