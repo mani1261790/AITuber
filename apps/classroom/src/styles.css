@@ -482,7 +482,8 @@ body { background: #141b1a; }
 .lecture-rail .chat-panel { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; }
 .chat-panel > h2 { font: 700 15px/1.5 "Zen Kaku Gothic New", sans-serif; padding: 16px; margin: 0; color: #edf1ed; }
 .chat-messages { padding: 0 16px 16px; }
-.chat-message { padding: 12px; border-radius: 10px; background: #2b3832; border: 0; }
+.chat-message { margin: 0; padding: 12px; border-radius: 10px; background: #2b3832; border: 0; }
+.chat-message + .chat-message { margin-top: 12px; }
 .chat-message strong { color: #edf1ed; }
 .chat-message small, .chat-empty { color: #b7c5bc; }
 .chat-composer { padding: 12px; border-top: 1px solid #3c4943; background: #202a28; }
