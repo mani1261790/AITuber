@@ -129,7 +129,7 @@ export function VrmAvatar({ autoPointTarget = null, materialReady = true, propAc
       const x=hit.uv.x, y=1-hit.uv.y;
       const regions = hit.object === screen ? currentImage?.regions : currentImage?.boardRegions;
       const region = regions?.find(r => x>=r.x && x<=r.x+r.width && y>=r.y && y<=r.y+r.height);
-      if(region) stageRef.current.onSelect?.(region.id);
+      if(region && !region.id.startsWith("pdf-text:")) stageRef.current.onSelect?.(region.id);
     };
     renderer.domElement.addEventListener("pointerup",click);
     let avatar: VRM | null = null;
@@ -414,7 +414,7 @@ export function VrmAvatar({ autoPointTarget = null, materialReady = true, propAc
         if (motionReady && stageRef.current.materialReady && time-lastReadyReport>2) { lastReadyReport=time;stageRef.current.onReady?.(); }
         const regions = stageRef.current.projecting ? currentImage?.regions : currentImage?.boardRegions;
         const listening = stageRef.current.listening && !motionRef.current.speaking;
-        const targetId = listening ? null : direction ? direction.targetId ?? (direction.phase === "speaking" ? stageRef.current.autoPointTarget : null) : motionRef.current.targetId;
+        const targetId = listening ? null : direction ? direction.targetId ?? (direction.phase === "speaking" ? stageRef.current.autoPointTarget : null) : stageRef.current.autoPointTarget ?? motionRef.current.targetId;
         const gesture = listening ? "listen" : direction?.gesture ?? (motionRef.current.speaking ? "explain" : "idle");
         const region = regions?.find(r=>r.id===targetId);
         // A supplemental answer may have a focus but no stage command. Keep the
@@ -456,7 +456,7 @@ export function VrmAvatar({ autoPointTarget = null, materialReady = true, propAc
         gaitPhase += Math.abs(step)*8.2/(stageRef.current.preview?.stride ?? 1);
         const targetY = region ? 3.44-(region.y+region.height/2)*2.61 : 1.6;
         const elevation = teacherMotion && !stageRef.current.preview ? 0 : fallbackPointingElevation(avatar,avatar.scene.position.x < -1,targetY);
-        const gestureMotion = { ...motionRef.current, state: direction ? (targetId && direction.phase !== "moving" ? "pointing" as const : "normal" as const) : region && motionRef.current.mouthOpen ? motionRef.current.state : "normal" as const };
+        const gestureMotion = { ...motionRef.current, state: region && (direction ? direction.phase === "speaking" || direction.phase === "pointing" : motionRef.current.speaking) ? "pointing" as const : "normal" as const };
         const activeGesture = gestureMotion.state === "pointing" ? targetId ?? null : null;
         if (activeGesture !== gestureTarget) { gestureTarget=activeGesture; gestureStarted=time; }
         const gestureAge=time-gestureStarted;

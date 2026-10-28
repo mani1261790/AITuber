@@ -1,3 +1,4 @@
+import { fallbackCommentTriage } from "./comment-classifier.ts";
 import type { ClassroomQuestionView, FixedSessionView, SubmitQuestionRequest } from "@aituber/contracts";
 import type { QuestionStore, StoredQuestionThread } from "@aituber/storage";
 
@@ -9,6 +10,7 @@ export type CommentClassifier = (text: string, context: QuestionSessionContext) 
 export class QuestionQueueService {
   #closed = false;
   readonly #classifier: CommentClassifier | null;
+  readonly #pending = new Map<string, Set<Promise<void>>>();
   readonly #store: QuestionStore;
   readonly #context: (sessionId: string) => QuestionSessionContext;
   readonly #onQuestion: ((input: { readonly sessionId: string; readonly participantId: string; readonly semanticTargetId: string; readonly text: string; readonly submittedAt: string }) => void) | null;
@@ -30,12 +32,15 @@ export class QuestionQueueService {
       : this.#store.create({ sessionId: input.sessionId, participantId: input.participantId, coursePackageId: course.id, coursePackageVersion: course.version, sceneId: scene.id, semanticTargetId: target.id, lastCompletedUnitId, text, normalizedIntent, submittedAt: now });
     if (this.#classifier && !duplicate) {
       this.#store.setTriage(recorded.id, "pending");
-      void this.#classifier(text, context).catch(() => "later" as const).then(triage => {
+      const pending = this.#pending.get(input.sessionId) ?? new Set<Promise<void>>();
+      this.#pending.set(input.sessionId, pending);
+      const task = this.#classifier(text, context).catch(() => fallbackCommentTriage(text)).then(triage => {
         if (this.#closed) return;
         this.#store.setTriage(recorded.id, triage);
         if (triage === "immediate" || triage === "later") this.#onQuestion?.({ sessionId: input.sessionId, participantId: input.participantId, semanticTargetId: target.id, text, submittedAt: now });
         this.#reclassifyAndNotify(input.sessionId);
-      });
+      }).finally(() => pending.delete(task));
+      pending.add(task);
     } else if (!this.#classifier) this.#onQuestion?.({ sessionId: input.sessionId, participantId: input.participantId, semanticTargetId: target.id, text, submittedAt: now });
     const questions = this.#classify(input.sessionId, context, now);
     const question = questions.find((item) => item.id === recorded.id)!;
@@ -50,6 +55,30 @@ export class QuestionQueueService {
     const recorded = this.#store.create({ sessionId: input.sessionId, participantId: "system.pedagogy", coursePackageId: course.id, coursePackageVersion: course.version, sceneId: scene.id, semanticTargetId: target.id, lastCompletedUnitId: context.session.completedUnitIds.at(-1) ?? null, text: boundedQuestion(input.text), normalizedIntent: normalizeIntent(input.text), submittedAt: now, origin: "pedagogy-trigger" });
     const questions = this.#classify(input.sessionId, context, now); this.#listeners.forEach((listener) => listener(input.sessionId, questions));
     return questions.find((question) => question.id === recorded.id)!;
+  }
+
+  /** A single explicit retry preserves the original question and supporter count. */
+  async retryClassification(sessionId: string, questionId: string): Promise<readonly ClassroomQuestionView[]> {
+    const question = this.#store.get(questionId);
+    if (question.sessionId !== sessionId) throw new RangeError("質問が現在の授業に存在しません。");
+    if (question.status !== "accepted" || question.resolution !== "pending" || question.triage === "pending") throw new TypeError("この質問は再分類できません。");
+    const context = this.#context(sessionId);
+    if (context.session.status === "FINISHED") throw new TypeError("終了した授業の質問は再分類できません。");
+    this.#store.setTriage(questionId, "pending");
+    const triage = await (this.#classifier?.(question.text, context) ?? Promise.resolve(fallbackCommentTriage(question.text))).catch(() => fallbackCommentTriage(question.text));
+    if (this.#closed) return this.list(sessionId);
+    this.#store.setTriage(questionId, triage);
+    this.#reclassifyAndNotify(sessionId);
+    return this.list(sessionId);
+  }
+
+  async drain(sessionId: string): Promise<void> { await Promise.all(this.#pending.get(sessionId) ?? []); }
+
+  recoverClassifications(sessionId: string): void {
+    for (const question of this.#store.listOpen(sessionId)) {
+      if (question.triage === "pending") this.#store.setTriage(question.id, fallbackCommentTriage(question.text));
+    }
+    this.#reclassifyAndNotify(sessionId);
   }
 
   close() { this.#closed = true; this.#listeners.clear(); }

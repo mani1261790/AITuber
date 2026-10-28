@@ -26,6 +26,23 @@ describe("QuestionQueueService", () => {
     expect(service.list("session.questions").find(q=>q.triage==="immediate")?.disposition).toBe("answer-now");
     store.close();
   });
+  it("keeps explanation requests eligible if classification fails, including after restart", async () => {
+    const store = new QuestionStore(":memory:");
+    const service = new QuestionQueueService({store,context:()=>({session:sessionView(),remainingMs:180_000}),classifier:async()=>{throw new Error("timeout");}});
+    const result=service.submit(input("one","target.math.h-term","scene.math.form","トークンについて、黒板使って教えて","2026-09-14T00:00:00.000Z"));
+    await Promise.resolve(); await Promise.resolve();
+    expect(service.list("session.questions")[0]).toMatchObject({triage:"immediate",disposition:"answer-now"});
+    store.setTriage(result.question.id,"pending");
+    service.recoverClassifications("session.questions");
+    expect(service.list("session.questions")[0]).toMatchObject({triage:"immediate",disposition:"answer-now"});
+    store.setTriage(result.question.id,"later");
+    await service.retryClassification("session.questions",result.question.id);
+    expect(service.list("session.questions")).toHaveLength(1);
+    expect(service.list("session.questions")[0]).toMatchObject({id:result.question.id,triage:"immediate",supporterCount:1});
+    service.markAnswered(result.question.id);
+    await expect(service.retryClassification("session.questions",result.question.id)).rejects.toThrow();
+    service.close();store.close();
+  });
   it("accepts a question without an explicit target in the displayed scene", () => {
     const { service, store } = setup(180_000);
     const result = service.submit({ sessionId: "session.questions", participantId: "learner.one", submittedAt: "2026-09-14T00:00:00.000Z", request: { accessToken: "ignored-at-domain-boundary", text: "もう一度説明して", sceneId: "scene.math.form" } });

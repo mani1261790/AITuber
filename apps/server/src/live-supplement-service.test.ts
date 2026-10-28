@@ -47,6 +47,19 @@ describe("LiveSupplementService", () => {
     const stored = supplementStore.list(session.id)[0]!; expect(Date.parse(stored.firstAudioAt!) - Date.parse(stored.adoptedAt)).toBeLessThan(8_000);
   });
 
+  it("holds questions while paused and prepares them on resume without losing the question",async()=>{
+    const provider=new FixedResponseLlmProvider([candidate(),passReview]);replaceSupplements(provider);
+    const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});
+    vi.advanceTimersByTime(100);lecture.command(session.id,{command:"pause"});
+    questions.submit(questionInput(session.id,"黒板を使って説明して"));
+    await supplements.drain(session.id);
+    expect(provider.calls).toHaveLength(0);
+    expect(questions.list(session.id)[0]).toMatchObject({status:"accepted",resolution:"pending"});
+    lecture.command(session.id,{command:"resume"});await supplements.drain(session.id);
+    expect(provider.calls).toHaveLength(2);
+    expect(lecture.getSession(session.id).liveSupplement?.status).toBe("ready");
+  });
+
   it("restores a reviewed answer after a process restart without skipping it or regenerating",async()=>{
     const provider=new FixedResponseLlmProvider([candidate(),passReview]);replaceSupplements(provider);
     const session=lecture.createSession({coursePackageId:quadraticFunctionsFixture.id,durationMinutes:6});

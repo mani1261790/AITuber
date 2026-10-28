@@ -52,9 +52,9 @@ export class LectureRoom extends DurableObject<AppEnv> {
       this.services.lecture.subscribe((id)=>this.publish(id));
       this.services.questions.subscribe((id)=>this.publish(id));
       // Interrupted classifiers must not leave questions permanently pending.
-      this.context.storage.sql.exec("UPDATE question_threads SET triage='later',status='accepted',disposition='after-class' WHERE triage='pending' OR status='answering'");
+      this.context.storage.sql.exec("UPDATE question_threads SET status='accepted' WHERE status='answering'");
       const restored=this.services.lecture.getCurrentSession();
-      if(restored) this.services.supplements.recover(restored.id);
+      if(restored) { this.services.supplements.recover(restored.id); this.services.questions.recoverClassifications(restored.id); }
       if(this.services.packages.pending || this.needsResume || this.services.lecture.getCurrentSession()?.status==='FINISHED' || this.services.authoring.list().some(job=>job.status==='running')) this.schedule(1000);
       this.initialized=true;
     });
@@ -96,6 +96,11 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(this.needsResume) {this.needsResume=false;const current=this.services.lecture.getCurrentSession();if(current?.status==='PAUSED')this.services.lecture.command(current.id,{command:'resume'});this.ctx.storage.kv.delete('resumeNeeded');}
       await this.services.authoring.runPendingStep();
       await this.services.packages.runPendingStep();
+      const live=this.services.lecture.getCurrentSession();
+      if(live && live.status!=='FINISHED') {
+        await this.services.questions.drain(live.id);
+        await this.services.supplements.drain(live.id);
+      }
       const lastPurge=await this.ctx.storage.get<number>('lastPurge')??0;
       if(Date.now()-lastPurge>86400000){await this.services.dataRetention.purgeNow();
         const ids=new Set(this.context.storage.sql.exec<{id:string}>('SELECT id FROM lecture_sessions').toArray().map(row=>row.id));
@@ -141,6 +146,15 @@ export class LectureRoom extends DurableObject<AppEnv> {
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
       return json(200,{courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:38,authoringFailure:authoring.failure,settings:settings.get()});
+    }
+    const retryQuestion=path.match(/^\/api\/operator\/questions\/(question\.[a-f0-9-]+)\/retry$/);
+    if(retryQuestion && request.method==='POST') {
+      if(request.headers.get('x-aituber-surface')!=='operator') return json(403,{error:'forbidden'});
+      const session=lecture.getCurrentSession();
+      if(!session)throw new RangeError('授業がありません。');
+      const updated=await questions.retryClassification(session.id,retryQuestion[1]!);
+      this.schedule(1000);
+      return json(200,{questions:updated});
     }
     const read=<T>()=>readJson<T>(request,path==='/api/authoring/jobs'?36*1024*1024:64*1024);
     if(path==='/api/settings/llm/chatgpt/import' && request.method==='POST') {

@@ -1,4 +1,4 @@
-import {inferredPdfRegion} from "./slide-pointing.ts";
+import {inferredPdfRegion,pdfTextRegions} from "./slide-pointing.ts";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfSlideLayout, projectedPdfRegion } from "./pdf-slide-layout.ts";
 import type { StageScene } from "@aituber/presentation";
@@ -38,6 +38,6 @@ export async function renderPdfSlide(scene: StageScene, access: SlideAccess, sig
       const region=t.pageRegion??inferredPdfRegion(t.label,boxes,size.width,size.height);
       return region?[{id:t.id,...projectedPdfRegion(layout,region)}]:[];
     });
-    return {canvas,regions};
+    return {canvas,regions:[...regions,...pdfTextRegions(boxes,size.width,size.height).map(({id,text,...region})=>({id,text,...projectedPdfRegion(layout,region)}))]};
   } finally {signal.removeEventListener("abort",abort);await task.destroy();}
 }
