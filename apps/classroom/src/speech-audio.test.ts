@@ -54,3 +54,17 @@ it.each([0,.021333])("does not rewind the initial audio packet (%s seconds) on m
  expect(audio.play).toHaveBeenCalledTimes(1);
  control.dispose();
 });
+
+it("resumes one unexpected device pause in place without reloading and cancels it on disposal",async()=>{
+ vi.useFakeTimers();const audio=Object.assign(new AudioStub(),{paused:false,ended:false});
+ const control=startSpeechAudio(audio as unknown as HTMLAudioElement,0,vi.fn());
+ audio.dispatchEvent(new Event("playing"));audio.currentTime=2;audio.paused=true;audio.dispatchEvent(new Event("pause"));
+ await vi.advanceTimersByTimeAsync(250);
+ expect(audio.play).toHaveBeenCalledTimes(2);expect(audio.currentTime).toBe(2);expect(audio.load).not.toHaveBeenCalled();
+ audio.dispatchEvent(new Event("pause"));await vi.advanceTimersByTimeAsync(1000);
+ expect(audio.play).toHaveBeenCalledTimes(2);control.dispose();
+ const next=Object.assign(new AudioStub(),{paused:false,ended:false});
+ const dispose=startSpeechAudio(next as unknown as HTMLAudioElement,0,vi.fn());
+ next.dispatchEvent(new Event("playing"));next.paused=true;next.dispatchEvent(new Event("pause"));dispose.dispose();
+ await vi.advanceTimersByTimeAsync(1000);expect(next.play).toHaveBeenCalledTimes(1);
+});

@@ -2,7 +2,7 @@ import { initialSpeechPosition } from "./speech-start.ts";
 
 /** Recover one transient output failure without replaying the start of the utterance. */
 export function startSpeechAudio(audio: HTMLAudioElement, offsetMs: number, blocked: (value: boolean) => void) {
-  let disposed=false,retried=false,position=initialSpeechPosition(offsetMs,Infinity);
+  let disposed=false,retried=false,interrupted=false,hadPlayback=false,position=initialSpeechPosition(offsetMs,Infinity);
   let attempt=0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const remember=()=>{if(Number.isFinite(audio.currentTime))position=Math.max(position,audio.currentTime);};
@@ -30,10 +30,26 @@ export function startSpeechAudio(audio: HTMLAudioElement, offsetMs: number, bloc
       retried=true;timer=setTimeout(()=>{timer=undefined;retry();},250);
     }else blocked(true);
   };
+  const started=()=>{hadPlayback=true;};
+  const resumeInterrupted=()=>{
+    if(disposed || !hadPlayback || timer || !audio.paused || audio.ended || audio.error || (Number.isFinite(audio.duration) && audio.currentTime>=audio.duration))return;
+    if(typeof document!=="undefined" && document.visibilityState!=="visible")return;
+    // A device/output interruption may pause the element without ending the
+    // utterance. Retry once in place; never reload or replay what was heard.
+    if(interrupted){blocked(true);return;}
+    interrupted=true;
+    timer=setTimeout(()=>{
+      timer=undefined;
+      if(!disposed && audio.paused && !audio.ended && !audio.error)play();
+    },250);
+  };
+  audio.addEventListener("playing",started);
+  audio.addEventListener("pause",resumeInterrupted);
+  if(typeof document!=="undefined")document.addEventListener("visibilitychange",resumeInterrupted);
   audio.addEventListener("loadedmetadata",metadata);
   audio.addEventListener("timeupdate",remember);
   audio.addEventListener("error",failed);
   if(audio.readyState>=1)metadata();
   play();
-  return { retry, dispose(){disposed=true;if(timer)clearTimeout(timer);audio.removeEventListener("loadedmetadata",metadata);audio.removeEventListener("timeupdate",remember);audio.removeEventListener("error",failed);} };
+  return { retry, dispose(){disposed=true;audio.removeEventListener("playing",started);audio.removeEventListener("pause",resumeInterrupted);if(typeof document!=="undefined")document.removeEventListener("visibilitychange",resumeInterrupted);if(timer)clearTimeout(timer);audio.removeEventListener("loadedmetadata",metadata);audio.removeEventListener("timeupdate",remember);audio.removeEventListener("error",failed);} };
 }

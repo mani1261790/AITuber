@@ -25,3 +25,25 @@ it("does not use the previous utterance clock when a board narration is being pr
  expect(currentSpeechClock(audio,{playing:true,audioUrl:"/diagram.wav"})).toBeNull();
  expect(currentSpeechClock(audio,{playing:true,audioUrl:"/intro.wav"})).toEqual({elapsed:20,duration:20});
 });
+
+it("reports completion from the actual end clock even when ended is delayed",()=>{
+ vi.useFakeTimers();
+ const media=Object.assign(new EventTarget(),{duration:3,currentTime:0,ended:false,error:null});
+ const report=vi.fn(),stop=trackSpeechPlayback(media as unknown as HTMLMediaElement,1000,0,report);
+ try{
+  media.dispatchEvent(new Event("playing"));
+  media.currentTime=2.99;media.dispatchEvent(new Event("timeupdate"));
+  expect(report.mock.calls.some(([,state])=>state==="ended")).toBe(false);
+  media.currentTime=3;media.dispatchEvent(new Event("timeupdate"));
+  expect(report).toHaveBeenLastCalledWith(0,"ended");
+  vi.advanceTimersByTime(2000);expect(report).toHaveBeenLastCalledWith(0,"ended");
+ }finally{stop();vi.useRealTimers();}
+});
+
+it("does not treat a previous clip at its end as a new clip completion before playback starts",()=>{
+ vi.useFakeTimers();
+ const media=Object.assign(new EventTarget(),{duration:3,currentTime:3,ended:false,error:null});
+ const report=vi.fn(),stop=trackSpeechPlayback(media as unknown as HTMLMediaElement,3000,0,report);
+ try{media.dispatchEvent(new Event("timeupdate"));expect(report.mock.calls.some(([,state])=>state==="ended")).toBe(false);}
+ finally{stop();vi.useRealTimers();}
+});

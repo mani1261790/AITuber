@@ -286,7 +286,7 @@ function ClassroomApp() {
         <div className="broadcast-main">
           {session.speech.failure && <p className="error" role="alert">{session.speech.failure}</p>}
           {session.status === "PAUSED" && <p className="notice" role="status">一時停止中</p>}
-          {session.speech.audioUrl && <audio ref={audioRef} className="speech-audio" key={session.speech.audioUrl} src={session.speech.audioUrl} hidden preload="auto" onPlaying={() => setAudioPlaybackActive(true)} onWaiting={() => setAudioPlaybackActive(false)} onSeeking={() => setAudioPlaybackActive(false)} onEmptied={() => setAudioPlaybackActive(false)} onError={() => setAudioPlaybackActive(false)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />}
+          <audio ref={audioRef} className="speech-audio" hidden preload="auto" playsInline onPlaying={() => setAudioPlaybackActive(true)} onWaiting={() => setAudioPlaybackActive(false)} onSeeking={() => setAudioPlaybackActive(false)} onEmptied={() => setAudioPlaybackActive(false)} onError={() => setAudioPlaybackActive(false)} onPause={() => setAudioPlaybackActive(false)} onEnded={() => setAudioPlaybackActive(false)} />
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>

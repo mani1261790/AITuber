@@ -416,6 +416,6 @@ function stableStringify(value: unknown): string {
 /** Also used by older packages without an authored introduction. */
 export function assessmentIntroduction(assessment: {introductionText?:string;responseKind:string}) {
   return assessment.introductionText ?? (assessment.responseKind === 'multiple-choice'
-    ? 'ここで練習問題に取り組んでみましょう。画面下の問題を読んで、当てはまる答えを選んでください。回答が終わるまで、ここで待っていますね。'
-    : 'ここで練習問題に取り組んでみましょう。画面下の問題を読んで、答えを入力してください。回答が終わるまで、ここで待っていますね。');
+    ? 'ここで練習問題に取り組んでみましょう。問題を読んで、当てはまる答えを選んでください。回答が終わるまで、ここで待っていますね。'
+    : 'ここで練習問題に取り組んでみましょう。問題を読んで、答えを入力してください。回答が終わるまで、ここで待っていますね。');
 }
