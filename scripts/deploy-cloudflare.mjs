@@ -1,3 +1,4 @@
+import { serverOnlyConfig } from "./cloudflare-server-only.mjs";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ import { join } from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const accountId = "2ea670c2a6ff28e248ef084adf095e8b";
 const profile = "aituber-personal";
+const serverOnly = process.env.AITUBER_SERVER_ONLY === "true";
 const checkOnly = process.argv.slice(2).join(" ") === "--check";
 if (process.argv.length > 2 && !checkOnly) {
   console.error("Usage: node scripts/deploy-cloudflare.mjs [--check]");
@@ -63,11 +65,19 @@ try {
     }
     run(["build:cloudflare"], env);
     const directory = await mkdtemp(join(tmpdir(), "aituber-deploy-"));
+    const temporaryConfig = new URL("../apps/cloudflare/wrangler.server-only.jsonc", import.meta.url);
+    let temporaryConfigCreated = false;
     try {
       const file = join(directory, "secrets.json");
       await writeFile(file, JSON.stringify(secrets), { mode: 0o600 });
-      run(["exec", "wrangler", "deploy", "--config", "apps/cloudflare/wrangler.jsonc", "--secrets-file", file], env);
+      if (serverOnly) {
+        await writeFile(temporaryConfig, JSON.stringify(serverOnlyConfig(config), null, 2), {flag:"wx"});
+        temporaryConfigCreated = true;
+        console.log("Server-only deployment: preserving the existing asset manifest and routing.");
+      }
+      run(["exec", "wrangler", "deploy", "--config", serverOnly ? "apps/cloudflare/wrangler.server-only.jsonc" : "apps/cloudflare/wrangler.jsonc", "--secrets-file", file], env);
     } finally {
+      if (temporaryConfigCreated) await rm(temporaryConfig, {force:true});
       await rm(directory, { recursive: true, force: true });
     }
   }
