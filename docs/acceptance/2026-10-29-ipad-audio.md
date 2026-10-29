@@ -30,3 +30,18 @@ operator snapshotを読み取り、session.8324431a-f54d-4749-8aed-c73c3eef850e 
 https://github.com/mani1261790/AITuber/actions/runs/40846786783
 
 Cloudflare Status APIではWorkers Assetsはoperationalだったため、今回が広域障害であるとは断定しない。同一エンドポイント・エラーの過去のプラットフォーム側事例: https://github.com/cloudflare/workers-sdk/issues/13118 。エラーを回避するためのWorker削除、移転、課金変更、無制限リトライは行っていない。
+
+## 優先の案内文を本番反映（18:26 JST 追記）
+
+通常の再実行40848448322も同じassets-upload-session / 10013で失敗。認証エラーではなく、静的ファイルの登録処理が失敗した。Cloudflare内部の詳細原因まではAPI応答から特定できない。
+
+既存の静的ファイルとASSETSバインディング、run_worker_first認証経路を維持し、keep_assetsでサーバーのみ更新する明示的なデプロイモードを追加。通常デプロイの既定動作は変更しない。
+公式仕様: https://developers.cloudflare.com/workers/static-assets/direct-upload/
+
+- 本番反映成功: https://github.com/mani1261790/AITuber/actions/runs/40849419812
+- 対象コード: bccace6（b828952のサーバー修正を含む）
+- Worker version: 53c62a1e-417b-4083-baec-c94d8a9c5569
+- 55ファイル・470テスト、型チェック、ビルド、ストレージ検証を通過。
+- 公開・非公開境界、認証後operator rollout確認に合格。
+- Cloudflareからデプロイ済みコードを読み戻し、位置を指定しない問題案内の存在と旧「画面下の問題を読んで」の不在を確認。実講義の再生は操作していない。
+- iPadの音声修正はフロントエンド変更なので今回のserver-only反映には含まれない。静的ファイル登録の問題は未解消であり、通常配信の復旧後に反映が必要。
