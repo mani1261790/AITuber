@@ -1,4 +1,4 @@
-import {assessmentIntroduction} from '@aituber/contracts';
+import {assessmentIntroduction,pronunciationSpans} from '@aituber/contracts';
 import {afterEach,expect,it,vi} from 'vitest';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {FixedResponseLlmProvider} from '@aituber/providers';
@@ -148,4 +148,16 @@ it('keeps authored pointing intervals intact when publishing an edited performan
  const provider=new FixedResponseLlmProvider([{passed:true,reason:'verified'}]);
  const result=await createWholeLecturePlanner(()=>provider,t.artifacts,t.readings).preparePackage(structuredClone(t.input.session.course) as import("@aituber/contracts").CoursePackage,new AbortController().signal,{version:1,units,readings:[]});
  expect(result.performance!.units[0]!.beats[0]!.pointing).toEqual({mode:'off',cues:[]});expect(result.performance!.units).toEqual(units);
+});
+
+it('keeps reviewed readings when a concurrent lecture replaces the shared reading cache',async()=>{
+ const t=setup();const course=structuredClone(t.input.session.course) as import('@aituber/contracts').CoursePackage;course.pronunciationDictionary=[];
+ const text=t.units[0]!.beats[0]!.text+'x₂の値です。';t.units[0]!.beats[0]!.text=text;
+ const reading={text,parts:pronunciationSpans(text).map(part=>({text:part.text,reading:part.latin?(part.text==='x₂'?'エックス・ニ':'カナ'):part.text}))};
+ vi.spyOn(t.readings,'get').mockImplementation(async text=>({text,parts:[{text,reading:'stale shared cache'}]}));
+ const provider=new FixedResponseLlmProvider([{passed:true,reason:'verified'},{passed:true,reason:'verified'}]);
+ const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);
+ const result=await planner.preparePackage(course,new AbortController().signal,{version:1,units:t.units,readings:[reading]});
+ expect(result.performance!.readings.find(item=>item.text===text)).toEqual(reading);
+ expect(t.readings.get).not.toHaveBeenCalledWith(text,expect.anything(),expect.anything());
 });

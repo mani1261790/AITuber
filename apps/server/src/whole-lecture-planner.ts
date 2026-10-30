@@ -107,7 +107,9 @@ export function createWholeLecturePlanner(provider:()=>LlmProvider|null,store:Pr
   }else script=await generate(input,'package:'+digest([course,scriptInstruction]),signal);
   const allTexts=[...texts(script),...course.assessments.map(assessmentIntroduction)];
   await readings.prepare(allTexts,course.pronunciationDictionary,signal);
-  const prepared=await Promise.all([...new Set(allTexts)].map(text=>readings.get(text,course.pronunciationDictionary,signal)));
+  // Another live session may install an older reading into the shared cache while preparation awaits.
+  // The reviewed package's exact mapping is authoritative for its own utterances.
+  const prepared=await Promise.all([...new Set(allTexts)].map(text=>edited?.readings.find(item=>item.text===text)??readings.get(text,course.pronunciationDictionary,signal)));
   signal.throwIfAborted();return {...course,performance:{version:1,units:script.units,readings:prepared}};
  }
  const planner:LessonPlanner=async(input,signal)=>{
