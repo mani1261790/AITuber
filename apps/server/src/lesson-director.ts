@@ -19,7 +19,7 @@ export function referencePlan(unit: Unit, reason: string | null = null, currentP
   ] };
 }
 
-export interface Beat { boardReason?: string | null; surface?: "board" | "slides"; gesture?: import("@aituber/contracts").TeachingGesture; walkWhileSpeaking?: boolean; blackboardMarkdown?: string | null; text: string; targetId: string | null; camera: "lecture" | "material"; position: "left" | "right" | "center" }
+export interface Beat { pointing?: import("@aituber/contracts").PointingPlan; boardReason?: string | null; surface?: "board" | "slides"; gesture?: import("@aituber/contracts").TeachingGesture; walkWhileSpeaking?: boolean; blackboardMarkdown?: string | null; text: string; targetId: string | null; camera: "lecture" | "material"; position: "left" | "right" | "center" }
 export const beatPlanSchema = { type: "object", additionalProperties: false, required: ["beats"], properties: { beats: { type: "array", minItems: 1, maxItems: 3, items: {
   type: "object", additionalProperties: false, required: ["surface","text","targetId","camera","position","gesture","walkWhileSpeaking","blackboardMarkdown"], properties: {
     boardReason: { type: ["string", "null"], maxLength: 300 }, surface: { enum: ["board", "slides"] }, blackboardMarkdown: boardMarkdownSchema, gesture: { enum: ["idle","listen","explain","emphasize","nod"] }, walkWhileSpeaking: { type: "boolean" },

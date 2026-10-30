@@ -1,3 +1,4 @@
+import {compilePointingPlan} from '@aituber/contracts';
 import { speechCaption } from "./speech-caption.ts";
 import { useSpeechEnvelope } from "./use-speech-envelope.ts";
 import { startSpeechAudio } from "./speech-audio.ts";
@@ -194,6 +195,15 @@ function ClassroomApp() {
     } catch (reason) { setError(errorMessage(reason)); } finally { setJoining(false); }
   }
 
+  const pointAt = useMemo(() => {
+    if (!session?.speech.unitId) return ():string|null|undefined => undefined;
+    const beats=session.course.performance?.units.find(unit=>unit.unitId===session.speech.unitId)?.beats??[];
+    const matching=beats.filter(beat=>beat.text===session.speech.text);
+    const plan=matching.length===1?matching[0]?.pointing:undefined;
+    if(!plan&&beats.some(beat=>beat.pointing&&beat.pointing.mode!=='auto'))return ()=>null;
+    return compilePointingPlan(plan,session.speech.text??'',session.speech.segments);
+  }, [session?.course.performance,session?.speech.unitId,session?.speech.text,session?.speech.segments]);
+
   const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
   const supplementCandidate = session?.liveSupplement?.status === "playing" ? session.liveSupplement.candidate : null;
   const activeSpeechSegment = session?.speech.playing ? session.speech.segments.find((segment) => speechElapsedMs >= segment.startMs && speechElapsedMs < segment.endMs) ?? null : null;
@@ -290,7 +300,13 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={() => { setRail("chat"); setPanelOpen(true); }} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
+            <LessonStage readPointTarget={()=>{
+              if(!projecting)return undefined;
+              if(!session.speech.playing)return pointAt(NaN);
+              const clock=currentSpeechClock(audioRef.current,session.speech);
+              const elapsed=session.speech.mode==='caption-fallback'?speechElapsedMs:clock?clock.elapsed*1000:NaN;
+              return pointAt(elapsed);
+            }} spokenText={session.speech.segments.length ? speechCaption(session.speech.segments, speechElapsedMs, session.course.pronunciationDictionary, session.speech.text, session.speech.transcriptFormat === "original") : session.speech.text ?? ""} onReady={session.status === "PREPARING" ? () => { void classroomReady(); } : undefined} slideAccess={room && participant ? {code:room.code,accessToken:participant.accessToken} : undefined} listening={(session.status === "CHECKPOINT" || session.status === "FINISHED") && !session.speech.playing} speaking={audioPlaybackActive} readSpeechClock={() => { const audio=audioRef.current; if (session.speech.mode === "caption-fallback" && session.speech.playing) return {elapsed:speechElapsedMs/1000,duration:session.speech.durationMs/1000}; return currentSpeechClock(audio,session.speech); }} readSpeechLevel={readSpeechLevel} scene={slideScene ?? scene} notes={boardNotes} noteText={supplementCandidate && boardNotes.length === 0 ? supplementCandidate.captionText : undefined} presentation={mascotPresentation} projecting={projecting} onSelect={() => { setRail("chat"); setPanelOpen(true); }} direction={session.direction} onStageProgress={(actionId, writingStarted) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-progress`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId,writingStarted}) }).catch(() => {}); }} onStageComplete={(actionId) => { if (!room || !participant) return; void fetch(`/api/classrooms/${encodeURIComponent(room.code)}/stage-complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({accessToken:participant.accessToken,epoch:session.epoch,actionId}) }).catch(() => {}); }} />
             <div className="stage-controls" role="group" aria-label="講義の操作">
               <button title={projecting ? "黒板を見る" : "スライドを見る"} aria-label={projecting ? "黒板を見る" : "スライドを見る"} onClick={() => setProjecting(!projecting)}><ControlIcon name="board" /></button>
               <button title="字幕" aria-label="字幕" aria-pressed={captions} onClick={() => setCaptions(!captions)}><ControlIcon name="captions" /></button>

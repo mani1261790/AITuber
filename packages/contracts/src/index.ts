@@ -5,3 +5,5 @@ export * from "./board-examples.ts";
 export * from "./package-editor.ts";
 
 export * from "./latin-readings.ts";
+
+export * from "./pointing-plan.ts";

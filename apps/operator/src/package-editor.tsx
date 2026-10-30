@@ -1,3 +1,4 @@
+import {PointingEditor} from './pointing-editor.tsx';
 import {PackageSlide,usePackageSlides} from './package-slides.tsx';
 import {formatRuby,parseRuby,applyRuby} from './script-ruby.ts';
 import {useEffect,useRef,useState} from 'react';
@@ -69,6 +70,7 @@ export function PackageEditor({id}:{id:string}){
 
       </div>;
      })}</div></div>}
+    {!collapsed.has(itemId)&&unit&&scene?.slide&&script&&<PointingEditor course={course} unitId={itemId} texts={script.beats.map((beat,index)=>{try{return parseRuby(edits[JSON.stringify([itemId,index])]??formatRuby(beat.text)).map(p=>p.text).join('');}catch{return beat.text;}})} load={loadSlide} change={change}/>}
     </section>{insertion(itemIndex+1)}</div>;
    })}</div>
   </fieldset>

@@ -1,8 +1,9 @@
+import {pointingIssues} from '@aituber/contracts';
 import type { CoursePackage, ValidationIssue } from "@aituber/contracts";
 
 /** New authoring output must contain a teaching plan; legacy packages remain readable. */
 export function validateAuthoredPlan(course: CoursePackage): ValidationIssue[] {
-  const issues: ValidationIssue[]=[];
+  const issues: ValidationIssue[]=pointingIssues(course).map(message=>({path:'/performance',message}));
   const pdfIds=new Set(course.sources.filter(s=>s.kind==="pdf").map(s=>s.id));
   for(const [index,unit] of course.teachingUnits.entries()) {
     if(!unit.teachingPlan || !unit.teachingPlan.keyPoints.some(v=>v.trim()) || !unit.teachingPlan.explanationFlow.some(v=>v.trim())) {

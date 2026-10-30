@@ -147,7 +147,14 @@ export const PreGeneratedSupplementSchema = closedObject({
   autoPlayEligible: Type.Boolean(),
 });
 
+export const PointingPlanSchema = closedObject({
+ mode:Type.Union([Type.Literal("auto"),Type.Literal("off"),Type.Literal("manual")]),
+ cues:Type.Array(closedObject({id:Identifier,start:Type.Integer({minimum:0}),end:Type.Integer({minimum:1}),quote:NonEmptyText,targetId:Identifier}),{maxItems:64}),
+});
+export type PointingPlan=Static<typeof PointingPlanSchema>;
+
 export const LectureBeatSchema = closedObject({
+  pointing:Type.Optional(PointingPlanSchema),
   text: Type.String({minLength:1,maxLength:600}), targetId: Type.Union([Identifier,Type.Null()]),
   camera: Type.Union([Type.Literal("lecture"),Type.Literal("material")]),
   position: Type.Union([Type.Literal("left"),Type.Literal("center"),Type.Literal("right")]),

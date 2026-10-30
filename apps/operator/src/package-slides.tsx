@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type {PDFDocumentProxy} from 'pdfjs-dist';
 export function usePackageSlides(id:string){
@@ -13,7 +13,7 @@ export function usePackageSlides(id:string){
   })();cache.current.set(sourceId,{promise,dispose:()=>dispose()});return promise;
  };
 }
-export function PackageSlide({sourceId,pageNumber,load}:{sourceId:string;pageNumber:number;load:(sourceId:string)=>Promise<PDFDocumentProxy>}){
+export function PackageSlide({sourceId,pageNumber,load,overlay}:{overlay?:ReactNode;sourceId:string;pageNumber:number;load:(sourceId:string)=>Promise<PDFDocumentProxy>}){
  const host=useRef<HTMLDivElement>(null),canvas=useRef<HTMLCanvasElement>(null),loader=useRef(load);loader.current=load;
  const [near,setNear]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState('');
  useEffect(()=>{const observer=new IntersectionObserver(entries=>setNear(entries.some(entry=>entry.isIntersecting)),{rootMargin:'400px'});if(host.current)observer.observe(host.current);return()=>observer.disconnect();},[]);
@@ -21,5 +21,5 @@ export function PackageSlide({sourceId,pageNumber,load}:{sourceId:string;pageNum
   void(async()=>{try{const pdf=await loader.current(sourceId);const page=await pdf.getPage(pageNumber);if(cancelled||!target)return;const size=page.getViewport({scale:1}),viewport=page.getViewport({scale:Math.min(2,1200/Math.max(size.width,size.height))});target.width=viewport.width;target.height=viewport.height;const task=page.render({canvas:target,viewport,background:'white'});cancel=()=>task.cancel();await task.promise;if(!cancelled)setReady(true);}catch(error){if(!cancelled)setError(error instanceof Error?error.message:'表示できません');}})();
   return()=>{cancelled=true;cancel?.();if(target){target.width=0;target.height=0;}setReady(false);};
  },[near,sourceId,pageNumber]);
- return <div ref={host} className="package-slide">{!ready&&!error&&<span role="status">スライドを読み込み中…</span>}{error&&<p role="alert">{error}</p>}<canvas ref={canvas} style={{visibility:ready?'visible':'hidden'}} aria-label={`スライド ${pageNumber}ページ`}/></div>;
+ return <div ref={host} className={`package-slide${ready?" is-ready":""}`}>{!ready&&!error&&<span role="status">スライドを読み込み中…</span>}{error&&<p role="alert">{error}</p>}<canvas ref={canvas} style={{visibility:ready?'visible':'hidden'}} aria-label={`スライド ${pageNumber}ページ`}/>{ready&&overlay}</div>;
 }

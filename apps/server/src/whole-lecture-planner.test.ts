@@ -140,3 +140,12 @@ it('binds generated patches to the current revision and each allowed unit hash',
  expect(()=>parseAndValidate(JSON.stringify({...patch,replacements:[]}),empty)).not.toThrow();
  expect(()=>parseAndValidate(JSON.stringify(patch),empty)).toThrow();
 });
+
+it('keeps authored pointing intervals intact when publishing an edited performance',async()=>{
+ const t=setup();const units=structuredClone(t.units);const first=units[0]!.beats[0]!;
+ first.pointing={mode:'off',cues:[]};
+ vi.spyOn(t.readings,'get').mockImplementation(async text=>({text,parts:[{text,reading:'テスト'}]}));
+ const provider=new FixedResponseLlmProvider([{passed:true,reason:'verified'}]);
+ const result=await createWholeLecturePlanner(()=>provider,t.artifacts,t.readings).preparePackage(structuredClone(t.input.session.course) as import("@aituber/contracts").CoursePackage,new AbortController().signal,{version:1,units,readings:[]});
+ expect(result.performance!.units[0]!.beats[0]!.pointing).toEqual({mode:'off',cues:[]});expect(result.performance!.units).toEqual(units);
+});
