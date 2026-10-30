@@ -99,11 +99,12 @@ export class ChatGptConnection {
     return new ChatGptLlmProvider(() => this.accessToken(), undefined, timeoutMs);
   }
 
-  async checkModel(token = ''): Promise<void> {
+  async checkModel(token = ''): Promise<readonly string[]> {
     const response = await this.fetcher(`${resource}/models`, { headers: { authorization: `Bearer ${token || await this.accessToken()}` }, signal: AbortSignal.timeout(30_000) });
     const body = await boundedJson(response);
     if (!response.ok) throw new ChatGptAuthError(`ChatGPTのモデル一覧を取得できませんでした（HTTP ${response.status}）。プラン利用の許可を確認してください。`);
     if (!Array.isArray(body.models) || !body.models.some((model: unknown) => typeof model === 'object' && model !== null && 'slug' in model && model.slug === CHATGPT_MODEL)) throw new ChatGptAuthError('このChatGPT接続ではgpt-6-lunaが利用できません。別のモデルへの自動切り替えは行いません。');
+    return body.models.flatMap((model:unknown) => typeof model === 'object' && model !== null && 'slug' in model && typeof model.slug === 'string' ? [model.slug] : []);
   }
 
   async accessToken(forceRefresh = false): Promise<string> {

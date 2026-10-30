@@ -170,9 +170,9 @@ export class LectureRoom extends DurableObject<AppEnv> {
       return json(200,{settings:settings.get(),revoked});
     }
     if(path==='/api/settings/llm/chatgpt/check' && request.method==='POST') {
-      await this.services.chatgpt.checkModel(await this.services.chatgpt.accessToken(true));
+      const models=await this.services.chatgpt.checkModel(await this.services.chatgpt.accessToken(true));
       const result = await settings.createProvider('authoring').createContext({purpose:'generation',systemInstruction:'日本語で答えてください。'}).generate({prompt:'接続確認です。messageに「接続できました」と記載してください。',schemaName:'connection_check',schema:{type:'object',properties:{message:{type:'string'}},required:['message'],additionalProperties:false}});
-      return json(200,{model:result.model,latencyMs:result.latencyMs,settings:settings.get()});
+      return json(200,{model:result.model,models,latencyMs:result.latencyMs,settings:settings.get()});
     }
     if(path==='/auth/chatgpt/callback' && request.method==='GET') {
       let message='ChatGPTに接続しました。管理画面から教材を作成できます。';
