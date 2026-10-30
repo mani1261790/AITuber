@@ -1,3 +1,4 @@
+import { strictCourseSchema, omitCourseNulls } from './strict-course-schema.ts';
 import { LlmProviderError, parseAndValidate, validateRequest, type LlmProvider, type LlmContext, type LlmResult, type StructuredGenerationRequest } from './llm.ts';
 
 export const CHATGPT_MODEL = 'gpt-6-luna';
@@ -15,6 +16,7 @@ export class ChatGptLlmProvider implements LlmProvider {
   private async generate<T>(instructions: string, request: StructuredGenerationRequest<T>): Promise<LlmResult<T>> {
     validateRequest(request);
     const started = performance.now();
+    const strictCourse = request.schemaName === "course_package";
     const signal = AbortSignal.any([AbortSignal.timeout(this.timeoutMs), ...(request.signal ? [request.signal] : [])]);
     try {
       signal.throwIfAborted();
@@ -25,7 +27,7 @@ export class ChatGptLlmProvider implements LlmProvider {
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: this.model, instructions, store: false, stream: true,
           input: [{ role: 'user', content: [{ type: 'input_text', text: request.prompt }, ...(request.images ?? []).map(image => ({ type: 'input_image', image_url: `data:${image.mimeType};base64,${image.dataBase64}` }))] }],
-          text: { format: { type: 'json_schema', name: request.schemaName, schema: request.schema, strict: false } },
+          text: { format: { type: 'json_schema', name: request.schemaName, schema: strictCourse ? strictCourseSchema(request.schema) : request.schema, strict: strictCourse } },
         }),
       });
       if (!response.ok) {
@@ -33,7 +35,7 @@ export class ChatGptLlmProvider implements LlmProvider {
         throw new LlmProviderError('provider_error', response.status === 401 ? 'ChatGPTに再接続してください。' : response.status === 403 ? 'AITuberへのChatGPTプラン利用が許可されていません。' : response.status === 429 ? 'ChatGPTの利用上限に達しました。利用状況を確認してください。' : `ChatGPT returned HTTP ${response.status}`);
       }
       const envelope = await readResponsesStream(response, request.maxOutputBytes ?? 1_000_000);
-      const value = parseAndValidate<T>(envelope.text, request.schema, request.validate);
+      const value = parseAndValidate<T>(strictCourse ? JSON.stringify(omitCourseNulls(JSON.parse(envelope.text))) : envelope.text, request.schema, request.validate);
       const inputTokens = count(envelope.usage.input_tokens), outputTokens = count(envelope.usage.output_tokens);
       return { value, model: this.model, provider: 'chatgpt', latencyMs: performance.now() - started,
         usage: { inputTokens, outputTokens, totalTokens: count(envelope.usage.total_tokens), estimatedCostUsd: null } };

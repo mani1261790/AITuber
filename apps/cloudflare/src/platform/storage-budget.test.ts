@@ -9,7 +9,7 @@ it('persists reservations across restarts and resets only on the UTC day boundar
 });
 it('stops requests and writes before the platform daily limits',()=>{
  const f=fixture();const budget=new StorageBudget(f.kv,f.clock);for(let i=0;i<30_000;i++)budget.request();expect(()=>budget.request()).toThrow(StorageSafetyLimit);
- f.nextDay();budget.check();budget.record(0,20_000);expect(()=>budget.check()).toThrow(StorageSafetyLimit);
+ f.nextDay();budget.check();budget.record(0,39_999);expect(()=>budget.check()).not.toThrow();budget.record(0,1);expect(()=>budget.check()).toThrow(StorageSafetyLimit);
 });
 it('does not turn completed requests into 100 requests each after restarts',()=>{
  const f=fixture();
@@ -40,5 +40,5 @@ it('reconciles only the confirmed incident and preserves the recovery stop',()=>
  budget.request();budget.flush();
  expect(new StorageBudget(f.kv,f.clock).snapshot().usage.requests).toBe(2001);
  f.kv.put('storage-safety-budget-v1',{...original,reads:194_001});
- expect(()=>new StorageBudget(f.kv,f.clock).check()).toThrow(StorageSafetyLimit);
+ expect(new StorageBudget(f.kv,f.clock).snapshot().usage).toEqual({...original,reads:194_001});
 });

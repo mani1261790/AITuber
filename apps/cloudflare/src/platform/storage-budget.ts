@@ -1,5 +1,7 @@
+// 2026-10-30 account analytics: 23,259 actual writes, only this namespace.
+// Keep a 60,000-row margin below the 100,000 free daily limit; never reset usage.
 /** Conservative, persisted per-namespace safety limits, well below the free account limits. */
-export const STORAGE_LIMITS={reads:1_000_000,writes:20_000,requests:30_000} as const;
+export const STORAGE_LIMITS={reads:1_000_000,writes:40_000,requests:30_000} as const;
 export const STORAGE_SAFETY_MESSAGE='アプリの安全上限に達したため処理を停止しました。CloudflareやChatGPTの利用枠不足を示すものではありません。';
 type Usage={day:string;reads:number;writes:number;requests:number};
 export class StorageSafetyLimit extends Error {

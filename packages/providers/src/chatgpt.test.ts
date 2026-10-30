@@ -89,3 +89,13 @@ it('uses the explicitly selected authoring model without changing the runtime de
     expect(JSON.parse(String(fetcher.mock.calls.at(-1)![1]?.body)).model).toBe(result.model);
   }
 });
+it('uses strict course output and validates normalized optional nulls against original schema', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(stream(event({type:'response.output_text.delta',delta:'{"title":"test","note":null}'})+event({type:'response.completed'})));
+  const schema={type:'object',properties:{title:{type:'string'},note:{type:'string'}},required:['title'],additionalProperties:false};
+  const result=await new ChatGptLlmProvider(async ()=>'test',fetcher).createContext({purpose:'generation',systemInstruction:'test'}).generate({...request,schemaName:'course_package',schema});
+  expect(result.value).toEqual({title:'test'});
+  const format=JSON.parse(String(fetcher.mock.calls[0]![1]?.body)).text.format;
+  expect(format.strict).toBe(true);
+  expect(format.schema.required).toEqual(['title','note']);
+  expect(format.schema.properties.note.anyOf).toContainEqual({type:'null'});
+});
