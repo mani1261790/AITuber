@@ -42,7 +42,8 @@ export function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, cu
       if (!previous) throw new Error("説明する黒板の内容がありません");
     } else if (previous || (actions.length === 0 && currentSurface !== "slides")) { if (previous) actions.push({type:"pause",durationMs:2000}); actions.push({type:"show_slides"}); previous=undefined; }
     const target=surface === "board" ? previous!.id : beat.targetId;
-    const travel = beat.walkWhileSpeaking === true && !target;
+    const authoredPointing = beat.pointing?.mode === "manual" && beat.pointing.cues.length > 0;
+    const travel = beat.walkWhileSpeaking === true && !target && !(authoredPointing && currentSurface !== "slides");
     const requestedPosition = surface === "board" || (beat.position === "center" && target) ? "right" : beat.position;
     const position: Beat["position"] = previousPosition && target !== null && target === previousTarget ? previousPosition : requestedPosition;
     previousTarget=target;previousPosition=position;
@@ -53,12 +54,13 @@ export function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, cu
     {type:"speak" as const,text:beat.text,gesture:beat.gesture === "listen" ? "explain" : beat.gesture ?? "explain",...(travel ? {position} : {})}, {type:"release_point" as const},
     );
   }
+  const locatedSpeech = new Set(beats.filter(beat=>beat.pointing?.mode==="manual"&&beat.pointing.cues.length).map(beat=>beat.text));
   const concurrent: LessonAction[] = [];
   for (let i=0;i<actions.length;i++) {
     if (actions[i]!.type === "show_slides") {
       const speechIndex=actions.findIndex((action,index)=>index>i && action.type==="speak");
       const speech=actions[speechIndex];
-      if (speech?.type==="speak" && !actions.slice(i+1,speechIndex).some(action=>action.type==="show_blackboard" || action.type==="pause" || action.type==="point_at")) {
+      if (speech?.type==="speak" && !locatedSpeech.has(speech.text) && !actions.slice(i+1,speechIndex).some(action=>action.type==="show_blackboard" || action.type==="pause" || action.type==="point_at")) {
         const setup=actions.slice(i+1,speechIndex);
         const camera=setup.findLast(action=>action.type==="camera");
         const move=setup.findLast(action=>action.type==="move_to");

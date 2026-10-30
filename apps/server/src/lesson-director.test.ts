@@ -557,3 +557,12 @@ it("continues the prepared script without waiting for a slow interruption patch"
   expect(planner.mock.calls.every(call=>call[0].unit.id!==continuation.unit.id)).toBe(true);
  } finally {runtime.close();}
 });
+
+
+it("prepares projection and position before an explicitly timed first explanation",async()=>{
+ const {compileBeats}=await import('./lesson-director.ts');
+ const beat={text:'ここを説明します。',targetId:null,camera:'material' as const,position:'right' as const,surface:'slides' as const,walkWhileSpeaking:true,pointing:{mode:'manual' as const,cues:[{id:'cue.a',start:0,end:3,quote:'ここを',targetId:'target.a'}]}};
+ const opening=compileBeats([beat]);expect(opening.map(a=>a.type)).toEqual(['show_slides','camera','move_to','release_point','speak','release_point']);
+ expect(opening.find(a=>a.type==='speak')).not.toHaveProperty('surface');
+ const continuing=compileBeats([beat],undefined,'slides');expect(continuing.some(a=>a.type==='show_slides')).toBe(false);expect(continuing.find(a=>a.type==='speak')).toHaveProperty('position','right');
+});
