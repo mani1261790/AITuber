@@ -31,8 +31,9 @@ export class ChatGptLlmProvider implements LlmProvider {
         }),
       });
       if (!response.ok) {
+        const detail = response.status === 400 ? await schemaFailureDetail(response) : '';
         await response.body?.cancel();
-        throw new LlmProviderError('provider_error', response.status === 401 ? 'ChatGPTに再接続してください。' : response.status === 403 ? 'AITuberへのChatGPTプラン利用が許可されていません。' : response.status === 429 ? 'ChatGPTの利用上限に達しました。利用状況を確認してください。' : `ChatGPT returned HTTP ${response.status}`);
+        throw new LlmProviderError('provider_error', response.status === 401 ? 'ChatGPTに再接続してください。' : response.status === 403 ? 'AITuberへのChatGPTプラン利用が許可されていません。' : response.status === 429 ? 'ChatGPTの利用上限に達しました。利用状況を確認してください。' : `ChatGPT returned HTTP ${response.status}${detail}`);
       }
       const envelope = await readResponsesStream(response, request.maxOutputBytes ?? 1_000_000);
       const value = parseAndValidate<T>(strictCourse ? JSON.stringify(omitCourseNulls(JSON.parse(envelope.text))) : envelope.text, request.schema, request.validate);
@@ -127,4 +128,15 @@ export async function readResponsesStream(response: Response, limit: number): Pr
     if (!complete) throw new LlmProviderError('invalid_response', 'ChatGPTの応答が完了前に切断されました。');
     return { text, usage };
   } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+}
+
+async function schemaFailureDetail(response: Response): Promise<string> {
+ const reader=response.body?.getReader();if(!reader)return '';
+ let text='';let bytes=0;
+ try {for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>16384)return '';text+=new TextDecoder().decode(part.value);}}
+ finally{await reader.cancel().catch(()=>undefined);reader.releaseLock();}
+ try {const e=JSON.parse(text)?.error;const safe=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_.\[\]-]{1,100}$/.test(v)?v:'unknown';
+  const message=typeof e?.message==='string'&&/^(Invalid schema for|Unsupported parameter|Unsupported value)/.test(e.message)?e.message.slice(0,800):'';
+  return ` (${safe(e?.code)}, ${safe(e?.param)})${message ? ': '+message : ''}`;
+ }catch{return '';}
 }
