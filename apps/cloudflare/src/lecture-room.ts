@@ -1,3 +1,4 @@
+import type {PreparedCourseImport} from '../../server/src/course-authoring-service.ts';
 import {purgeLegacyCatalog,legacyCourseIds} from '../../server/src/catalog-cleanup';
 import {storedPdfResponse} from "./source-response";
 import { storageQuotaError } from "./storage-error";
@@ -192,6 +193,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       if(request.method==='GET')return json(200,{settings:settings.get()});
       if(request.method==='PUT')return json(200,{settings:settings.save(await read<UpdateLlmSettingsRequest>())});
     }
+    if(path==='/api/authoring/import'&&request.method==='POST'){const body=await readJson<PreparedCourseImport>(request,36*1024*1024);if(lecture.listCourses().some(course=>course.id===body.course?.id))throw new TypeError('登録済み教材と同じIDは使えません');return json(202,{job:await authoring.beginPrepared(body)});}
     if(path==='/api/authoring/jobs'){
       if(request.method==='GET')return json(200,{jobs:authoring.list()});
       if(request.method==='POST')return json(202,{job:await authoring.begin(await read<CreateAuthoringRequest>())});

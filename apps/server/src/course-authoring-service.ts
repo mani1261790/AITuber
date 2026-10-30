@@ -1,3 +1,5 @@
+import {validateScript} from './whole-lecture-planner.ts';
+import {isSelectiveReading,assessmentIntroduction} from '@aituber/contracts';
 import { teacherLanguageInstruction } from "./teacher-language.ts";
 import {allowShortAuthoringIdentifiers, normalizeAuthoringIdentifiers} from "./authoring-identifiers.ts";
 import { validateAuthoredPlan, pdfTeachingInstruction } from "./authoring-plan-validation.ts";
@@ -29,7 +31,9 @@ export function sourceBoundGenerationSchema(sources: readonly CoursePackage['sou
   return schema;
 }
 const GATE_IDS = ["source-alignment", "factual-consistency", "goal-alignment", "prerequisites", "references", "renderability", "speech-caption", "safe-content", "rights"] as const;
+export interface PreparedCourseImport extends CreateAuthoringRequest { course: CoursePackage }
 interface AuthoringCheckpoint {
+  preparedImport?: boolean;
   id: string; status: "running" | "available" | "budget-exhausted" | "failed" | "stopped"; createdAt: string; updatedAt: string;
   request: { durationMinutes: number; targetLevel?: string; learningGoals?: string[]; timeBudgetMs: number; costBudgetUsd: number };
   inputs: IngestedSources; candidate: CoursePackage | null; review: ReviewResult | null; attempts: number; elapsedMs: number; estimatedCostUsd: number;
@@ -56,6 +60,23 @@ export class CourseAuthoringService {
   }
 
   async begin(request: CreateAuthoringRequest): Promise<AuthoringJobView> { const checkpoint = await this.#initialize(request); this.#background(checkpoint, false); return view(checkpoint); }
+  async beginPrepared(request: PreparedCourseImport): Promise<AuthoringJobView> {
+    let course:CoursePackage;
+    try {course=structuredClone(parseCoursePackage(request.course)) as CoursePackage;validatePreparedCourse(course);}catch(error){throw new TypeError(error instanceof Error?error.message:'教材の形式が不正です',{cause:error});}
+    if(course.durationMinutes!==request.durationMinutes)throw new TypeError('台本と登録する講義時間が一致しません');
+    if(this.list().some(job=>job.course?.id===course.id))throw new TypeError('登録済み教材と同じIDは使えません');
+    // Ingest and validate evidence before persisting an import job.
+    this.#assertNoOtherJob();this.#initializing=true;
+    let checkpoint:AuthoringCheckpoint;
+    try {
+      const evidence=await ingestSources(request.sources);
+      if(JSON.stringify(evidence.sources)!==JSON.stringify(course.sources))throw new TypeError('教材と添付元資料のID・ハッシュ・利用権が一致しません');
+      checkpoint=await this.#ingest(request,evidence);
+      checkpoint.candidate=course;checkpoint.preparedImport=true;checkpoint.attemptLimit=1;
+      this.#save(checkpoint);
+    } finally {this.#initializing=false;}
+    this.#background(checkpoint,false);return view(checkpoint);
+  }
   list(): readonly AuthoringJobView[] { if (this.#viewCache) return structuredClone([...this.#viewCache.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))); return readdirSync(this.#directory).filter((file) => /^authoring\.[a-f0-9-]+\.json$/.test(file)).map((file) => view(JSON.parse(readFileSync(join(this.#directory, file), "utf8")) as AuthoringCheckpoint)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)); }
 
   readSource(contentHash: string): Uint8Array {
@@ -77,9 +98,9 @@ export class CourseAuthoringService {
     return view(checkpoint);
   }
   async resume(id: string, budget: ResumeAuthoringRequest = {}): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "available" || checkpoint.status === "running") return view(checkpoint); extendBudget(checkpoint, budget); checkpoint.status = "running"; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, false); }
-  async restart(id: string): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, true); }
+  async restart(id: string): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if(checkpoint.preparedImport)throw new TypeError("完成済み教材は再生成できません。修正版を取り込んでください"); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, true); }
   beginResume(id: string, budget: ResumeAuthoringRequest = {}): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status !== "available" && checkpoint.status !== "running") { extendBudget(checkpoint, budget); checkpoint.status = "running"; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, false); } return view(checkpoint); }
-  beginRestart(id: string): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, true); return view(checkpoint); }
+  beginRestart(id: string): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if(checkpoint.preparedImport)throw new TypeError("完成済み教材は再生成できません。修正版を取り込んでください"); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, true); return view(checkpoint); }
 
   async #initialize(request: CreateAuthoringRequest): Promise<AuthoringCheckpoint> {
     this.#assertNoOtherJob();
@@ -90,9 +111,9 @@ export class CourseAuthoringService {
   #assertNoOtherJob(id?: string) {
     if (this.#initializing || this.list().some(job => job.id !== id && job.status === "running")) throw new TypeError("教材作成が実行中です。停止または完了してから開始してください。");
   }
-  async #ingest(request: CreateAuthoringRequest): Promise<AuthoringCheckpoint> { validateRequest(request);
+  async #ingest(request: CreateAuthoringRequest, provided?:IngestedSources): Promise<AuthoringCheckpoint> { validateRequest(request);
     if (request.sources.some(source=>source.mimeType === "application/pdf" && !source.pageImages?.length)) throw new TypeError("PDFの各ページ画像が必要です。管理画面からPDFを再登録してください。");
-    const now = new Date().toISOString(); const inputs = await ingestSources(request.sources);
+    const now = new Date().toISOString(); const inputs = provided ?? await ingestSources(request.sources);
     const sourceDirectory = join(this.#directory, "sources"); mkdirSync(sourceDirectory, { recursive: true, mode: 0o700 });
     for (const [index, source] of inputs.sources.entries()) {
       const sourcePath = join(sourceDirectory, source.contentHash.replace("sha256:", ""));
@@ -117,7 +138,8 @@ export class CourseAuthoringService {
     const finishPreparation=async()=>{
       if(!checkpoint.candidate||!checkpoint.review||!allGatesPassed(checkpoint.review))throw new Error('教材の審査が完了していません');
       checkpoint.preparationPending=true;this.#save(checkpoint);
-      if(this.#preparePackage){
+      if(checkpoint.preparedImport){validatePreparedCourse(checkpoint.candidate);}
+      else if(this.#preparePackage){
         for(let attempt=0;;attempt++){
           try{checkpoint.candidate=await this.#preparePackage(checkpoint.candidate,signal);break;}
           catch(error){signal.throwIfAborted();if(attempt>=1||!isRepairableOutputError(error))throw error;}
@@ -136,7 +158,8 @@ export class CourseAuthoringService {
         const mode = forceRegenerate || !checkpoint.candidate || checkpoint.review?.repairMode === "regenerate" ? "regenerate" : "local";
         // Recheck a saved candidate after a validator fix instead of discarding it.
         const recheckSaved = !forceRegenerate && checkpoint.candidate && checkpoint.review?.summary === "決定的検査で不合格" && !deterministicReview(checkpoint.candidate).length && !validateAuthoredPlan(checkpoint.candidate).length;
-        if (!recheckSaved) {
+        if(checkpoint.preparedImport)checkpoint.attempts += 1;
+        if (!recheckSaved && !checkpoint.preparedImport) {
           checkpoint.attempts += 1;
           const generation = this.#llm().createContext({ purpose: "generation", systemInstruction: generationSystemInstruction(mode) });
           let generated;
@@ -176,7 +199,7 @@ export class CourseAuthoringService {
           }
         }
         if (!checkpoint.review) throw new Error("教材の審査結果を取得できませんでした。");
-        if (!allGatesPassed(checkpoint.review)) recordFailure(checkpoint);
+        if (!allGatesPassed(checkpoint.review)) {if(checkpoint.preparedImport){checkpoint.status='stopped';checkpoint.error='取込教材の審査で指摘があります。元の台本は変更していません。';}else recordFailure(checkpoint);}
         markElapsed(); this.#save(checkpoint);
         if (allGatesPassed(checkpoint.review)) { await finishPreparation(); break; }
         forceRegenerate = false;
@@ -251,3 +274,17 @@ function reviewSystemInstruction() { return teacherLanguageInstruction + "Indepe
 function reviewPrompt(checkpoint: AuthoringCheckpoint) { return `Materials:\n${checkpoint.inputs.text}\nCandidate:\n${JSON.stringify(checkpoint.candidate)}`; }
 function reviewSchema(): Record<string, unknown> { return { type: "object", additionalProperties: false, required: ["gates", "repairMode", "summary"], properties: { gates: { type: "array", minItems: 9, maxItems: 9, items: { type: "object", additionalProperties: false, required: ["id", "passed", "rationale", "locations"], properties: { id: { enum: GATE_IDS }, passed: { type: "boolean" }, rationale: { type: "string", minLength: 1, maxLength: 2000 }, locations: { type: "array", maxItems: 32, items: { type: "string", maxLength: 256 } }, repairInstruction: { type: "string", maxLength: 2000 } } } }, repairMode: { enum: ["local", "regenerate"] }, summary: { type: "string", minLength: 1, maxLength: 2000 } } }; }
 function view(checkpoint: AuthoringCheckpoint): AuthoringJobView { return { id: checkpoint.id, status: checkpoint.status, createdAt: checkpoint.createdAt, updatedAt: checkpoint.updatedAt, request: checkpoint.request, review: checkpoint.review ? { ...checkpoint.review, gates: checkpoint.review.gates.map(gate => gate.evaluated === undefined && gate.rationale === "この検査では問題なし" && ["生成結果が所定の形式を満たしていません", "参照または構造の不整合があります", "決定的検査で不合格", "審査結果が所定の形式を満たしていません"].includes(checkpoint.review!.summary) ? {...gate, passed: false, evaluated: false, rationale: "この項目の審査は未実施です"} : gate) } : null, ...(checkpoint.attemptLimit !== undefined ? {attemptLimit: checkpoint.attemptLimit} : {}), attempts: checkpoint.attempts, elapsedMs: checkpoint.elapsedMs, estimatedCostUsd: checkpoint.estimatedCostUsd, error: checkpoint.error, sourceCount: checkpoint.inputs.sources.length, course: checkpoint.status === "available" && checkpoint.candidate ? parseCoursePackage(checkpoint.candidate) : null }; }
+
+export function validatePreparedCourse(course:CoursePackage){
+ const issues=[...deterministicReview(course),...validateAuthoredPlan(course)];
+ if(issues.length)throw new TypeError(issues.map(issue=>issue.message).join(' / '));
+ const first=course.teachingUnits.find(unit=>unit.id===course.schedule.orderedUnitIds[0]);
+ if(!course.performance||!first)throw new TypeError('完成済みの台本が必要です');
+ for(const assessment of course.assessments)if(!course.performance.readings.some(item=>item.text===assessmentIntroduction(assessment)&&isSelectiveReading(item)))throw new TypeError('確認問題の読みが不足しています');
+ validateScript(course.performance.units,{session:{id:'import',course,configuredDurationMinutes:course.durationMinutes,completedUnitIds:[],learningEvidence:[],speech:{playing:false,unitId:null}},unit:first,previousSpeech:'',remainingMs:course.durationMinutes*60000},course.schedule.orderedUnitIds);
+ for(const unit of course.performance.units){
+  const teaching=course.teachingUnits.find(item=>item.id===unit.unitId)!;
+  if(unit.beats.map(beat=>beat.text).join('')!==teaching.speechText)throw new TypeError('単元と再生台本の本文が一致しません');
+  for(const beat of unit.beats)if(!course.performance.readings.some(item=>item.text===beat.text&&isSelectiveReading(item)))throw new TypeError('台本の読みが不足しています');
+ }
+}

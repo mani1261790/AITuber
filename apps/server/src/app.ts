@@ -1,3 +1,4 @@
+import type {PreparedCourseImport} from './course-authoring-service.ts';
 import type { PackageEditorService } from "./package-editor-service.ts";
 import { lessonPdfSource, pdfSourceHeaders } from "./lesson-pdf-source.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -7,7 +8,7 @@ import { sendAudio } from "./audio-response.ts";
 import { ClassroomAccessError, ClassroomCapacityError, ClassroomRegistry } from "./classroom-registry.ts";
 
 export interface SettingsApi { get(): LlmSettingsView; save(request: UpdateLlmSettingsRequest): LlmSettingsView }
-export interface AuthoringApi { readonly failure?: {id: string; message: string} | null; readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView; stop(id: string): AuthoringJobView }
+export interface AuthoringApi { beginPrepared?(request:PreparedCourseImport):Promise<AuthoringJobView>; readonly failure?: {id: string; message: string} | null; readSource?(contentHash: string): Uint8Array; list(): readonly AuthoringJobView[]; get(id: string): AuthoringJobView; begin(request: CreateAuthoringRequest): Promise<AuthoringJobView>; beginResume(id: string, request?: ResumeAuthoringRequest): AuthoringJobView; beginRestart(id: string): AuthoringJobView; stop(id: string): AuthoringJobView }
 export interface QuestionApi { list(sessionId: string): readonly ClassroomQuestionView[]; submit(input: { sessionId: string; participantId: string; request: SubmitQuestionRequest }): { question: ClassroomQuestionView; questions: readonly ClassroomQuestionView[] }; subscribe(listener: (sessionId: string, questions: readonly ClassroomQuestionView[]) => void): () => void }
 export interface PedagogyApi { answer(input: { sessionId: string; participantId: string; answer: string }): Promise<FixedSessionView>; submitEvidence(input: { sessionId: string; participantId: string; request: SubmitLearningEvidenceRequest }): FixedSessionView }
 export interface AfterClassApi { submitSurvey(input: { sessionId: string; participantId: string; request: SubmitAfterClassSurveyRequest }): unknown }
@@ -63,6 +64,7 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
       }
       if (url.pathname === "/api/authoring/jobs" && request.method === "GET") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 200, { jobs: authoring.list() }); }
       if (url.pathname === "/api/authoring/jobs" && request.method === "POST") { requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable"); return json(response, 202, { job: await authoring.begin(await readJson<CreateAuthoringRequest>(request, 36 * 1024 * 1024)) }); }
+      if(url.pathname==='/api/authoring/import'&&request.method==='POST'){requireSurface(request,'operator');if(!authoring?.beginPrepared)throw new RangeError('Import unavailable');const body=await readJson<PreparedCourseImport>(request,36*1024*1024);if((api.listCourses() as {id:string}[]).some(course=>course.id===body.course?.id))throw new TypeError('登録済み教材と同じIDは使えません');return json(response,202,{job:await authoring.beginPrepared(body)});}
       const authoringMatch = url.pathname.match(/^\/api\/authoring\/jobs\/(authoring\.[a-f0-9-]+)(?:\/(resume|restart|stop))?$/);
       if (authoringMatch) {
         requireSurface(request, "operator"); if (!authoring) throw new RangeError("Authoring is unavailable");

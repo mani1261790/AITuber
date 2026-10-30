@@ -455,3 +455,32 @@ it('constrains source IDs and each PDF page range before generation', async () =
   course.teachingUnits[0]!.sourceIds=['source.invented'];
   expect(()=>parseAndValidate(JSON.stringify(course),schema)).toThrow();
 });
+
+async function preparedImportFixture(){
+ const {ingestSources}=await import('./source-ingestion.ts');
+ const source=upload('完成した講義の資料です。');
+ const course=remapSource(quadraticFunctionsFixture,sourceId(source));
+ course.sources=[...(await ingestSources([source])).sources];course.assessments=[];
+ course.schedule.orderedItemIds=[...course.schedule.orderedUnitIds];
+ course.teachingUnits.forEach(unit=>{unit.speechText=unit.captionText='資料の関係を説明します。';unit.speakingGuidance={requiredPhrases:[],avoidPhrases:[],explanationNotes:'説明する'};});
+ course.performance={version:1,units:course.schedule.orderedUnitIds.map(unitId=>({unitId,beats:[{text:'資料の関係を説明します。',targetId:null,camera:'lecture',position:'right',surface:'slides',gesture:'explain',walkWhileSpeaking:true,blackboardMarkdown:null}]})),readings:[{text:'資料の関係を説明します。',parts:[{text:'資料の関係を説明します。',reading:'資料の関係を説明します。'}]}]};
+ return {course,sources:[source],durationMinutes:course.durationMinutes};
+}
+it('imports a completed script without generation or preparation and restores it after restart',async()=>{
+ const request=await preparedImportFixture(),provider=new FixedResponseLlmProvider([passingReview()]);const prepare=vi.fn();const directory=mkdtempSync(join(tmpdir(),'aituber-prepared-'));
+ const service=new CourseAuthoringService({directory,llm:()=>provider,preparePackage:prepare,defer:()=>{}});
+ const job=await service.beginPrepared(request);await service.runPendingStep();const result=service.get(job.id);
+ expect(result.status).toBe('available');expect(result.course!.performance).toEqual(request.course.performance);expect(result.course!.teachingUnits).toEqual(request.course.teachingUnits);expect(prepare).not.toHaveBeenCalled();
+ const restored=new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{}});expect(restored.get(job.id).course!.performance).toEqual(request.course.performance);
+});
+it('stops a rejected import without rewriting or auto retrying its script',async()=>{
+ const request=await preparedImportFixture(),review=passingReview();review.gates[0]!.passed=false;
+ const provider=new FixedResponseLlmProvider([review]),directory=mkdtempSync(join(tmpdir(),'aituber-prepared-reject-'));
+ const service=new CourseAuthoringService({directory,llm:()=>provider,defer:()=>{}});const job=await service.beginPrepared(request);await service.runPendingStep();expect(service.get(job.id).status).toBe('stopped');await service.runPendingStep();expect(service.get(job.id).attempts).toBe(1);
+ expect(()=>service.beginRestart(job.id)).toThrow('再生成できません');expect(JSON.parse(readFileSync(join(directory,job.id+'.json'),'utf8')).candidate.performance).toEqual(request.course.performance);
+});
+it('rejects a source mismatch or incomplete readings before creating an import job',async()=>{
+ const request=await preparedImportFixture();const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'aituber-prepared-invalid-')),llm:()=>{throw Error('must not call')},defer:()=>{}});
+ const wrong=structuredClone(request);wrong.sources[0]!.dataBase64=Buffer.from('別の資料').toString('base64');await expect(service.beginPrepared(wrong)).rejects.toThrow('一致しません');expect(service.list()).toEqual([]);
+ request.course.performance!.readings=[];await expect(service.beginPrepared(request)).rejects.toThrow('読みが不足');expect(service.list()).toEqual([]);
+});
