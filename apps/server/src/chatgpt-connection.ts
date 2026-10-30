@@ -94,9 +94,9 @@ export class ChatGptConnection {
     this.saved.credentials = credentials; this.persist();
   }
 
-  provider(timeoutMs = 180_000): ChatGptLlmProvider {
+  provider(timeoutMs = 180_000, model: string = CHATGPT_MODEL): ChatGptLlmProvider {
     if (this.view().status !== 'connected') throw new ChatGptAuthError('LLM接続でChatGPTに接続してください。');
-    return new ChatGptLlmProvider(() => this.accessToken(), undefined, timeoutMs);
+    return new ChatGptLlmProvider(() => this.accessToken(), undefined, timeoutMs, model);
   }
 
   async checkModel(token = ''): Promise<readonly string[]> {

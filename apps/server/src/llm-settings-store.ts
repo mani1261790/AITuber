@@ -2,7 +2,7 @@ import type { ChatGptConnection } from "./chatgpt-connection.ts";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "@aituber/runtime-platform/files";
 import { dirname } from "node:path";
 import type { LlmSettingsView, UpdateLlmSettingsRequest } from "@aituber/contracts";
-import { BudgetedLlmProvider, isLocalLlmBaseUrl, OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions, type UsageBudget, type UsageScope } from "@aituber/providers";
+import { CHATGPT_MODEL, CHATGPT_AUTHORING_MODEL, BudgetedLlmProvider, isLocalLlmBaseUrl, OpenAiCompatibleLlmProvider, openAiCompatibleOptionsFromEnv, type LlmProvider, type OpenAiCompatibleLlmOptions, type UsageBudget, type UsageScope } from "@aituber/providers";
 
 interface StoredLlmSettings { apiKey: string; model: string; baseUrl: string }
 
@@ -21,7 +21,7 @@ export class LlmSettingsStore {
     this.#value = existsSync(path) ? parseStored(readFileSync(path, "utf8")) : { apiKey: configured?.apiKey ?? "", model: configured?.model ?? "", baseUrl: configured?.baseUrl ?? "" };
   }
 
-  get(): LlmSettingsView { if (this.chatgpt) return { apiKeyConfigured: false, model: "gpt-6-luna", baseUrl: "https://api.openai.com/v1", chatgpt: this.chatgpt.view() }; return { apiKeyConfigured: Boolean(this.#value.apiKey), model: this.#value.model, baseUrl: this.#value.baseUrl }; }
+  get(): LlmSettingsView { if (this.chatgpt) return { apiKeyConfigured: false, model: CHATGPT_MODEL, baseUrl: "https://api.openai.com/v1", chatgpt: this.chatgpt.view() }; return { apiKeyConfigured: Boolean(this.#value.apiKey), model: this.#value.model, baseUrl: this.#value.baseUrl }; }
 
   save(request: UpdateLlmSettingsRequest): LlmSettingsView {
     if (this.chatgpt) throw new TypeError("ChatGPT認証を使用しています。APIキーの設定は不要です。");
@@ -42,7 +42,7 @@ export class LlmSettingsStore {
   }
 
   createProvider(scope: UsageScope = "runtime"): LlmProvider {
-    if (this.chatgpt) return this.chatgpt.provider(scope === "authoring" ? 3_600_000 : 180_000);
+    if (this.chatgpt) return this.chatgpt.provider(scope === "authoring" ? 3_600_000 : 180_000, scope === "authoring" ? CHATGPT_AUTHORING_MODEL : CHATGPT_MODEL);
     const options = this.connectionOptions();
     if (!options) throw new TypeError("LLM接続を先に設定してください。");
     const backing = new OpenAiCompatibleLlmProvider({ ...options, timeoutMs: scope === "authoring" ? 3_600_000 : options.baseUrl && isLocalLlmBaseUrl(options.baseUrl) ? 90_000 : 30_000 });

@@ -80,7 +80,7 @@ it('passes the authoring timeout through ChatGPT instead of the runtime three-mi
   const provider = vi.spyOn(connection, 'provider').mockImplementation(() => {throw new Error('timeout captured');});
   const store = new LlmSettingsStore(join(directory, 'llm.json'), {}, null, connection);
   expect(() => store.createProvider('authoring')).toThrow('timeout captured');
-  expect(provider).toHaveBeenLastCalledWith(3_600_000);
+  expect(provider).toHaveBeenLastCalledWith(3_600_000, "gpt-6.1-sol");
   expect(() => store.createProvider('runtime')).toThrow('timeout captured');
-  expect(provider).toHaveBeenLastCalledWith(180_000);
+  expect(provider).toHaveBeenLastCalledWith(180_000, "gpt-6-luna");
 });

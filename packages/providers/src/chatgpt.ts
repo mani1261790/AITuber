@@ -1,11 +1,12 @@
 import { LlmProviderError, parseAndValidate, validateRequest, type LlmProvider, type LlmContext, type LlmResult, type StructuredGenerationRequest } from './llm.ts';
 
 export const CHATGPT_MODEL = 'gpt-6-luna';
+export const CHATGPT_AUTHORING_MODEL = 'gpt-6.1-sol';
 const endpoint = 'https://api.openai.com/v1/responses';
 
 /** Uses a dedicated SIWC grant, never a Codex credential or a ChatGPT backend endpoint. */
 export class ChatGptLlmProvider implements LlmProvider {
-  constructor(private readonly accessToken: () => Promise<string>, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis), private readonly timeoutMs = 180_000) {}
+  constructor(private readonly accessToken: () => Promise<string>, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis), private readonly timeoutMs = 180_000, private readonly model: string = CHATGPT_MODEL) {}
 
   createContext(options: { purpose: LlmContext['purpose']; systemInstruction: string }): LlmContext {
     return { purpose: options.purpose, generate: <T>(request: StructuredGenerationRequest<T>) => this.generate(options.systemInstruction, request) };
@@ -22,7 +23,7 @@ export class ChatGptLlmProvider implements LlmProvider {
       const response = await this.fetcher(endpoint, {
         method: 'POST', signal,
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: CHATGPT_MODEL, instructions, store: false, stream: true,
+        body: JSON.stringify({ model: this.model, instructions, store: false, stream: true,
           input: [{ role: 'user', content: [{ type: 'input_text', text: request.prompt }, ...(request.images ?? []).map(image => ({ type: 'input_image', image_url: `data:${image.mimeType};base64,${image.dataBase64}` }))] }],
           text: { format: { type: 'json_schema', name: request.schemaName, schema: request.schema, strict: false } },
         }),
@@ -34,7 +35,7 @@ export class ChatGptLlmProvider implements LlmProvider {
       const envelope = await readResponsesStream(response, request.maxOutputBytes ?? 1_000_000);
       const value = parseAndValidate<T>(envelope.text, request.schema, request.validate);
       const inputTokens = count(envelope.usage.input_tokens), outputTokens = count(envelope.usage.output_tokens);
-      return { value, model: CHATGPT_MODEL, provider: 'chatgpt', latencyMs: performance.now() - started,
+      return { value, model: this.model, provider: 'chatgpt', latencyMs: performance.now() - started,
         usage: { inputTokens, outputTokens, totalTokens: count(envelope.usage.total_tokens), estimatedCostUsd: null } };
     } catch (error) {
       if (signal.aborted) throw new LlmProviderError(request.signal?.aborted ? 'cancelled' : 'timeout', request.signal?.aborted ? '生成を中止しました。' : 'ChatGPTの生成がタイムアウトしました。');

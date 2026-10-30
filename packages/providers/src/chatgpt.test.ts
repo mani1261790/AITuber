@@ -80,3 +80,12 @@ it('bounds completed-envelope metadata separately from generated output text', a
   expect((await readResponsesStream(Response.json(envelope),30_000)).text).toBe('{}');
   await expect(readResponsesStream(Response.json(envelope),1000)).rejects.toMatchObject({code:'response_too_large'});
 });
+
+it('uses the explicitly selected authoring model without changing the runtime default', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => stream(event({type:'response.output_text.delta',delta:'{"title":"test"}'})+event({type:'response.completed'})));
+  for (const model of ['gpt-6.1-sol', undefined]) {
+    const result = await new ChatGptLlmProvider(async () => 'test',fetcher,180000,model).createContext({purpose:'generation',systemInstruction:'test'}).generate(request);
+    expect(result.model).toBe(model ?? 'gpt-6-luna');
+    expect(JSON.parse(String(fetcher.mock.calls.at(-1)![1]?.body)).model).toBe(result.model);
+  }
+});
