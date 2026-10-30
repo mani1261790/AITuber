@@ -32,3 +32,13 @@ it("retains the glance through speech actions but renews an explicit point at th
  for(let i=0;i<180;i++)weight=focus.update(1/60,"detail",true);
  expect(weight).toBeLessThan(.16);
 });
+
+it("releases attention monotonically while the old pointing arm retracts",()=>{
+ const focus=new TeachingFocus();let previous=1;
+ for(let i=0;i<240;i++)previous=focus.update(1/60,"detail",true,"point-1");
+ for(let i=0;i<90;i++){
+  const next=focus.update(1/60,undefined,false,"point-1");
+  expect(next).toBeLessThanOrEqual(previous);previous=next;
+ }
+ expect(previous).toBeLessThan(.003);
+});

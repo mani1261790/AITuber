@@ -14,7 +14,8 @@ export class TeachingFocus {
     else if(commandId !== undefined) this.commandId=commandId;
     this.age+=dt;
     this.silence=speaking?0:this.silence+dt;
-    const target=this.age<1.4 || this.silence>.7 ? 1 : .15;
+    // Releasing a cue must not restart its introductory glance while the arm retracts.
+    const target=cue === undefined ? 0 : this.age<1.4 || this.silence>.7 ? 1 : .15;
     this.weight+=(target-this.weight)*(1-Math.exp(-dt*3));
     return this.weight;
   }

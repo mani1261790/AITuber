@@ -301,9 +301,10 @@ export class TeacherMotion {
         this.pointTrackingInitialized = true;
       } else this.pointTracking.update(input.target, delta);
     }
-    const focusWeight = this.teachingFocus.update(delta, input.target?.toArray().map(n=>n.toFixed(2)).join(":"), input.speaking, input.pointActionId)
-      * THREE.MathUtils.smootherstep(this.pointBlend,0,1);
     const traveling=input.moving || !!input.turning;
+    const attentionTarget=traveling ? undefined : input.target;
+    const focusWeight = this.teachingFocus.update(delta, attentionTarget?.toArray().map(n=>n.toFixed(2)).join(":"), input.speaking, input.pointActionId)
+      * THREE.MathUtils.smootherstep(this.pointBlend,0,1);
     const audience=teacherGazeTarget(this.vrm,traveling,input.cameraPosition);
     const scan=this.audienceScan.update(delta,this.speakingHold>0 && !traveling && !input.reducedMotion && focusWeight<.05);
     if(!traveling){

@@ -99,3 +99,9 @@ it('uses strict course output and validates normalized optional nulls against or
   expect(format.schema.required).toEqual(['title','note']);
   expect(format.schema.properties.note.anyOf).toContainEqual({type:'null'});
 });
+
+it('reports safe terminal codes and incomplete reasons without provider messages', async () => {
+ await expect(readResponsesStream(stream(event({type:'response.incomplete',response:{incomplete_details:{reason:'max_output_tokens'},error:{message:'private input'}}})),100)).rejects.toThrow('reason=max_output_tokens');
+ await expect(readResponsesStream(stream(event({type:'error',code:'server_error',message:'private input'})),100)).rejects.toThrow('code=server_error');
+ await expect(readResponsesStream(stream(event({type:'response.failed',response:{error:{code:'Bearer secret',message:'private input'}}})),100)).rejects.toThrow('code=unknown');
+});

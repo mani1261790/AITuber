@@ -98,8 +98,11 @@ export async function readResponsesStream(response: Response, limit: number): Pr
     if (!data || data === '[DONE]') return;
     const event = record(JSON.parse(data));
     if (event.type === 'response.failed' || event.type === 'error' || event.type === 'response.incomplete') {
-      const code = record(record(event.response).error).code;
-      throw new LlmProviderError('provider_error', code === 'subscription_sharing_usage_limit_exceeded' ? 'ChatGPTの利用上限に達しました。利用状況を確認してください。' : code === 'subscription_sharing_usage_unavailable' ? 'ChatGPTプランの利用が許可されていません。再接続してください。' : 'ChatGPTの生成が完了しませんでした。');
+      const result = record(event.response);
+      const code = record(result.error).code ?? record(event.error).code ?? event.code;
+      const safe = (value: unknown) => typeof value === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(value) ? value : 'unknown';
+      const detail = `type=${safe(event.type)}, code=${safe(code)}, reason=${safe(record(result.incomplete_details).reason)}`;
+      throw new LlmProviderError('provider_error', code === 'subscription_sharing_usage_limit_exceeded' ? 'ChatGPTの利用上限に達しました。利用状況を確認してください。' : code === 'subscription_sharing_usage_unavailable' ? 'ChatGPTプランの利用が許可されていません。再接続してください。' : `ChatGPTの生成が完了しませんでした（${detail}）。`);
     }
     if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
       outputBytes += new TextEncoder().encode(event.delta).byteLength;
@@ -135,7 +138,7 @@ async function schemaFailureDetail(response: Response): Promise<string> {
  let text='';let bytes=0;
  try {for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>16384)return '';text+=new TextDecoder().decode(part.value);}}
  finally{await reader.cancel().catch(()=>undefined);reader.releaseLock();}
- try {const e=JSON.parse(text)?.error;const safe=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_.\[\]-]{1,100}$/.test(v)?v:'unknown';
+ try {const e=JSON.parse(text)?.error;const safe=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_.[\]-]{1,100}$/.test(v)?v:'unknown';
   const message=typeof e?.message==='string'&&/^(Invalid schema for|Unsupported parameter|Unsupported value)/.test(e.message)?e.message.slice(0,800):'';
   return ` (${safe(e?.code)}, ${safe(e?.param)})${message ? ': '+message : ''}`;
  }catch{return '';}
