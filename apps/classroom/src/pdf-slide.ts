@@ -3,14 +3,37 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfSlideLayout, projectedPdfRegion } from "./pdf-slide-layout.ts";
 import type { StageScene } from "@aituber/presentation";
 export interface SlideAccess { code: string; accessToken: string }
+// Keep only a few pages and sources; a shared fetch must survive the old scene's abort.
+const sources = new Map<string, Promise<Uint8Array>>();
+const pages = new Map<string, ReturnType<typeof renderPage>>();
+function remember<T>(cache: Map<string, Promise<T>>, key: string, limit: number, create: () => Promise<T>) {
+  const found = cache.get(key);
+  if (found) { cache.delete(key); cache.set(key, found); return found; }
+  const pending = create(); cache.set(key, pending);
+  while (cache.size > limit) cache.delete(cache.keys().next().value!);
+  void pending.catch(() => { if (cache.get(key) === pending) cache.delete(key); });
+  return pending;
+}
 export async function renderPdfSlide(scene: StageScene, access: SlideAccess, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const key = JSON.stringify([access, scene.slide, scene.targets.map(t => [t.id, t.label, t.visible, t.pageRegion])]);
+  const result = await remember(pages, key, 3, () => renderPage(scene, access, AbortSignal.timeout(60000)));
+  signal.throwIfAborted();
+  return result;
+}
+async function renderPage(scene: StageScene, access: SlideAccess, signal: AbortSignal) {
   if (!scene.slide) throw new Error("Missing slide reference");
-  const response = await fetch(`/api/classrooms/${encodeURIComponent(access.code)}/source`, {
-    method:"POST", headers:{"content-type":"application/json"},
-    body:JSON.stringify({accessToken:access.accessToken,sourceId:scene.slide.sourceId}),signal,
+  const sourceId = scene.slide.sourceId;
+  const bytes = await remember(sources, JSON.stringify([access, sourceId]), 2, async () => {
+    const response = await fetch(`/api/classrooms/${encodeURIComponent(access.code)}/source`, {
+      method:"POST", headers:{"content-type":"application/json"},
+      body:JSON.stringify({accessToken:access.accessToken,sourceId}), signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) throw new Error(`PDF取得失敗 (${response.status})`);
+    return new Uint8Array(await response.arrayBuffer());
   });
-  if (!response.ok) throw new Error(`PDF取得失敗 (${response.status})`);
-  const data=new Uint8Array(await response.arrayBuffer());
+  // PDF.js transfers its buffer to the worker, so preserve the cached original.
+  const data = bytes.slice();
   signal.throwIfAborted();
   const {getDocument,GlobalWorkerOptions}=await import("pdfjs-dist");
   GlobalWorkerOptions.workerSrc=workerUrl;

@@ -1,3 +1,4 @@
+import { renderPdfSlide } from "./pdf-slide.ts";
 import {compilePointingPlan} from '@aituber/contracts';
 import { speechCaption } from "./speech-caption.ts";
 import { useSpeechEnvelope } from "./use-speech-envelope.ts";
@@ -224,6 +225,19 @@ function ClassroomApp() {
     if (!session || !displayUnit) return null;
     return resolveStageScene(session.course, displayUnit.sceneId, applyBoardPatches(session.course, createBoardState(session.course, displayUnit.sceneId), displayUnit.boardPatches));
   }, [session?.course, displayUnit]);
+  useEffect(() => {
+    if (!session || !displayUnit || !room || !participant) return;
+    const order = session.course.schedule.orderedUnitIds;
+    const nextId = order[order.indexOf(displayUnit.id) + 1];
+    const next = session.course.teachingUnits.find(unit => unit.id === nextId);
+    if (!next) return;
+    const nextScene = resolveStageScene(session.course, next.sceneId,
+      applyBoardPatches(session.course, createBoardState(session.course, next.sceneId), next.boardPatches));
+    if (!nextScene.slide) return;
+    const controller = new AbortController();
+    void renderPdfSlide(nextScene, {code: room.code, accessToken: participant.accessToken}, controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [session?.course, displayUnit?.id, room?.code, participant?.accessToken]);
   const noteTargetIds = new Set([
     ...(supplementCandidate?.boardPatches.map(patch => patch.targetId) ?? []),
     ...(session?.boardCorrections.filter(patch => patch.sceneId === scene?.id).map(patch => patch.targetId) ?? []),
