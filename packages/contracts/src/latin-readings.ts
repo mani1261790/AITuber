@@ -1,6 +1,6 @@
 /** Only Latin words/phrases are pronunciation overrides. Japanese remains original. */
 export const hasLatin=(text:string)=>/[\p{Script=Latin}]/u.test(text.normalize('NFKC'));
-export const isLatinSpan=(text:string)=>/^[\p{Script=Latin}\p{M} '\u2019\u2010\u2011-]+$/u.test(text.normalize('NFKC'))&&hasLatin(text);
+export const isLatinSpan=(text:string)=>/^[\p{Script=Latin}\p{M}0-9 '\u2019\u2010\u2011-]+$/u.test(text.normalize('NFKC'))&&hasLatin(text);
 export const toKatakana=(text:string)=>text.normalize('NFKC').replace(/[ぁ-ゖ]/g,char=>String.fromCharCode(char.charCodeAt(0)+0x60));
 export const isKatakanaReading=(text:string)=>/^[\p{Script=Katakana}ー・\s、。！？]+$/u.test(text)&&/[\p{Script=Katakana}]/u.test(text);
 export function pronunciationSpans(text:string){
@@ -11,7 +11,7 @@ export function pronunciationSpans(text:string){
  const flush=()=>{if(run)append(run,latin);run='';};
  for(let index=0;index<chars.length;index++){
   const char=chars[index]!;
-  const nextLatin:boolean=letter(char)||(latin&&/^[ '\u2019\u2010\u2011-]$/u.test(char)&&letter(chars[index+1]??''));
+  const nextLatin:boolean=letter(char)||(latin&&/^[₀-₉]$/.test(char))||(latin&&/^[ '\u2019\u2010\u2011-]$/u.test(char)&&letter(chars[index+1]??''));
   if(nextLatin!==latin){flush();latin=nextLatin;}run+=char;
  }
  flush();return result;

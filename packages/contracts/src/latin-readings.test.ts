@@ -17,3 +17,9 @@ it('rejects partially converted and legacy kana mappings while preserving Japane
  expect(isSelectiveReading({text:'LLMの説明',parts:[{text:'LLM',reading:'エルエルエム'},{text:'の説明',reading:'ノセツメイ'}]})).toBe(false);
  expect(pronunciationSpans('漢字は123のまま。')).toEqual([{text:'漢字は123のまま。',latin:false}]);
 });
+
+it('keeps mathematical subscripts attached to Latin variables for explicit spoken readings',()=>{
+ expect(pronunciationSpans('x₁、w₂x₂。数字2はそのまま')).toEqual([{text:'x₁',latin:true},{text:'、',latin:false},{text:'w₂x₂',latin:true},{text:'。数字2はそのまま',latin:false}]);
+ expect(isSelectiveReading({text:'x₂の値',parts:[{text:'x₂',reading:'エックス・ニ'},{text:'の値',reading:'の値'}]})).toBe(true);
+ expect(isLatinSpan('123')).toBe(false);
+});
