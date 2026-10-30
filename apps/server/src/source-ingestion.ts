@@ -84,7 +84,7 @@ export async function ingestSources(uploads: readonly AuthoringSourceUpload[]): 
 
 const allowedMimeTypes = new Set<AuthoringSourceUpload["mimeType"]>(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/markdown", "text/plain"]);
 const allowedRights = new Set<AuthoringSourceUpload["rights"]["basis"]>(["owned", "licensed", "public-domain", "permission"]);
-function decodeBase64(value: string): Uint8Array { if (typeof value !== "string" || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new TypeError("source data must be base64"); return Uint8Array.from(Buffer.from(value, "base64")); }
+function decodeBase64(value: string): Uint8Array { if (typeof value !== "string" || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new TypeError("source data must be base64"); return Uint8Array.from(Buffer.from(value, "base64")); }
 function boundedFileName(value: string): string { const name = typeof value === "string" ? value.trim().normalize("NFKC") : ""; const hasControl = [...name].some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127); if (!name || name === "." || name === ".." || name.length > 255 || name.includes("/") || name.includes("\\") || hasControl) throw new TypeError("invalid source file name"); return name; }
 function boundedExtractedText(value: string): string { const text = value.trim(); if (!text) throw new TypeError("source did not contain extractable text"); if (new TextEncoder().encode(text).byteLength > 350_000) throw new TypeError("extracted source text exceeds 350000 bytes"); return text; }
 function assertFileSignature(mimeType: AuthoringSourceUpload["mimeType"], bytes: Uint8Array, index: number) {

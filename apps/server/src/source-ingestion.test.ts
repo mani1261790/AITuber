@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { ingestSources } from "./source-ingestion.ts";
 
 describe("ingestSources", () => {
+  it("validates large base64 inputs without exhausting the regex stack", async () => {
+    const large=Buffer.concat([Buffer.from("%PDF-1.4\n"),Buffer.alloc(21*1024*1024,32)]).toString("base64");
+    await expect(ingestSources([{fileName:"large.pdf",mimeType:"application/pdf",dataBase64:large,rights:{basis:"owned"}}])).rejects.toThrow("exceeds its size limit");
+    for(const value of ["A===","AA=A","AAAA====","AAA!","AAA",large.slice(0,-4)+"AA=A"]){
+      await expect(ingestSources([{fileName:"invalid.pdf",mimeType:"application/pdf",dataBase64:value,rights:{basis:"owned"}}])).rejects.toThrow("must be base64");
+    }
+  });
+
   it("extracts Markdown and preserves its rights metadata", async () => {
     const result = await ingestSources([{ fileName: "lesson.md", mimeType: "text/markdown", dataBase64: Buffer.from("# 二次関数\n頂点を求める。多い").toString("base64"), rights: { basis: "owned", note: "講師作成" } }]);
     expect(result.sources[0]).toMatchObject({ kind: "markdown", fileName: "lesson.md", rights: { basis: "owned", note: "講師作成" } });
