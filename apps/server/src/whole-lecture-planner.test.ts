@@ -125,3 +125,18 @@ it('keeps the prepared script when a patch fails review and does not repeat the 
  const provider=new FixedResponseLlmProvider([{units:t.units},{passed:true,reason:'verified'},{baseRevision:digest(t.units),replacements:[replacement]},{passed:false,reason:'bad patch'}]);const planner=createWholeLecturePlanner(()=>provider,t.artifacts,t.readings);await planner(t.input,new AbortController().signal);
  const input={...t.input,questionAnswer:'回答済み'};const result=await planner(input,new AbortController().signal);expect(result.source).toBe('generated');expect(result.reason).toContain('準備済み');expect(result.actions).toContainEqual(expect.objectContaining({type:'speak',text:first.beats[0]!.text}));await planner(input,new AbortController().signal);expect(provider.calls).toHaveLength(4);expect(t.readings.prepare).toHaveBeenCalledTimes(1);
 });
+
+it('binds generated patches to the current revision and each allowed unit hash',async()=>{
+ const {boundScriptPatchSchema}=await import('./whole-lecture-planner.ts');
+ const {parseAndValidate}=await import('@aituber/providers');
+ const t=setup(),first=t.units[0]!,second=t.units[1]!;
+ const base:LectureScript={version:1,key:'test',revision:digest(t.units),units:t.units,handledAnswers:[]};
+ const schema=boundScriptPatchSchema(base,new Set([first.unitId,second.unitId]));
+ const patch={baseRevision:base.revision,replacements:[{...first,expectedHash:digest(first)}]};
+ expect(()=>parseAndValidate(JSON.stringify(patch),schema)).not.toThrow();
+ expect(()=>parseAndValidate(JSON.stringify({...patch,baseRevision:'truncated'}),schema)).toThrow();
+ expect(()=>parseAndValidate(JSON.stringify({...patch,replacements:[{...first,expectedHash:digest(second)}]}),schema)).toThrow();
+ const empty=boundScriptPatchSchema(base,new Set());
+ expect(()=>parseAndValidate(JSON.stringify({...patch,replacements:[]}),empty)).not.toThrow();
+ expect(()=>parseAndValidate(JSON.stringify(patch),empty)).toThrow();
+});

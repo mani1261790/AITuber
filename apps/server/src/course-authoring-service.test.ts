@@ -436,3 +436,22 @@ it('resumes only package preparation without regenerating approved material',asy
  const job=await service.create({durationMinutes:5,sources:[source]});expect(job.status).toBe('stopped');
  const resumed=await service.resume(job.id);expect(resumed.status).toBe('available');expect(resumed.attempts).toBe(1);expect(provider.calls.map(call=>call.purpose)).toEqual(['generation','review']);expect(prepare).toHaveBeenCalledTimes(2);expect(available).toHaveBeenCalledOnce();
 });
+
+it('constrains source IDs and each PDF page range before generation', async () => {
+  const {sourceBoundGenerationSchema}=await import('./course-authoring-service.ts');
+  const {parseAndValidate}=await import('@aituber/providers');
+  const course=structuredClone(quadraticFunctionsFixture) as CoursePackage;
+  const id=course.sources[0]!.id;
+  course.sources[0]!.kind='pdf';course.sources[0]!.pageCount=2;
+  course.scenes[0]!.slide={sourceId:id,pageNumber:2};
+  const schema=sourceBoundGenerationSchema(course.sources);
+  expect(()=>parseAndValidate(JSON.stringify(course),schema)).not.toThrow();
+  course.scenes[0]!.slide.pageNumber=3;
+  expect(()=>parseAndValidate(JSON.stringify(course),schema)).toThrow();
+  course.scenes[0]!.slide.pageNumber=2;
+  course.semanticTargets[0]!.sourceIds=[id.slice(0,-1)];
+  expect(()=>parseAndValidate(JSON.stringify(course),schema)).toThrow();
+  course.semanticTargets[0]!.sourceIds=[id];
+  course.teachingUnits[0]!.sourceIds=['source.invented'];
+  expect(()=>parseAndValidate(JSON.stringify(course),schema)).toThrow();
+});
