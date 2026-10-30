@@ -217,7 +217,7 @@ export class TeacherMotion {
     this.vrm.humanoid.update();
   }
 
-  update(delta: number, input: { sideStep?:SideStep|undefined; speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
+  update(delta: number, input: { holdPointing?:boolean|undefined; sideStep?:SideStep|undefined; speed: number; moving: boolean; speaking: boolean; speechLevel?: number | undefined; target: THREE.Vector3 | null; cameraPosition?: THREE.Vector3; side: "left" | "right"; reducedMotion: boolean; gesture?: TeachingGesture | undefined; actionId?: string | undefined; pointActionId?: string | undefined; turning?: boolean | undefined; turnSign?: number | undefined; turnProgress?: number | undefined; departureWalkBlend?: number | undefined; propPose?: StagePropPose | undefined }) {
     delta = Math.min(Math.max(delta, 0), 1 / 30);
     if(input.propPose?.kind==="screen" && input.propPose.weight>0){
       if(!this.screenReachOrigin){
@@ -228,7 +228,7 @@ export class TeacherMotion {
       }
     }else this.screenReachOrigin=null;
     const voiced = input.speaking && (input.speechLevel === undefined || input.speechLevel > .045);
-    const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId);
+    const indicating = this.pointCue.update(delta,input.moving ? null : input.target,voiced,input.pointActionId,input.holdPointing);
     this.speakingHold = input.speaking ? .7 : Math.max(0, this.speakingHold - delta);
     const previousState = this.state;
     if (input.reducedMotion || input.sideStep) this.state = "idle";

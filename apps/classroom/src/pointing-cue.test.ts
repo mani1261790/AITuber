@@ -32,3 +32,13 @@ it("repeats a deliberate pointing command at the same target, but not its contin
  expect(cue.update(1/60,target,true,"point-2")).toBe(false);
  expect(cue.update(1/60,target,true,"point-3")).toBe(true);
 });
+
+
+it("holds explicitly authored speech intervals until the target is released",()=>{
+ const cue=new PointingCue(),target=new Vector3(-2,2,0);
+ for(let i=0;i<1200;i++)expect(cue.update(1/60,target,i%100>20,undefined,true)).toBe(true);
+ expect(cue.update(1/60,null,false,undefined,true)).toBe(false);
+ expect(cue.update(1/60,target,true,undefined,true)).toBe(true);
+ for(let i=0;i<300;i++)cue.update(1/60,target,true);
+ expect(cue.update(1/60,target,true)).toBe(false);
+});

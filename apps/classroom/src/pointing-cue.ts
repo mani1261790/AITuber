@@ -6,7 +6,7 @@ export class PointingCue {
   private age = 0;
   private commandId: string | undefined;
   private speechStarted = false;
-  update(delta: number, target: Vector3 | null, speaking: boolean, commandId?: string) {
+  update(delta: number, target: Vector3 | null, speaking: boolean, commandId?: string, hold = false) {
     const key = target ? target.toArray().map(n=>n.toFixed(2)).join(":") : "";
     // Only an explicit point_at command renews an unchanged focus. The later
     // speak action omits this id, so TTS waits and breaths retain cue history.
@@ -18,6 +18,6 @@ export class PointingCue {
     if(!target)return false;
     if(speaking && !this.speechStarted){this.speechStarted=true;this.age=0;}
     this.age+=Math.max(0,delta);
-    return this.age<3.2;
+    return hold || this.age<3.2;
   }
 }
