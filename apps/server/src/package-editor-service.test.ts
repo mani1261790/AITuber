@@ -53,3 +53,16 @@ it('reading previews do not modify the package or publish it and reject oversize
  const prepare=vi.spyOn(PreparedReadings.prototype,'prepare').mockResolvedValue();
  try{expect(await t.service.previewReadings(id,{texts:[prepared.text]})).toEqual([prepared]);expect(t.service.get(id)).toEqual(before);expect(t.published).toEqual(t.original);await expect(t.service.previewReadings(id,{texts:['x'.repeat(601)]})).rejects.toThrow('600');}finally{get.mockRestore();prepare.mockRestore();}
 });
+
+it('replaces source only with a matching available prepared package and preserves a backup',async()=>{
+ const t=setup(),id=t.original.id;t.service.begin(id,t.service.get(id).revision);await t.service.runPendingStep();
+ const before=t.service.get(id),next=structuredClone(before.course);
+ next.sources[0]!.contentHash='sha256:'+'a'.repeat(64);next.title='Restored';for(const u of next.teachingUnits)u.teachingPlan={keyPoints:['説明'],explanationFlow:['説明する']};
+ expect(()=>t.service.replaceReviewed(id,'stale',next)).toThrow('別の画面');
+ expect(()=>t.service.replaceReviewed(id,before.revision,{...next,id:'other'})).toThrow('同じ教材ID');
+ expect(()=>t.service.replaceReviewed(id,before.revision,{...next,status:'draft'})).toThrow('審査済み');
+ const result=t.service.replaceReviewed(id,before.revision,next);
+ expect(result.status).toBe('published');expect(result.course.version).toBe(before.course.version+1);expect(t.published.title).toBe('Restored');
+ const store=new PreparedArtifacts(t.path);expect(store.read('source-replacement-backup:'+id+':'+before.revision)).toEqual(before);
+ const register=vi.fn();new PackageEditorService(store,t.planner,()=>{throw Error();},()=>t.original,register,()=>{});expect(register).toHaveBeenCalledWith(result.course);
+});

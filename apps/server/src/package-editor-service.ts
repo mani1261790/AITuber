@@ -36,6 +36,17 @@ export class PackageEditorService {
   course.status='draft';course.version=original.version;course.contentHash=original.contentHash;
   return this.write({course,baseHash:current.baseHash,revision:digest(course),status:'draft',error:null});
  }
+ replaceReviewed(id:string,revision:string,course:ReadonlyCoursePackage){
+  const current=this.get(id);this.assertEditable(current,revision);
+  if(course.id!==id||course.status!=='available'||!course.performance)throw new TypeError('同じ教材IDの審査済み教材が必要です');
+  const next=structuredClone(parseCoursePackage(course)) as CoursePackage;
+  const issues=validateAuthoredPlan(next);if(issues.length)throw new TypeError(issues.map(issue=>issue.message).join(' / '));
+  this.store.write('source-replacement-backup:'+id+':'+current.revision,current);
+  next.version=Math.max(current.course.version,this.lookup(id).version)+1;
+  next.contentHash=`sha256:${digest({...next,contentHash:''})}`;
+  this.store.write('published:'+id,next);this.register(next);
+  return this.write({course:next,baseHash:next.contentHash,revision:digest(next),status:'published',error:null});
+ }
  async previewReadings(id:string,request:{texts:string[];dictionary?:CoursePackage['pronunciationDictionary']}){
   this.get(id);
   if(!Array.isArray(request.texts)||request.texts.length<1||request.texts.length>3||request.texts.some(text=>typeof text!=='string'||!text.trim()||text.length>600))throw new TypeError('台本は1〜600文字、3件までです');

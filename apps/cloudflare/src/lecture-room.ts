@@ -208,6 +208,16 @@ export class LectureRoom extends DurableObject<AppEnv> {
       const source=this.services.packages.get(decodeURIComponent(packageSource[1])).course.sources.find(source=>source.id===url.searchParams.get('sourceId')&&source.kind==='pdf');
       if(!source)throw new RangeError('PDFがありません');await flushSourceFiles();return storedPdfResponse(()=>this.env.STATE.get(`sources/${source.contentHash.slice(7)}`));
     }
+    const replacement=path.match(/^\/api\/packages\/([^/]+)\/replace-reviewed-source$/);
+    if(replacement&&request.method==='POST'){
+      const id=decodeURIComponent(replacement[1]);
+      const body=await read<{revision:string;authoringJobId:string}>();
+      const candidate=authoring.get(body.authoringJobId);
+      if(candidate.status!=='available'||!candidate.course||!candidate.review||!candidate.review.gates.every(g=>g.passed&&g.evaluated!==false))throw new TypeError('審査を通過した教材が必要です');
+      const active=lecture.getCurrentSession();
+      if(active&&active.course.id===id&&active.status!=='FINISHED')throw new TypeError('授業を終了してから資料を差し替えてください');
+      return json(200,{draft:this.services.packages.replaceReviewed(id,body.revision,candidate.course)});
+    }
     const packageMatch=path.match(/^\/api\/packages\/([^/]+)(?:\/(publish|stop|readings))?$/);
     if(packageMatch){
       const id=decodeURIComponent(packageMatch[1]);const packages=this.services.packages;
