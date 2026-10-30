@@ -23,7 +23,7 @@ interface AuthoringCheckpoint {
   id: string; status: "running" | "available" | "budget-exhausted" | "failed" | "stopped"; createdAt: string; updatedAt: string;
   request: { durationMinutes: number; targetLevel?: string; learningGoals?: string[]; timeBudgetMs: number; costBudgetUsd: number };
   inputs: IngestedSources; candidate: CoursePackage | null; review: ReviewResult | null; attempts: number; elapsedMs: number; estimatedCostUsd: number;
-  attemptLimit?: number; lastFailure?: string; repeatedFailures?: number;
+  attemptLimit?: number; lastFailure?: string; repeatedFailures?: number; preparationPending?: boolean;
   error: string | null;
 }
 
@@ -67,9 +67,9 @@ export class CourseAuthoringService {
     return view(checkpoint);
   }
   async resume(id: string, budget: ResumeAuthoringRequest = {}): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "available" || checkpoint.status === "running") return view(checkpoint); extendBudget(checkpoint, budget); checkpoint.status = "running"; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, false); }
-  async restart(id: string): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, true); }
+  async restart(id: string): Promise<AuthoringJobView> { this.#assertIdle(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); return this.#run(checkpoint, true); }
   beginResume(id: string, budget: ResumeAuthoringRequest = {}): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status !== "available" && checkpoint.status !== "running") { extendBudget(checkpoint, budget); checkpoint.status = "running"; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, false); } return view(checkpoint); }
-  beginRestart(id: string): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, true); return view(checkpoint); }
+  beginRestart(id: string): AuthoringJobView { if (this.#running.has(id) || this.#active.has(id)) return this.get(id); this.#assertNoOtherJob(id); const checkpoint = this.#load(id); if (checkpoint.status === "running") return view(checkpoint); checkpoint.status = "running"; checkpoint.candidate = null; checkpoint.review = null; delete checkpoint.preparationPending; checkpoint.attempts = 0; resetRetryLimit(checkpoint); checkpoint.elapsedMs = 0; checkpoint.estimatedCostUsd = 0; checkpoint.error = null; this.#save(checkpoint); this.#background(checkpoint, true); return view(checkpoint); }
 
   async #initialize(request: CreateAuthoringRequest): Promise<AuthoringCheckpoint> {
     this.#assertNoOtherJob();
@@ -104,7 +104,19 @@ export class CourseAuthoringService {
     this.#active.set(checkpoint.id, { checkpoint, controller });
     let markedAt = performance.now();
     const markElapsed = () => { const now = performance.now(); checkpoint.elapsedMs += now - markedAt; markedAt = now; };
+    const finishPreparation=async()=>{
+      if(!checkpoint.candidate||!checkpoint.review||!allGatesPassed(checkpoint.review))throw new Error('教材の審査が完了していません');
+      checkpoint.preparationPending=true;this.#save(checkpoint);
+      if(this.#preparePackage){
+        for(let attempt=0;;attempt++){
+          try{checkpoint.candidate=await this.#preparePackage(checkpoint.candidate,signal);break;}
+          catch(error){signal.throwIfAborted();if(attempt>=1||!isRepairableOutputError(error))throw error;}
+        }
+      }
+      signal.throwIfAborted();checkpoint.candidate=makeAvailable(checkpoint.candidate);checkpoint.status='available';checkpoint.error=null;delete checkpoint.preparationPending;this.#onAvailable(checkpoint.candidate);
+    };
     try {
+      if(checkpoint.preparationPending)await finishPreparation();
       let iterations = 0;
       while (checkpoint.status === "running" && iterations++ < maxIterations) {
         signal.throwIfAborted();
@@ -156,10 +168,10 @@ export class CourseAuthoringService {
         if (!checkpoint.review) throw new Error("教材の審査結果を取得できませんでした。");
         if (!allGatesPassed(checkpoint.review)) recordFailure(checkpoint);
         markElapsed(); this.#save(checkpoint);
-        if (allGatesPassed(checkpoint.review)) { if(this.#preparePackage)checkpoint.candidate=await this.#preparePackage(checkpoint.candidate,signal); signal.throwIfAborted(); checkpoint.candidate = makeAvailable(checkpoint.candidate); checkpoint.status = "available"; checkpoint.error = null; this.#onAvailable(checkpoint.candidate); break; }
+        if (allGatesPassed(checkpoint.review)) { await finishPreparation(); break; }
         forceRegenerate = false;
       }
-    } catch (error) { if (controller.signal.aborted) { /* stop() already persisted the stopped checkpoint. */ } else if (deadline.aborted) { stopForBudget(checkpoint); } else { checkpoint.status = error instanceof ResourceBudgetConfigurationError || error instanceof ResourceBudgetExceededError ? "budget-exhausted" : "failed"; checkpoint.error = error instanceof Error ? error.message : "教材作成に失敗しました。"; } }
+    } catch (error) { if (controller.signal.aborted) { /* stop() already persisted the stopped checkpoint. */ } else if (deadline.aborted) { stopForBudget(checkpoint); } else if(checkpoint.preparationPending) { checkpoint.status="stopped";checkpoint.error="教材は審査済みです。台本・読みの準備を再開できます："+(error instanceof Error?error.message:"準備に失敗しました"); } else { checkpoint.status = error instanceof ResourceBudgetConfigurationError || error instanceof ResourceBudgetExceededError ? "budget-exhausted" : "failed"; checkpoint.error = error instanceof Error ? error.message : "教材作成に失敗しました。"; } }
     this.#active.delete(checkpoint.id);
     markElapsed(); this.#save(checkpoint); return view(checkpoint);
   }

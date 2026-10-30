@@ -426,5 +426,13 @@ it('does not make a course available before package preparation completes', asyn
 it('does not publish a course when package preparation fails',async()=>{
  const source=upload('Package preparation failure');const provider=new FixedResponseLlmProvider([remapSource(quadraticFunctionsFixture,sourceId(source)),passingReview()]);const available=vi.fn();
  const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'package-failure-')),llm:()=>provider,preparePackage:async()=>{throw Error('読みの審査に失敗');},onAvailable:available});
- const job=await service.create({durationMinutes:5,sources:[source]});expect(job.status).toBe('failed');expect(job.course).toBeNull();expect(available).not.toHaveBeenCalled();
+ const job=await service.create({durationMinutes:5,sources:[source]});expect(job.status).toBe('stopped');expect(job.course).toBeNull();expect(available).not.toHaveBeenCalled();expect(service.get(job.id).error).toContain('再開できます');
+});
+
+it('resumes only package preparation without regenerating approved material',async()=>{
+ const source=upload('Preserve approved pages');const provider=new FixedResponseLlmProvider([remapSource(quadraticFunctionsFixture,sourceId(source)),passingReview()]);const available=vi.fn();
+ const prepare=vi.fn().mockRejectedValueOnce(new Error('temporary preparation error')).mockImplementation(async(course:CoursePackage)=>course);
+ const service=new CourseAuthoringService({directory:mkdtempSync(join(tmpdir(),'package-resume-')),llm:()=>provider,preparePackage:prepare,onAvailable:available});
+ const job=await service.create({durationMinutes:5,sources:[source]});expect(job.status).toBe('stopped');
+ const resumed=await service.resume(job.id);expect(resumed.status).toBe('available');expect(resumed.attempts).toBe(1);expect(provider.calls.map(call=>call.purpose)).toEqual(['generation','review']);expect(prepare).toHaveBeenCalledTimes(2);expect(available).toHaveBeenCalledOnce();
 });
