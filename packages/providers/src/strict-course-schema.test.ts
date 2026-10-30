@@ -18,3 +18,7 @@ it('retains exact identifiers in unions and keeps array validation local',()=>{
  expect(strictCourseSchema(source)).not.toHaveProperty('uniqueItems');
  expect(()=>parseAndValidate('["a","a"]',source)).toThrow();
 });
+
+it('closes placeholder source metadata objects required by strict structured output',()=>{
+ expect(strictCourseSchema({type:'array',items:{type:'object'}})).toEqual({type:'array',items:{type:'object',properties:{},required:[],additionalProperties:false}});
+});

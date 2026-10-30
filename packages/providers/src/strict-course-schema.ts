@@ -10,9 +10,10 @@ export function strictCourseSchema(input: unknown): unknown {
     if (!localOnly.has(key)) result[key] = strictCourseSchema(value);
   }
   if ('const' in result) { result.enum = [result.const]; delete result.const; }
-  if (node.type === 'object' && node.properties && typeof node.properties === 'object') {
+  if (node.type === 'object') {
     const required = new Set(Array.isArray(node.required) ? node.required : []);
-    const properties = result.properties as Record<string, unknown>;
+    const properties = (result.properties ?? {}) as Record<string, unknown>;
+    result.properties = properties;
     for (const key of Object.keys(properties)) {
       if (!required.has(key)) properties[key] = {anyOf: [properties[key], {type:'null'}]};
     }
