@@ -117,7 +117,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
   override async fetch(request:Request):Promise<Response> {
     return runtimeContext.run(this.context,async()=>{
       if(new URL(request.url).pathname==='/api/diagnostics/storage-budget' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,this.budget.snapshot());
-      if(new URL(request.url).pathname==='/api/diagnostics/last-error' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,{failure:this.lastRequestError});
+      if(new URL(request.url).pathname==='/api/diagnostics/last-error' && request.method==='GET' && request.headers.get('x-aituber-surface')==='operator') return json(200,{failure:this.lastRequestError,providerErrorFormat:2});
       let stage='route';
       let admitted=false;
       try {
