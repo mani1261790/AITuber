@@ -24,7 +24,10 @@ export class PointingCue {
     this.age+=dt;
     // Authored text selects WHEN to point, not an unlimited arm hold. A changed
     // target must not extend a chain of adjacent cues indefinitely either.
-    if(this.age>=3.2){this.raisedAge=0;return false;}
+    if(this.age>=3.2){
+      if(hold && this.raisedAge>0)this.restRemaining=1.2;
+      this.raisedAge=0;return false;
+    }
     if(!hold){this.raisedAge=0;return true;}
     if(this.restRemaining>0)return false;
     this.raisedAge+=dt;

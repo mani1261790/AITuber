@@ -53,3 +53,11 @@ it("lowers the arm between an uninterrupted chain of different targets",()=>{
  expect(longest).toBeLessThanOrEqual(192);
  expect(longestRest).toBeGreaterThanOrEqual(71);
 });
+
+it("keeps the rest when a target changes just after the previous cue times out",()=>{
+ const cue=new PointingCue(),target=new Vector3(-2,2,0);
+ for(let i=0;i<198;i++)cue.update(1/60,target,true,undefined,true);
+ for(let i=0;i<60;i++)expect(cue.update(1/60,new Vector3(-2,1,0),true,undefined,true)).toBe(false);
+ for(let i=0;i<20;i++)cue.update(1/60,new Vector3(-2,1,0),true,undefined,true);
+ expect(cue.update(1/60,new Vector3(-2,1,0),true,undefined,true)).toBe(true);
+});
