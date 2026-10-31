@@ -153,9 +153,18 @@ export const PointingPlanSchema = closedObject({
 });
 export type PointingPlan=Static<typeof PointingPlanSchema>;
 
+export const MotionCueSchema = closedObject({
+ id: Identifier, start: Type.Integer({minimum:0}), end: Type.Integer({minimum:1}), quote: NonEmptyText,
+ kind: Type.Union([Type.Literal("board"),Type.Literal("slides"),Type.Literal("left"),Type.Literal("center"),Type.Literal("right"),Type.Literal("explain"),Type.Literal("emphasize"),Type.Literal("nod"),Type.Literal("idle")]),
+ markdown: Type.Optional(Type.String({maxLength:6000})),
+ reason: Type.Optional(Type.String({maxLength:300})),
+});
+export type MotionCue=Static<typeof MotionCueSchema>;
+
 export const LectureBeatSchema = closedObject({
   staging: Type.Optional(Type.Union([Type.Literal("auto"),Type.Literal("manual")])),
   pointing:Type.Optional(PointingPlanSchema),
+  motions:Type.Optional(Type.Array(MotionCueSchema,{maxItems:16})),
   text: Type.String({minLength:1,maxLength:600}), targetId: Type.Union([Identifier,Type.Null()]),
   camera: Type.Union([Type.Literal("lecture"),Type.Literal("material")]),
   position: Type.Union([Type.Literal("left"),Type.Literal("center"),Type.Literal("right")]),

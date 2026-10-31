@@ -1,9 +1,10 @@
+import {motionIssues} from './motion-plan.ts';
 import type {ReadonlyCoursePackage,PointingPlan} from './course-package.ts';
 export function pointingAnchorValid(text:string,cue:{start:number;end:number;quote:string}){return cue.end>cue.start&&cue.end<=text.length&&text.slice(cue.start,cue.end)===cue.quote;}
 export function pointingIssues(course:ReadonlyCoursePackage):string[]{
  const errors:string[]=[];
  for(const script of course.performance?.units??[]){const unit=course.teachingUnits.find(u=>u.id===script.unitId),scene=course.scenes.find(s=>s.id===unit?.sceneId);
-  for(const beat of script.beats){const p=beat.pointing;if(!p)continue;
+  for(const beat of script.beats){errors.push(...motionIssues(beat));const p=beat.pointing;if(!p)continue;
    if(p.mode!=='manual')continue;
    const seen=new Set<string>();let end=0;
    for(const cue of [...p.cues].sort((a,b)=>a.start-b.start)){

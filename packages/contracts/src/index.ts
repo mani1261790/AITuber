@@ -8,3 +8,5 @@ export * from "./latin-readings.ts";
 
 export * from "./pointing-plan.ts";
 export * from './material-catalog.ts';
+
+export * from './motion-plan.ts';

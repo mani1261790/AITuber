@@ -3,7 +3,7 @@ import {LectureEventStore} from "@aituber/storage";
 import {TestToneSpeechProvider} from "@aituber/providers";
 import {FixedLectureService} from "./fixed-lecture-service.ts";
 import {quadraticFunctionsFixture} from "@aituber/content";
-import type {LessonPlanner} from "./lesson-director.ts";
+import {compileBeats,type LessonPlanner} from "./lesson-director.ts";
 const resources: {close():void}[]=[];
 afterEach(()=>{resources.reverse().forEach(r=>r.close());resources.length=0;vi.useRealTimers();});
 function create(planner?:LessonPlanner,speechProvider?:TestToneSpeechProvider) {
@@ -400,7 +400,7 @@ it('stops arrival acknowledgements while continuing speech and skips a no-op spe
 
 it.each(['arrival-first','introduction-first'])('speaks during board setup and gates the explanation on both receipts: %s',async order=>{
  vi.useFakeTimers();const voice=new TestToneSpeechProvider(1000);
- const service=create(async()=>({source:'generated',reason:null,actions:[{type:'show_blackboard',drawing:{id:'board.test',markdown:'補足',purpose:'補足'},introduction:'質問に合わせて黒板も使えます。'},{type:'speak',text:'ここに書いた式を説明します。'}]}),voice);
+ const service=create(async()=>({source:'generated',reason:null,actions:compileBeats([{text:'質問に合わせて黒板も使えます。ここに書いた式を説明します。',targetId:null,position:'right',camera:'lecture',surface:'slides',motions:[{id:'board',start:0,end:'質問に合わせて黒板も使えます。'.length,quote:'質問に合わせて黒板も使えます。',kind:'board',markdown:'補足'}]}])}),voice);
  const initial=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  const view=service.getSession(initial.id);
  expect(view.direction).toMatchObject({phase:'drawing',boardNarrationReady:false});

@@ -1,3 +1,4 @@
+import {MotionEditor} from './motion-editor.tsx';
 import {CourseSettings} from './course-settings.tsx';
 import {BeatSettings} from './beat-settings.tsx';
 import {TeachingSettings,cleanTeachingSettings} from './teaching-settings.tsx';
@@ -37,7 +38,10 @@ export function PackageEditor({id}:{id:string}){
    course.assessments.push({id:questionId,afterUnitId:previous,learningGoalIds:[...unit.learningGoalIds],prompt:'新しい練習問題',responseKind:kind,options:kind==='multiple-choice'?['選択肢 A','選択肢 B']:[],rubric:{criteria:['正解と、その理由を入力してください'],commonMistakes:[]}});ids.splice(index,0,questionId);setLessonItemIds(course,ids);
   });setCollapsed(previous=>{const next=new Set(previous);next.delete(questionId);return next;});setAddAt(null);setTimeout(()=>{document.getElementById(questionId)?.scrollIntoView({block:'center',behavior:'smooth'});document.getElementById(`prompt-${questionId}`)?.focus();},0);
  }
- function updateBeat(unitId:string,index:number,update:(beat:Beat)=>void){change(course=>{const script=ensurePerformance(course).units.find(unit=>unit.unitId===unitId);if(script)update(script.beats[index]!);});}
+ function updateBeat(unitId:string,index:number,update:(beat:Beat)=>void){
+  if(!draft||saving)return;
+  try{const course=structuredClone(draft.course);for(const [key,value] of Object.entries(edits)){const [u,i]=JSON.parse(key) as [string,number];applyRuby(course,u,i,value);}const script=ensurePerformance(course).units.find(unit=>unit.unitId===unitId);if(script)update(script.beats[index]!);generation.current++;setDraft({...draft,course});setEdits({});setDirty(true);setError('');setNotice('');}catch(e){setError(e instanceof Error?e.message:'台本を確認してください');}
+ }
  function restructure(unitId:string,indices:(number|null)[]){
   if(saving||!draft)return;
   try{const course=structuredClone(draft.course);for(const [key,value] of Object.entries(edits)){const [u,i]=JSON.parse(key) as [string,number];applyRuby(course,u,i,value);}arrangeBeats(course,unitId,indices);
@@ -84,6 +88,7 @@ export function PackageEditor({id}:{id:string}){
       const key=JSON.stringify([itemId,index]),value=edits[key]??formatRuby(beat.text,course.performance?.readings.find(item=>item.text===beat.text),course.pronunciationDictionary);
       return <div className="script-beat" key={`${key}:${beatRevision}`}><div className="beat-toolbar"><strong>台本 {index+1}</strong><button disabled={index===0} aria-label={`台本 ${index+1}を前へ`} onClick={()=>{const indices=(script?.beats??[beat]).map((_,i)=>i);[indices[index-1],indices[index]]=[indices[index]!,indices[index-1]!];restructure(itemId,indices);}}><Icon kind="up"/></button><button disabled={index===(script?.beats.length??1)-1} aria-label={`台本 ${index+1}を後へ`} onClick={()=>{const indices=(script?.beats??[beat]).map((_,i)=>i);[indices[index],indices[index+1]]=[indices[index+1]!,indices[index]!];restructure(itemId,indices);}}><Icon kind="down"/></button>{remove===`beat:${key}`?<><button className="danger-outline" onClick={()=>restructure(itemId,(script?.beats??[beat]).map((_,i)=>i).filter(i=>i!==index))}>この台本を削除する</button><button onClick={()=>setRemove(null)}>残す</button></>:<button disabled={(script?.beats.length??1)<=1} onClick={()=>setRemove(`beat:${key}`)}>台本を削除</button>}</div><div className="surface-switch" role="group" aria-label={`${title}の説明に使うもの`}>{(['slides','board'] as const).map(surface=><button key={surface} aria-pressed={(beat.surface??'slides')===surface} onClick={()=>updateBeat(itemId,index,target=>{target.surface=surface;if(surface==='slides'){if(target.blackboardMarkdown)boardDrafts.current.set(key,{markdown:target.blackboardMarkdown,reason:target.boardReason??null});target.blackboardMarkdown=null;target.boardReason=null;delete target.transitionText;}else {const previous=boardDrafts.current.get(key);if(previous){target.blackboardMarkdown=previous.markdown;target.boardReason=previous.reason;}target.targetId=null;target.position='right';target.pointing={mode:'off',cues:[]};}})}><Icon kind={surface==='slides'?'slide':'board'}/>{surface==='slides'?'スライド':'黒板'}</button>)}</div>
        <RubyEditor value={value} label={`${title}の台本${index>0?` ${index+1}`:''}`} disabled={busy||running||saving} dictionary={course.pronunciationDictionary} read={readRuby} onChange={value=>{generation.current++;setError('');if(!script)updateBeat(itemId,index,()=>{});setEdits(previous=>({...previous,[key]:value}));setDirty(true);setNotice('');}}/>
+       <MotionEditor beat={beat as Beat} text={(()=>{try{return parseRuby(value).map(p=>p.text).join('');}catch{return beat.text;}})()} update={update=>updateBeat(itemId,index,update)}/>
        <BeatSettings beat={beat as Beat} update={update=>updateBeat(itemId,index,update)}/>
       </div>;
      })}<button className="add-beat" disabled={(script?.beats.length??1)>=3} onClick={()=>restructure(itemId,[...(script?.beats??[{}]).map((_,i)=>i),null])}><Icon kind="plus"/>台本を追加</button><span className="muted">1枚につき3個まで</span></div></div>}

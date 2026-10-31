@@ -1,3 +1,4 @@
+import {expandMotionBeat} from "@aituber/contracts";
 import {VideoRecording} from './video-recording.tsx';
 import { renderPdfSlide } from "./pdf-slide.ts";
 import {compilePointingPlan} from '@aituber/contracts';
@@ -207,7 +208,7 @@ function ClassroomApp() {
   const pointAt = useMemo(() => {
     if (!session?.speech.unitId) return ():string|null|undefined => undefined;
     const beats=session.course.performance?.units.find(unit=>unit.unitId===session.speech.unitId)?.beats??[];
-    const matching=beats.filter(beat=>beat.text===session.speech.text);
+    const matching=beats.flatMap(beat=>expandMotionBeat(JSON.parse(JSON.stringify(beat)))).filter(beat=>beat.text===session.speech.text);
     const plan=matching.length===1?matching[0]?.pointing:undefined;
     if(!plan&&beats.some(beat=>beat.pointing&&beat.pointing.mode!=='auto'))return ()=>null;
     return compilePointingPlan(plan,session.speech.text??'',session.speech.segments);

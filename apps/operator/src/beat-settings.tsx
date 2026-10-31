@@ -8,6 +8,5 @@ export function BeatSettings({beat,update}:{beat:EditableBeat;update:(edit:(beat
  <div><span>身振り</span><div className="button-row" role="group" aria-label="身振り">{(['explain','emphasize','nod','idle'] as const).map((gesture,i)=><button key={gesture} aria-pressed={(beat.gesture??'explain')===gesture} onClick={()=>update(b=>{b.gesture=gesture;b.staging='manual';})}>{['説明する','強調する','うなずく','控えめ'][i]}</button>)}</div>{beat.gesture==='listen'&&<p className="muted">既存設定は「聞く」です。発話中は「説明する」で再生されます。</p>}</div>
  {!board&&<label className="beat-checkbox"><input type="checkbox" checked={beat.walkWhileSpeaking??false} onChange={e=>update(b=>{b.walkWhileSpeaking=e.target.checked;b.staging='manual';})}/>移動しながら話す</label>}
  {pointing&&<p className="muted">移動やスクリーン操作の間は指差しを休み、到着してから指します。</p>}
- {board&&<label>黒板の準備中に話す内容<textarea value={beat.transitionText??''} maxLength={600} onChange={e=>update(b=>{b.transitionText=e.target.value;})}/></label>}
  </div></details>;
 }
