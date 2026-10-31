@@ -34,11 +34,22 @@ it("repeats a deliberate pointing command at the same target, but not its contin
 });
 
 
-it("holds explicitly authored speech intervals until the target is released",()=>{
+it("rests during an overlong authored interval without renewing at each breath",()=>{
  const cue=new PointingCue(),target=new Vector3(-2,2,0);
- for(let i=0;i<1200;i++)expect(cue.update(1/60,target,i%100>20,undefined,true)).toBe(true);
+ for(let i=0;i<180;i++)expect(cue.update(1/60,target,i%100>20,undefined,true)).toBe(true);
+ for(let i=0;i<60;i++)cue.update(1/60,target,false,undefined,true);
+ for(let i=0;i<600;i++)expect(cue.update(1/60,target,i%100>20,undefined,true)).toBe(false);
  expect(cue.update(1/60,null,false,undefined,true)).toBe(false);
  expect(cue.update(1/60,target,true,undefined,true)).toBe(true);
- for(let i=0;i<300;i++)cue.update(1/60,target,true);
- expect(cue.update(1/60,target,true)).toBe(false);
+});
+
+it("lowers the arm between an uninterrupted chain of different targets",()=>{
+ const cue=new PointingCue();let run=0,longest=0,rest=0,longestRest=0;
+ for(let i=0;i<600;i++){
+  const raised=cue.update(1/60,new Vector3(-2,Math.floor(i/60)%2+1,0),true,undefined,true);
+  if(raised){run++;rest=0;}else{run=0;rest++;}
+  longest=Math.max(longest,run);longestRest=Math.max(longestRest,rest);
+ }
+ expect(longest).toBeLessThanOrEqual(192);
+ expect(longestRest).toBeGreaterThanOrEqual(71);
 });
