@@ -165,9 +165,10 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
     const footPosition = new THREE.Vector3();
 
     const resize = () => {
-      const width = Math.max(1, host.clientWidth);
-      const height = Math.max(1, host.clientHeight);
-      renderer.setPixelRatio(lecturePixelRatio(width, height, window.devicePixelRatio, renderer.capabilities.maxTextureSize));
+      const exporting=new URLSearchParams(window.location.search).get('export')==='mp4';
+      const width = exporting?1280:Math.max(1, host.clientWidth);
+      const height = exporting?720:Math.max(1, host.clientHeight);
+      renderer.setPixelRatio(exporting?1:lecturePixelRatio(width, height, window.devicePixelRatio, renderer.capabilities.maxTextureSize));
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();

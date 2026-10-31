@@ -238,7 +238,7 @@ export class FixedLectureService {
 
   createSession(request: CreateSessionRequest): FixedSessionView {
     if (this.#requireLiveExecution && (!this.#planner || !this.#speechProvider || !this.#voiceId)) throw new TypeError("講義開始にはLLMと音声接続の設定が必要です。無音のテスト進行では開始できません。");
-    const course = this.#courses.get(request.coursePackageId);
+    let course = this.#courses.get(request.coursePackageId);
     if (!course) throw new RangeError(`Unknown Course Package ${request.coursePackageId}`);
     if (!Number.isInteger(request.durationMinutes) || request.durationMinutes < 1 || request.durationMinutes > 480) {
       throw new TypeError("durationMinutes must be an integer between 1 and 480");
@@ -251,12 +251,18 @@ export class FixedLectureService {
 
     if(this.#planner?.requiresPackage && !course.performance)throw new TypeError("教材の台本が未準備です。パッケージ編集画面で「台本を準備して公開」を実行してください。");
     if(course.performance && request.durationMinutes!==course.durationMinutes)throw new TypeError("このパッケージの講義時間を指定してください。時間変更には教材の再作成が必要です。");
+    if(request.videoExport!==undefined&&typeof request.videoExport!=='boolean')throw new TypeError('動画書き出しの指定を確認してください');
+    if(request.videoExport){
+      if(!course.performance)throw new TypeError('公開済みの台本が必要です');
+      if(course.durationMinutes>30)throw new TypeError('動画は30分以内の教材で書き出してください');
+      course={...course,assessments:[],schedule:{...course.schedule,orderedItemIds:[...course.schedule.orderedUnitIds]}};
+    }
     const id = `session.${randomUUID()}`;
     this.#store.createSession({ id, coursePackageId: course.id, coursePackageVersion: course.version });
     const runtime: RuntimeSession = {
       id,
       course,
-      configuredDurationMinutes: request.durationMinutes,
+      configuredDurationMinutes: request.videoExport?30:request.durationMinutes,
       state: createLessonState({ sessionId: id, orderedUnitIds: course.schedule.orderedUnitIds }),
       displayUnitId: null,
       assessmentId: null,

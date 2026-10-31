@@ -160,6 +160,7 @@ export interface SessionSpeechView {
 }
 
 export interface CreateSessionRequest {
+  readonly videoExport?: boolean;
   readonly coursePackageId: string;
   readonly durationMinutes: number;
 }

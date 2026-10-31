@@ -21,6 +21,17 @@ describe("FixedLectureService", () => {
     vi.useRealTimers();
   });
 
+  it("exports without assessments while preserving the registered course",()=>{
+    service.close();const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;
+    course.performance={version:1,readings:[],units:course.teachingUnits.map(u=>({unitId:u.id,beats:[{text:u.speechText,targetId:null,camera:'lecture',position:'right'}]}))};
+    service=new FixedLectureService({store,courses:[course],playbackUnitMs:100});
+    const exported=service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes,videoExport:true});
+    expect(exported.configuredDurationMinutes).toBe(30);
+    expect(exported.course.assessments).toEqual([]);expect(exported.course.schedule.orderedItemIds).toEqual(course.schedule.orderedUnitIds);expect(course.assessments.length).toBeGreaterThan(0);
+    expect(()=>service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes,videoExport:true})).toThrow('進行中');
+    service.command(exported.id,{command:'finish'});
+    const regular=service.createSession({coursePackageId:course.id,durationMinutes:course.durationMinutes});expect(regular.course.assessments).toEqual(course.assessments);
+  });
   it("reads the authored exercise introduction, waits for an answer, and resumes safely", async()=>{
     service.close();
     const course=structuredClone(quadraticFunctionsFixture) as import('@aituber/contracts').CoursePackage;

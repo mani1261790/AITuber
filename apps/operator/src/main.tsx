@@ -1,3 +1,4 @@
+import {VideoExport} from './video-export.tsx';
 import { MaterialLibrary } from "./material-library.tsx";
 import { materialTitle, isPreviousMaterial, sortMaterials } from "./material-catalog.ts";
 import { PackageEditor } from "./package-editor.tsx";
@@ -13,8 +14,8 @@ const gateLabels = { "source-alignment": "出典と内容", "factual-consistency
 type Scope = "authoring" | "session" | "connection";
 type Confirmation = { title: string; description: string; label: string; run(): void };
 
-type Page = "editor" | "lecture" | "materials" | "history" | "new" | "connection";
-function currentPage(): Page { const page = window.location.hash.replace("#/", ""); if(page.startsWith("editor/"))return "editor"; return page === "materials" || page === "history" || page === "new" || page === "connection" ? page : "lecture"; }
+type Page = "export" | "editor" | "lecture" | "materials" | "history" | "new" | "connection";
+function currentPage(): Page { const page = window.location.hash.replace("#/", ""); if(page.startsWith("export/"))return "export"; if(page.startsWith("editor/"))return "editor"; return page === "materials" || page === "history" || page === "new" || page === "connection" ? page : "lecture"; }
 function OperatorApp() {
   const [page, setPage] = useState<Page>(currentPage);
   useEffect(() => { const change = () => {setPage(currentPage()); setNotice(null); setError(null); window.scrollTo(0, 0);}; window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
@@ -161,7 +162,7 @@ function OperatorApp() {
   return <div className="app-layout">
     <aside className="sidebar"><a className="brand" href="#/lecture">講義管理</a><nav aria-label="管理メニュー">{([['lecture', '講義'], ['materials', '教材'], ['connection', '接続設定']] as const).map(([target, label]) => <a key={target} href={`#/${target}`} aria-current={(page === target || target === "materials" && (page === "editor" || page === "new" || page === "history")) ? "page" : undefined}>{label}</a>)}</nav></aside>
     <main className="workspace">
-      <header className="page-header"><h1><HeadingIcon kind={page} />{({editor:"パッケージを編集", lecture: "講義", materials: "教材", history: "教材の作成履歴", new: "教材を作成", connection: "接続設定"})[page]}</h1><div className="page-tools">{!loaded && <span role="status">読み込み中</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>更新</button></div></header>
+      <header className="page-header"><h1><HeadingIcon kind={page} />{({export:"MP4を書き出す",editor:"パッケージを編集", lecture: "講義", materials: "教材", history: "教材の作成履歴", new: "教材を作成", connection: "接続設定"})[page]}</h1><div className="page-tools">{!loaded && <span role="status">読み込み中</span>}<button className="text-button" onClick={() => setRefresh(value => value + 1)}>更新</button></div></header>
       {(page === "materials" || page === "history") && <nav className="material-nav" aria-label="教材メニュー"><a href="#/materials" aria-current={page === "materials" ? "page" : undefined}>利用できる教材</a><a href="#/history" aria-current={page === "history" ? "page" : undefined}>作成履歴{activeJob ? "（作成中）" : ""}</a><a className="button primary" href="#/new">新しい教材を作成</a></nav>}
 
       {page === "editor" && <PackageEditor key={window.location.hash} id={decodeURIComponent(window.location.hash.slice("#/editor/".length))} />}
@@ -183,6 +184,7 @@ function OperatorApp() {
           {activeJob && activeJob.id !== job?.id && <div className="message warning">別の教材を作成中です。<button className="text-button" onClick={() => setSelectedJobId(activeJob.id)}>実行中の処理を表示</button></div>}
         </section>
       </>}
+      {page === "export" && <VideoExport key={window.location.hash} course={courses.find(c=>c.id===decodeURIComponent(window.location.hash.slice("#/export/".length)))} activeSession={activeSession} classroomOrigin={classroomOrigin}/>}
       {page === "materials" && <MaterialLibrary onCatalog={setCatalog} courses={courses} activeSession={activeSession} onPrepare={course=>{setCourseId(course.id);setDuration(course.durationMinutes);}}/>}
       {page === "new" && <section className="card creation-form"><a href="#/materials">教材一覧に戻る</a><h2><HeadingIcon kind="new" />資料と作成条件</h2><fieldset disabled={busy.authoring || Boolean(activeJob)}>
             <div className="upload-zone"><strong>教材ファイル</strong><p>PDF・画像・Markdown・テキスト</p><label className="file-picker"><span className="button">ファイルを選ぶ</span><input aria-label="教材ファイルを選択" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt" onChange={event => {setSourceFiles([...event.target.files ?? []]); event.target.value = "";}} /></label><p className="file-selection" role="status">{sourceFiles.length ? `${sourceFiles.length}件のファイルを選択中` : "ファイルは選択されていません"}</p></div>
