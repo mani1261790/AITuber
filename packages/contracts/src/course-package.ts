@@ -118,7 +118,7 @@ export const TeachingUnitSchema = closedObject({
   speakingGuidance: Type.Optional(closedObject({
     requiredPhrases: Type.Array(ShortText, { maxItems: 16 }),
     avoidPhrases: Type.Array(ShortText, { maxItems: 16 }),
-    explanationNotes: ShortText,
+    explanationNotes: Type.String({maxLength:512}),
   })),
   captionText: NonEmptyText,
   skippable: Type.Boolean(),
