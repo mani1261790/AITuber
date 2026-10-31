@@ -12,6 +12,7 @@ import { applyBoardPatches, createBoardState, focusSemanticTargets, resolveMasco
 import "@fontsource/zen-kaku-gothic-new/japanese-400.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-500.css";
 import "@fontsource/zen-kaku-gothic-new/japanese-700.css";
+import "@fontsource/klee-one/600.css";
 import "katex/dist/katex.min.css";
 import { LessonStage } from "./lesson-texture.tsx";
 import { RichText } from "./rich-text.tsx";

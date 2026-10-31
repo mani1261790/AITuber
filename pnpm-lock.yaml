@@ -69,6 +69,9 @@ importers:
       '@fontsource/ibm-plex-mono':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource/klee-one':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource/zen-kaku-gothic-new':
         specifier: ^5.3.0
         version: 5.3.0
@@ -495,6 +498,9 @@ packages:
 
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
+
+  '@fontsource/klee-one@5.3.0':
+    resolution: {integrity: sha512-1mnMRQO70AnTCHaWy5ovYKjbvszpOp7//bMDZ+PnjBMmar5YRcbskVzM4u+Syd8CMWw353R3BvsrsKQrwVRnEw==}
 
   '@fontsource/zen-kaku-gothic-new@5.3.0':
     resolution: {integrity: sha512-2t88gAaUkqIAFARfO8GkT1x57QBRx8A0pWeB0CIrIahnzdanWjcV4thPCSv9BJmpeRndq6qbFx1KYglHykiPhw==}
@@ -1909,6 +1915,8 @@ snapshots:
       levn: 0.4.1
 
   '@fontsource/ibm-plex-mono@5.3.0': {}
+
+  '@fontsource/klee-one@5.3.0': {}
 
   '@fontsource/zen-kaku-gothic-new@5.3.0': {}
 
