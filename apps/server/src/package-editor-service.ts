@@ -1,3 +1,4 @@
+import {MaterialCatalogStore} from './material-catalog-store.ts';
 import {CoursePackageValidationError,parseCoursePackage,type CoursePackage,type PackageDraft,type ReadonlyCoursePackage} from '@aituber/contracts';
 import type {LlmProvider} from '@aituber/providers';
 import {PreparedArtifacts,digest} from './prepared-artifacts.ts';
@@ -18,6 +19,8 @@ export class PackageEditorService {
    if(draft?.status==='reviewing'){draft.status='failed';draft.error='公開処理が中断されました。内容を確認して再度公開してください。';store.write('draft:'+id,draft);}
   }
  }
+ getCatalog(){return new MaterialCatalogStore(this.store).get();}
+ saveCatalog(input:unknown){return new MaterialCatalogStore(this.store).save(input,this.lookup);}
  private ids(){return this.store.read<string[]>('package-index')??[];}
  private write(draft:PackageDraft){const ids=this.ids();if(!ids.includes(draft.course.id))this.store.write('package-index',[...ids,draft.course.id]);this.store.write('draft:'+draft.course.id,draft);return structuredClone(draft);}
  get(id:string):PackageDraft {

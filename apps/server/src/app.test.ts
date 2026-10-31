@@ -252,3 +252,15 @@ function authoringJob(): AuthoringJobView {
   const now = new Date(0).toISOString();
   return { id: "authoring.123e4567-e89b-12d3-a456-426614174000", status: "running", createdAt: now, updatedAt: now, request: { durationMinutes: 15, timeBudgetMs: 300_000, costBudgetUsd: 2 }, review: null, attempts: 0, elapsedMs: 0, estimatedCostUsd: 0, error: null, sourceCount: 1, course: null };
 }
+
+it('keeps material organization operator-only and passes revisioned saves to the catalog store',async()=>{
+ const catalog={revision:0,groups:[{id:'other',label:'その他'}],entries:[]};
+ const saveCatalog=vi.fn(value=>({...value,revision:1}));
+ const packages={getCatalog:()=>catalog,saveCatalog} as unknown as import('./package-editor-service.ts').PackageEditorService;
+ const server=createApp(undefined,undefined,undefined,undefined,undefined,undefined,packages);servers.add(server);server.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+ expect((await fetch(base+'/api/material-catalog')).status).toBe(403);
+ expect((await fetch(base+'/api/material-catalog',{method:'PUT',headers:{'x-aituber-surface':'classroom','content-type':'application/json'},body:JSON.stringify(catalog)})).status).toBe(403);expect(saveCatalog).not.toHaveBeenCalled();
+ const headers={'x-aituber-surface':'operator','content-type':'application/json'};
+ expect(await(await fetch(base+'/api/material-catalog',{headers})).json()).toEqual({catalog});
+ const response=await fetch(base+'/api/material-catalog',{method:'PUT',headers,body:JSON.stringify(catalog)});expect(response.status).toBe(200);expect((await response.json()).catalog.revision).toBe(1);expect(saveCatalog).toHaveBeenCalledWith(catalog);
+});

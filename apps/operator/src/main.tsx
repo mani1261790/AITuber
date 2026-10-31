@@ -4,7 +4,7 @@ import { PackageEditor } from "./package-editor.tsx";
 import { pdfPageImages } from "./pdf-page-images.ts";
 import { StrictMode, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
+import type { MaterialCatalog, AuthoringJobView, AuthoringSourceUpload, ClassroomRoomView, CourseSummary, FixedSessionView, LlmSettingsView, SessionCommandRequest } from "@aituber/contracts";
 import "./styles.css";
 
 declare const __AITUBER_CLASSROOM_ORIGIN__: string;
@@ -19,6 +19,7 @@ function OperatorApp() {
   const [page, setPage] = useState<Page>(currentPage);
   useEffect(() => { const change = () => {setPage(currentPage()); setNotice(null); setError(null); window.scrollTo(0, 0);}; window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
   const [courses, setCourses] = useState<CourseSummary[]>([]);
+  const [catalog,setCatalog]=useState<MaterialCatalog|null>(null);
   const [courseId, setCourseId] = useState("");
   const [duration, setDuration] = useState(6);
   const [authoringDuration, setAuthoringDuration] = useState(15);
@@ -72,9 +73,10 @@ function OperatorApp() {
       const version = revision.current;
       let retryDelay = 10000;
       try {
-        const snapshot = await fetchJson<{courses: CourseSummary[]; session: FixedSessionView | null; classroom: ClassroomRoomView | null; jobs: AuthoringJobView[]; authoringFailure?: {id: string; message: string} | null; settings: LlmSettingsView}>("/api/operator/snapshot", {signal: controller.signal});
+        const snapshot = await fetchJson<{catalog?:MaterialCatalog;courses: CourseSummary[]; session: FixedSessionView | null; classroom: ClassroomRoomView | null; jobs: AuthoringJobView[]; authoringFailure?: {id: string; message: string} | null; settings: LlmSettingsView}>("/api/operator/snapshot", {signal: controller.signal});
         if (controller.signal.aborted || version !== revision.current || locks.current.size) return;
         setCourses(snapshot.courses);
+        if(snapshot.catalog)setCatalog(snapshot.catalog);
         if (!seededCourse.current && snapshot.courses[0]) { seededCourse.current = true; setCourseId(snapshot.courses[0].id); setDuration(snapshot.courses[0].durationMinutes); }
         if (snapshot.authoringFailure) setError(snapshot.authoringFailure.message);
         setSession(snapshot.session); setClassroom(snapshot.classroom); setJobs(snapshot.jobs); setSettings(snapshot.settings);
@@ -181,7 +183,7 @@ function OperatorApp() {
           {activeJob && activeJob.id !== job?.id && <div className="message warning">別の教材を作成中です。<button className="text-button" onClick={() => setSelectedJobId(activeJob.id)}>実行中の処理を表示</button></div>}
         </section>
       </>}
-      {page === "materials" && <MaterialLibrary courses={courses} activeSession={activeSession} onPrepare={course=>{setCourseId(course.id);setDuration(course.durationMinutes);}}/>}
+      {page === "materials" && <MaterialLibrary onCatalog={setCatalog} courses={courses} activeSession={activeSession} onPrepare={course=>{setCourseId(course.id);setDuration(course.durationMinutes);}}/>}
       {page === "new" && <section className="card creation-form"><a href="#/materials">教材一覧に戻る</a><h2><HeadingIcon kind="new" />資料と作成条件</h2><fieldset disabled={busy.authoring || Boolean(activeJob)}>
             <div className="upload-zone"><strong>教材ファイル</strong><p>PDF・画像・Markdown・テキスト</p><label className="file-picker"><span className="button">ファイルを選ぶ</span><input aria-label="教材ファイルを選択" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.txt" onChange={event => {setSourceFiles([...event.target.files ?? []]); event.target.value = "";}} /></label><p className="file-selection" role="status">{sourceFiles.length ? `${sourceFiles.length}件のファイルを選択中` : "ファイルは選択されていません"}</p></div>
             {sourceFiles.length > 0 && <ul className="file-list">{sourceFiles.map((file, index) => <li key={`${file.name}-${index}`}><span>{file.name}<small>{(file.size / 1024 / 1024).toFixed(1)} MiB</small></span><button className="text-button" onClick={() => setSourceFiles(files => files.filter((_, i) => i !== index))} aria-label={`${file.name}を取り除く`}>削除</button></li>)}</ul>}
@@ -196,7 +198,7 @@ function OperatorApp() {
             <button className="primary full" disabled={!loaded || Boolean(syncError) || !connected || !sourceRights || !validDuration(authoringDuration) || !Number.isInteger(timeBudget) || timeBudget < 1 || timeBudget > 60 || !Number.isFinite(costBudget) || costBudget <= 0 || (!sourceFiles.length && !sourceNote.trim())} onClick={() => void startAuthoring()}>{busy.authoring ? "準備中…" : "この条件で作成を開始"}</button>
           </fieldset>{uploadProgress && <p role="status">{uploadProgress}</p>}</section>}
         {page === "lecture" && !activeSession && <section className="card" id="prepare" aria-labelledby="prepare-heading"><SectionTitle title="講義を準備する" id="prepare-heading"  />
-          <SelectField label="使用する教材" value={courseId} disabled={!courses.length || activeSession || Boolean(busy.session)} onChange={value => {setCourseId(value); const next = courses.find(item => item.id === value); if (next) setDuration(next.durationMinutes);}} options={sortMaterials(courses).map(course => ({value: course.id, label: `${isPreviousMaterial(course) ? "旧版 · " : ""}${materialTitle(course)}（${course.durationMinutes}分）`}))} />
+          <SelectField label="使用する教材" value={courseId} disabled={!courses.length || activeSession || Boolean(busy.session)} onChange={value => {setCourseId(value); const next = courses.find(item => item.id === value); if (next) setDuration(next.durationMinutes);}} options={sortMaterials(courses).sort((a,b)=>{const rank=(id:string)=>{const n=catalog?.entries.findIndex(e=>e.id===id)??-1;return n<0?10000:n;};return rank(a.id)-rank(b.id);}).map(course => {const entry=catalog?.entries.find(e=>e.id===course.id);return {value:course.id,label:`${(entry?.previous??isPreviousMaterial(course))?"旧版 · ":""}${entry?.title??materialTitle(course)}（${course.durationMinutes}分）`};})} />
           {selectedCourse && <div className="course-preview"><h3>{selectedCourse.title}</h3><p className="muted">{selectedCourse.targetLevel} · 標準 {selectedCourse.durationMinutes}分</p><strong>学習目標</strong><ul>{selectedCourse.learningGoals.map(goal => <li key={goal.id}>{goal.description}</li>)}</ul></div>}
           <label className="field">今回の講義時間<NumberField value={duration} onChange={setDuration} min={1} max={480} unit="分" disabled={selectedCourse?.packageReady || activeSession || Boolean(busy.session)} /></label>
           {selectedCourse?.packageReady === false && <p><a href={`#/editor/${encodeURIComponent(selectedCourse.id)}`}>台本を準備して公開してください</a></p>}

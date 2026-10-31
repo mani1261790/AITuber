@@ -54,7 +54,12 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
         requireSurface(request, "operator");
         if (!settings || !authoring) throw new RangeError("Operator services are unavailable");
         const session=api.getCurrentSession();
-        return json(response,200,{courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),authoringRevision:5,assessmentRevision:1,supplementRevision:13,authoringFailure:authoring.failure,settings:settings.get()});
+        return json(response,200,{catalog:packages?.getCatalog(),courses:api.listCourses(),session,classroom:session?classrooms.create(session.id):null,jobs:authoring.list(),authoringRevision:5,assessmentRevision:1,supplementRevision:13,authoringFailure:authoring.failure,settings:settings.get()});
+      }
+      if(url.pathname==='/api/material-catalog'){
+        requireSurface(request,'operator');if(!packages)throw new RangeError('教材整理は利用できません');
+        if(request.method==='GET')return json(response,200,{catalog:packages.getCatalog()});
+        if(request.method==='PUT')return json(response,200,{catalog:packages.saveCatalog(await readJson(request,256*1024))});
       }
       if (url.pathname === "/api/settings/llm") {
         requireSurface(request, "operator");
