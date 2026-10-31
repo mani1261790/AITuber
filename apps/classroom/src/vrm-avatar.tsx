@@ -116,7 +116,7 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
     let currentImage: LessonImage | null = null;
     let texture: THREE.CanvasTexture | null = null;
     let boardTexture: THREE.CanvasTexture | null = null;
-    let curtain = 0;
+    let curtain = Number(stageRef.current.projecting);
     const propMotion=new StagePropMotion(),propVisuals=new StagePropVisuals(scene);
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();

@@ -546,7 +546,7 @@ export class FixedLectureService {
     const epoch = runtime.state.epoch;
     const controller = new AbortController(); runtime.speechAbort = controller;
     const previous = this.#directions.get(runtime);
-    this.#directions.set(runtime,{ actionId: randomUUID(), phase:"planning", drawing:previous?.drawing ?? null, surface:previous?.surface ?? "board", position:previous?.position ?? this.#lastStagePosition.get(runtime) ?? "right", targetId:null, camera:previous?.camera ?? "lecture",source:"reference",reason:null });
+    this.#directions.set(runtime,{ actionId: randomUUID(), phase:"planning", drawing:previous?.drawing ?? null, surface:previous?.surface ?? (runtime.course.scenes.some(scene=>scene.id===unit.sceneId && scene.slide) ? "slides" : "board"), position:previous?.position ?? this.#lastStagePosition.get(runtime) ?? "right", targetId:null, camera:previous?.camera ?? "lecture",source:"reference",reason:null });
     runtime.speech = { ...emptySpeech(epoch),unitId:unit.id }; this.#publish(runtime);
     const prefetched = this.#prefetch.get(runtime); this.#prefetch.delete(runtime);
     let plan: DirectedPlan;

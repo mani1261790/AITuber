@@ -417,3 +417,14 @@ it.each(['arrival-first','introduction-first'])('speaks during board setup and g
  service.command(view.id,{command:'pause'});arrive();await vi.advanceTimersByTimeAsync(0);
  expect(service.getSession(view.id)).toMatchObject({status:'PAUSED',speech:{playing:false}});
 });
+
+it('keeps the initial PDF slide visible while the first plan is pending',async()=>{
+ vi.useFakeTimers();
+ const course=structuredClone(quadraticFunctionsFixture);
+ const unit=course.teachingUnits.find(u=>u.id===course.schedule.orderedUnitIds[0])!;
+ course.scenes.find(s=>s.id===unit.sceneId)!.slide={sourceId:course.sources[0]!.id,pageNumber:1};
+ const service=create(()=>new Promise(()=>{}),new TestToneSpeechProvider(1000));
+ service.registerCourse(course);
+ const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(session.id).direction).toMatchObject({phase:'planning',surface:'slides'});
+});
