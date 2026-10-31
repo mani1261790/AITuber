@@ -4,7 +4,7 @@ export function ensurePerformance(course:CoursePackage){
  if(!course.performance)course.performance={version:1,readings:[],units:course.schedule.orderedUnitIds.map(id=>({unitId:id,beats:[{text:course.teachingUnits.find(unit=>unit.id===id)!.speechText,targetId:null,camera:'lecture',position:'center',surface:'slides'}]}))};
  return course.performance;
 }
-export function syncUnitSpeech(course:CoursePackage){for(const script of course.performance?.units??[]){const unit=course.teachingUnits.find(u=>u.id===script.unitId);if(unit){unit.speechText=script.beats.map(b=>b.text).join('\n');unit.captionText=unit.speechText;}}}
+export function syncUnitSpeech(course:CoursePackage){for(const script of course.performance?.units??[]){const unit=course.teachingUnits.find(u=>u.id===script.unitId);if(unit){unit.speechText=script.beats.flatMap(b=>[...(b.transitionText?.trim()?[b.transitionText.trim()]:[]),b.text]).join('\n');unit.captionText=unit.speechText;}}}
 /** Preserve each beat's own pointing, ruby text, board and staging when changing order. */
 export function arrangeBeats(course:CoursePackage,unitId:string,indices:(number|null)[]){
  const script=ensurePerformance(course).units.find(u=>u.unitId===unitId);if(!script)throw Error('台本がありません');

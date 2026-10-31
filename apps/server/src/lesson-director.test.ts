@@ -559,10 +559,17 @@ it("continues the prepared script without waiting for a slow interruption patch"
 });
 
 
-it("prepares projection and position before an explicitly timed first explanation",async()=>{
+it("overlaps projection and travel with authored speech; the stage gates pointing",async()=>{
  const {compileBeats}=await import('./lesson-director.ts');
  const beat={text:'ここを説明します。',targetId:null,camera:'material' as const,position:'right' as const,surface:'slides' as const,walkWhileSpeaking:true,pointing:{mode:'manual' as const,cues:[{id:'cue.a',start:0,end:3,quote:'ここを',targetId:'target.a'}]}};
- const opening=compileBeats([beat]);expect(opening.map(a=>a.type)).toEqual(['show_slides','camera','move_to','release_point','speak','release_point']);
- expect(opening.find(a=>a.type==='speak')).not.toHaveProperty('surface');
+ const opening=compileBeats([beat]);expect(opening.map(a=>a.type)).toEqual(['camera','speak','release_point']);
+ expect(opening.find(a=>a.type==='speak')).toMatchObject({surface:'slides',position:'right'});
  const continuing=compileBeats([beat],undefined,'slides');expect(continuing.some(a=>a.type==='show_slides')).toBe(false);expect(continuing.find(a=>a.type==='speak')).toHaveProperty('position','right');
+});
+
+it("preserves explicit board preparation speech as a separate concurrent introduction",async()=>{
+ const {compileBeats}=await import('./lesson-director.ts');
+ const actions=compileBeats([{text:'ここに書いた式を説明します。',transitionText:'質問に合わせて黒板も使えます。',targetId:null,camera:'lecture',position:'right',surface:'board',blackboardMarkdown:'補足の式'}]);
+ expect(actions[0]).toMatchObject({type:'show_blackboard',introduction:'質問に合わせて黒板も使えます。'});
+ expect(actions.find(a=>a.type==='speak')).toMatchObject({text:'ここに書いた式を説明します。'});
 });

@@ -1,5 +1,5 @@
 import {assessmentIntroduction,lessonItemIds} from "@aituber/contracts";
-import { referencePlan, type LessonPlanner, type DirectorInput, type DirectedPlan } from "./lesson-director.ts";
+import { actionSpeechTexts, referencePlan, type LessonPlanner, type DirectorInput, type DirectedPlan } from "./lesson-director.ts";
 import type { LessonDirectionView, LessonAction } from "@aituber/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type {
@@ -528,7 +528,7 @@ export class FixedLectureService {
         if(this.#planner?.preparesWholeLecture)throw Error(result.reason ?? "講義台本の準備に失敗しました");
         return;
       }
-      for(const action of result.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);
+      for(const text of actionSpeechTexts(result.actions)) this.#prepareSpeech(runtime,text);
       if(this.#planner?.preparesWholeLecture){
         await Promise.all([...this.#preparedSpeech.get(runtime)?.values() ?? []].map(item=>item.promise));
         if(controller.signal.aborted || runtime.state.epoch!==epoch || runtime.state.status!=="PREPARING")return;
@@ -570,14 +570,17 @@ export class FixedLectureService {
       this.#haltExecution(runtime, `授業台本を生成できませんでした: ${plan.reason ?? "生成結果がありません"}`);
       return;
     }
-    const neededSpeech = new Set(plan.actions.filter(action=>action.type==="speak").map(action=>this.#speechText(runtime,action.text)));
+    const neededSpeech = new Set(actionSpeechTexts(plan.actions).map(text=>this.#speechText(runtime,text)));
     // A reviewed answer may become ready while this main-unit plan is pending.
     // Keep its prewarmed audio when pruning stale main-lecture work.
     const pendingAnswer = runtime.pendingSupplement?.view.candidate?.speechText;
     if (pendingAnswer) neededSpeech.add(this.#speechText(runtime,pendingAnswer));
     this.#preparedSpeech.get(runtime)?.forEach((item,key,cache)=>{if(!neededSpeech.has(key)){item.controller.abort();cache.delete(key);}});
-    for (const action of plan.actions) if (action.type === "speak") this.#prepareSpeech(runtime, action.text);
-    const spoken = plan.actions.filter(action=>action.type === "speak").map(action=>action.text).join(" ");
+    for (const action of plan.actions) {
+      if (action.type === "speak") this.#prepareSpeech(runtime, action.text);
+      if (action.type === "show_blackboard" && action.introduction) this.#prepareSpeech(runtime, action.introduction);
+    }
+    const spoken = actionSpeechTexts(plan.actions).join(" ");
     const nextId = runtime.state.orderedUnitIds[runtime.state.orderedUnitIds.indexOf(unit.id)+1];
     const nextUnit = runtime.course.teachingUnits.find(candidate=>candidate.id === nextId);
     if (nextUnit && !runtime.course.assessments.some(assessment=>assessment.afterUnitId === unit.id)) {
@@ -595,7 +598,7 @@ export class FixedLectureService {
       const nextSession = this.getSession(runtime.id);
       const projectedSession: FixedSessionView = {...nextSession, direction:{...nextSession.direction!,position:endingPosition,surface:endingSurface,drawing:endingDrawing,phase:"complete",traveling:false,targetId:null}};
       const promise = this.#planner!({session:projectedSession,unit:nextUnit,previousSpeech:spoken,remainingMs:this.getRemainingTimeMs(runtime.id)},nextController.signal).catch(()=>referencePlan(nextUnit,"先読みを再利用できませんでした"));
-      void promise.then(nextPlan=>{if (!nextController.signal.aborted && runtime.state.epoch===epoch && runtime.state.status==="TEACHING") for (const action of nextPlan.actions) if(action.type==="speak") this.#prepareSpeech(runtime,action.text);});
+      void promise.then(nextPlan=>{if (!nextController.signal.aborted && runtime.state.epoch===epoch && runtime.state.status==="TEACHING") for (const text of actionSpeechTexts(nextPlan.actions)) this.#prepareSpeech(runtime,text);});
       this.#prefetch.set(runtime,{unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller:nextController,plan:promise});
     }
     this.#runAction(runtime,unit.id,epoch,plan.actions,0);
@@ -713,9 +716,22 @@ export class FixedLectureService {
           const fail = () => this.#haltExecution(runtime,"板書の表示完了を確認できませんでした。教室画面を確認して再開してください。");
           const pending = {started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:after};
           this.#projection.set(runtime,pending);
-          this.#previousSpeech.set(runtime,speech.text);
-          this.#speechNext.set(runtime,()=>{pending.speechDone=true;if(pending.stageDone){this.#projection.delete(runtime);after();}});
-          this.#boardSpeechStart.set(runtime,()=>this.#speakUnit(runtime,unitId,speech.text));
+          this.#previousSpeech.set(runtime,[action.introduction,speech.text].filter(Boolean).join(" "));
+          const introduction=action.introduction?.trim();
+          let arrived=false,introduced=!introduction,started=false;
+          const beginBoard=()=>{
+            if(!arrived || !introduced || started)return;
+            started=true;
+            this.#directions.set(runtime,{...this.#directions.get(runtime)!,boardNarrationReady:true});
+            this.#speechNext.set(runtime,()=>{pending.speechDone=true;if(pending.stageDone){this.#projection.delete(runtime);after();}});
+            this.#speakUnit(runtime,unitId,speech.text);
+          };
+          this.#boardSpeechStart.set(runtime,()=>{arrived=true;beginBoard();});
+          if(introduction){
+            this.#directions.set(runtime,{...this.#directions.get(runtime)!,boardNarrationReady:false});
+            this.#speechNext.set(runtime,()=>{introduced=true;beginBoard();});
+            this.#speakUnit(runtime,unitId,introduction);
+          }
           return;
         }
         this.#stageNext.set(runtime,next);
@@ -900,7 +916,7 @@ export class FixedLectureService {
       const fallback=this.#planner.preparesWholeLecture?this.#planner({session:projected,unit:nextUnit,previousSpeech,remainingMs:this.getRemainingTimeMs(runtime.id)},new AbortController().signal):undefined;
       const prefetch={unitId:nextUnit.id,stamp:this.#contextStamp(runtime),controller,plan,ready:false,...(fallback?{fallback}:{})};
       const epoch=runtime.state.epoch;
-      const warm=async(result:DirectedPlan)=>{if(controller.signal.aborted||runtime.state.epoch!==epoch||["PAUSED","FINISHED"].includes(runtime.state.status))return result;const texts=result.actions.filter(action=>action.type==="speak").map(action=>action.text);for(const text of texts)this.#prepareSpeech(runtime,text);await Promise.all(texts.map(text=>this.#preparedSpeech.get(runtime)?.get(this.#speechText(runtime,text))?.promise));return result;};
+      const warm=async(result:DirectedPlan)=>{if(controller.signal.aborted||runtime.state.epoch!==epoch||["PAUSED","FINISHED"].includes(runtime.state.status))return result;const texts=actionSpeechTexts(result.actions);for(const text of texts)this.#prepareSpeech(runtime,text);await Promise.all(texts.map(text=>this.#preparedSpeech.get(runtime)?.get(this.#speechText(runtime,text))?.promise));return result;};
       if(fallback)void fallback.then(warm).catch(()=>{});
       prefetch.plan=plan.then(async result=>{if(controller.signal.aborted)return result;await warm(result);prefetch.ready=true;return result;}).catch(()=>fallback??referencePlan(nextUnit,"回答後の説明を先読みできませんでした"));
       this.#prefetch.set(runtime,prefetch);

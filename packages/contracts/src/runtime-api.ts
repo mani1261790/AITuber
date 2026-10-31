@@ -40,7 +40,7 @@ export type BlackboardDrawing = { readonly id: string; readonly purpose: string 
 );
 
 export type LessonAction =
-  | { type: "show_blackboard"; drawing: BlackboardDrawing }
+  | { type: "show_blackboard"; drawing: BlackboardDrawing; introduction?: string }
   | { type: "show_slides" }
   | { type: "move_to"; position: StagePosition }
   | { type: "point_at"; targetId: string }

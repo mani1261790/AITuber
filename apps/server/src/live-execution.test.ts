@@ -397,3 +397,23 @@ it('stops arrival acknowledgements while continuing speech and skips a no-op spe
  const second=other.createSession(request);await vi.advanceTimersByTimeAsync(0);
  expect(other.getSession(second.id).direction?.traveling).toBe(false);
 });
+
+it.each(['arrival-first','introduction-first'])('speaks during board setup and gates the explanation on both receipts: %s',async order=>{
+ vi.useFakeTimers();const voice=new TestToneSpeechProvider(1000);
+ const service=create(async()=>({source:'generated',reason:null,actions:[{type:'show_blackboard',drawing:{id:'board.test',markdown:'補足',purpose:'補足'},introduction:'質問に合わせて黒板も使えます。'},{type:'speak',text:'ここに書いた式を説明します。'}]}),voice);
+ const initial=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ const view=service.getSession(initial.id);
+ expect(view.direction).toMatchObject({phase:'drawing',boardNarrationReady:false});
+ expect(view.speech).toMatchObject({playing:true,text:'質問に合わせて黒板も使えます。'});
+ const arrive=()=>service.reportStageProgress(view.id,view.epoch,view.direction!.actionId,'owner',true);
+ const finish=()=>{const s=service.getSession(view.id).speech;service.reportPlayback(view.id,s.epoch,s.audioUrl!,0,'owner','playing',s.startedAt!);service.reportPlayback(view.id,s.epoch,s.audioUrl!,1000,'owner','ended',s.startedAt!);};
+ if(order==='arrival-first'){arrive();expect(service.getSession(view.id).speech.text).toBe(view.speech.text);finish();}
+ else {finish();await vi.advanceTimersByTimeAsync(850);expect(service.getSession(view.id).direction?.boardNarrationReady).toBe(false);arrive();}
+ await vi.advanceTimersByTimeAsync(850);
+ expect(service.getSession(view.id).speech).toMatchObject({playing:true,text:'ここに書いた式を説明します。'});
+ expect(service.getSession(view.id).direction?.boardNarrationReady).toBe(true);
+ const started=service.getSession(view.id).speech.startedAt;arrive();await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(view.id).speech.startedAt).toBe(started);
+ service.command(view.id,{command:'pause'});arrive();await vi.advanceTimersByTimeAsync(0);
+ expect(service.getSession(view.id)).toMatchObject({status:'PAUSED',speech:{playing:false}});
+});

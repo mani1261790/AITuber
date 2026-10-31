@@ -325,6 +325,7 @@ function ClassroomApp() {
           {scene && <section className="stage" aria-label={scene.title}>
             <LessonStage readPointTarget={()=>{
               if(!projecting)return undefined;
+              if(session.direction?.phase==='projecting'||session.direction?.traveling||session.direction?.phase==='moving')return null;
               if(!session.speech.playing)return pointAt(NaN);
               const clock=currentSpeechClock(audioRef.current,session.speech);
               const elapsed=session.speech.mode==='caption-fallback'?speechElapsedMs:clock?clock.elapsed*1000:NaN;

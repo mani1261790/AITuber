@@ -161,6 +161,7 @@ export const LectureBeatSchema = closedObject({
   position: Type.Union([Type.Literal("left"),Type.Literal("center"),Type.Literal("right")]),
   surface: Type.Optional(Type.Union([Type.Literal("slides"),Type.Literal("board")])),
   gesture: Type.Optional(Type.Union([Type.Literal("idle"),Type.Literal("listen"),Type.Literal("explain"),Type.Literal("emphasize"),Type.Literal("nod")])),
+  transitionText: Type.Optional(Type.String({maxLength:600})),
   walkWhileSpeaking: Type.Optional(Type.Boolean()),
   blackboardMarkdown: Type.Optional(Type.Union([Type.String({maxLength:6000}),Type.Null()])),
   boardReason: Type.Optional(Type.Union([Type.String({maxLength:300}),Type.Null()])),
