@@ -154,6 +154,7 @@ export const PointingPlanSchema = closedObject({
 export type PointingPlan=Static<typeof PointingPlanSchema>;
 
 export const LectureBeatSchema = closedObject({
+  staging: Type.Optional(Type.Union([Type.Literal("auto"),Type.Literal("manual")])),
   pointing:Type.Optional(PointingPlanSchema),
   text: Type.String({minLength:1,maxLength:600}), targetId: Type.Union([Identifier,Type.Null()]),
   camera: Type.Union([Type.Literal("lecture"),Type.Literal("material")]),

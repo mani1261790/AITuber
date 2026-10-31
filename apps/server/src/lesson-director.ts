@@ -19,7 +19,7 @@ export function referencePlan(unit: Unit, reason: string | null = null, currentP
   ] };
 }
 
-export interface Beat { pointing?: import("@aituber/contracts").PointingPlan; boardReason?: string | null; surface?: "board" | "slides"; gesture?: import("@aituber/contracts").TeachingGesture; walkWhileSpeaking?: boolean; blackboardMarkdown?: string | null; text: string; targetId: string | null; camera: "lecture" | "material"; position: "left" | "right" | "center" }
+export interface Beat { staging?: "auto" | "manual"; pointing?: import("@aituber/contracts").PointingPlan; boardReason?: string | null; surface?: "board" | "slides"; gesture?: import("@aituber/contracts").TeachingGesture; walkWhileSpeaking?: boolean; blackboardMarkdown?: string | null; text: string; targetId: string | null; camera: "lecture" | "material"; position: "left" | "right" | "center" }
 export const beatPlanSchema = { type: "object", additionalProperties: false, required: ["beats"], properties: { beats: { type: "array", minItems: 1, maxItems: 3, items: {
   type: "object", additionalProperties: false, required: ["surface","text","targetId","camera","position","gesture","walkWhileSpeaking","blackboardMarkdown"], properties: {
     boardReason: { type: ["string", "null"], maxLength: 300 }, surface: { enum: ["board", "slides"] }, blackboardMarkdown: boardMarkdownSchema, gesture: { enum: ["idle","listen","explain","emphasize","nod"] }, walkWhileSpeaking: { type: "boolean" },
@@ -45,7 +45,7 @@ export function compileBeats(beats: Beat[], currentBoard?: BlackboardDrawing, cu
     const authoredPointing = beat.pointing?.mode === "manual" && beat.pointing.cues.length > 0;
     const travel = beat.walkWhileSpeaking === true && !target && !(authoredPointing && currentSurface !== "slides");
     const requestedPosition = surface === "board" || (beat.position === "center" && target) ? "right" : beat.position;
-    const position: Beat["position"] = previousPosition && target !== null && target === previousTarget ? previousPosition : requestedPosition;
+    const position: Beat["position"] = beat.staging!=="manual" && previousPosition && target !== null && target === previousTarget ? previousPosition : requestedPosition;
     previousTarget=target;previousPosition=position;
     if (beat.gesture && !["idle","listen","explain","emphasize","nod"].includes(beat.gesture)) throw new Error("Unknown teaching gesture");
     actions.push(

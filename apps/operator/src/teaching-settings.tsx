@@ -1,0 +1,16 @@
+import type {CoursePackage} from '@aituber/contracts';
+export function TeachingSettings({course,unitId,change}:{course:CoursePackage;unitId:string;change:(fn:(course:CoursePackage)=>void)=>void}){
+ const unit=course.teachingUnits.find(u=>u.id===unitId)!,scene=course.scenes.find(s=>s.id===unit.sceneId)!;
+ const update=(fn:(unit:CoursePackage['teachingUnits'][number])=>void)=>change(c=>fn(c.teachingUnits.find(u=>u.id===unitId)!));
+ return <details className="teaching-settings"><summary>このスライドの説明方針</summary><div className="teaching-settings-body">
+ <label className="field">スライドの見出し<input value={scene.title} onChange={e=>change(c=>{c.scenes.find(s=>s.id===scene.id)!.title=e.target.value;})}/></label>
+ <label className="field">説明する要点<textarea rows={3} value={unit.teachingPlan?.keyPoints.join('\n')??''} onChange={e=>update(u=>{u.teachingPlan??={keyPoints:[],explanationFlow:[]};u.teachingPlan.keyPoints=e.target.value.split('\n');})}/></label>
+ <label className="field">説明の順序<textarea rows={3} value={unit.teachingPlan?.explanationFlow.join('\n')??''} onChange={e=>update(u=>{u.teachingPlan??={keyPoints:[],explanationFlow:[]};u.teachingPlan.explanationFlow=e.target.value.split('\n');})}/></label>
+ <label className="field">必ず含める言葉<textarea rows={2} value={unit.speakingGuidance?.requiredPhrases.join('\n')??''} onChange={e=>update(u=>{u.speakingGuidance??={requiredPhrases:[],avoidPhrases:[],explanationNotes:'自然な口語で説明する'};u.speakingGuidance.requiredPhrases=e.target.value.split('\n');})}/></label>
+ <label className="field">使わない表現<textarea rows={2} value={unit.speakingGuidance?.avoidPhrases.join('\n')??''} onChange={e=>update(u=>{u.speakingGuidance??={requiredPhrases:[],avoidPhrases:[],explanationNotes:'自然な口語で説明する'};u.speakingGuidance.avoidPhrases=e.target.value.split('\n');})}/></label>
+ <label className="field">説明の補足指示<textarea rows={3} value={unit.speakingGuidance?.explanationNotes??''} onChange={e=>update(u=>{u.speakingGuidance??={requiredPhrases:[],avoidPhrases:[],explanationNotes:''};u.speakingGuidance.explanationNotes=e.target.value;})}/></label>
+ <label className="field">説明時間の目安（秒）<input type="number" min={1} max={900} value={unit.estimatedDurationMs/1000} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n)&&n>=1&&n<=900)update(u=>{u.estimatedDurationMs=Math.round(n*1000);});}}/></label>
+ <label className="beat-checkbox"><input type="checkbox" checked={unit.skippable} onChange={e=>change(c=>{const u=c.teachingUnits.find(u=>u.id===unitId)!;u.skippable=e.target.checked;c.schedule.optionalUnitIds=c.schedule.optionalUnitIds.filter(id=>id!==unitId);if(e.target.checked)c.schedule.optionalUnitIds.push(unitId);})}/>時間調整で省略してもよい</label>
+ </div></details>;
+}
+export function cleanTeachingSettings(course:CoursePackage){for(const u of course.teachingUnits){if(u.teachingPlan){u.teachingPlan.keyPoints=u.teachingPlan.keyPoints.map(s=>s.trim()).filter(Boolean);u.teachingPlan.explanationFlow=u.teachingPlan.explanationFlow.map(s=>s.trim()).filter(Boolean);}if(u.speakingGuidance){u.speakingGuidance.requiredPhrases=u.speakingGuidance.requiredPhrases.map(s=>s.trim()).filter(Boolean);u.speakingGuidance.avoidPhrases=u.speakingGuidance.avoidPhrases.map(s=>s.trim()).filter(Boolean);if(!u.speakingGuidance.explanationNotes.trim())u.speakingGuidance.explanationNotes='自然な口語で説明する';}}}

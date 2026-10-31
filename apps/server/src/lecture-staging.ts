@@ -24,7 +24,7 @@ export function stageLectureBeats(course: ReadonlyCoursePackage, script: readonl
   }
   const audience=(id===course.schedule.orderedUnitIds[0]&&unit.kind==='transition')||unit.kind==='checkpoint';
   const beats=entry.beats.map(beat=>{
-   if(beat.surface==='board'||beat.blackboardMarkdown)return {...beat};
+   if(beat.staging==='manual'||beat.surface==='board'||beat.blackboardMarkdown)return {...beat};
    const position=audience&&!beat.targetId?'center' as const:side;
    return {...beat,position,camera:position==='center'?'lecture' as const:'material' as const,walkWhileSpeaking:!beat.targetId};
   });

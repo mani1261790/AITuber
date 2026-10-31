@@ -26,3 +26,9 @@ it('keeps camera and destination through projection/speech coalescing and permit
  expect(actions).toContainEqual({type:'speak',text:'図を見ましょう',gesture:'explain',position:'left'});
  expect(actions).toContainEqual({type:'camera',view:'material'});
 });
+it('honors a manual position and camera even when every slide uses the same side',()=>{
+ const {course,script}=fixture();script[0]!.beats[0]={...script[0]!.beats[0]!,staging:'manual',position:'right',camera:'lecture',walkWhileSpeaking:false};
+ expect(stageLectureBeats(course,script,script[0]!.unitId)).toEqual(script[0]!.beats);
+ const target=course.semanticTargets[0]!.id;const actions=compileBeats([{...beat('説明一'),targetId:target,position:'right'},{...beat('説明二'),targetId:target,position:'left',staging:'manual'}],undefined,'slides');
+ expect(actions.filter(a=>a.type==='move_to').map(a=>a.position)).toEqual(['right','left']);
+});
