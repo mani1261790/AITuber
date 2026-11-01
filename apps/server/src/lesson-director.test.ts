@@ -141,7 +141,7 @@ describe("lesson director",()=>{
   });
 });
 
-it("speaks after writing starts, waits for both completions and leaves reading time",async()=>{
+it("speaks after writing starts, waits for both completions without adding a silent reading timer",async()=>{
   vi.useFakeTimers();
   const drawing={id:"blackboard.test",svg:"<svg/>",purpose:"補足"};
   const runtime=setup(async()=>({source:"generated",reason:null,actions:[{type:"show_blackboard",drawing},{type:"speak",text:"式の左右を整理します。"},{type:"show_slides"}]}));
@@ -159,9 +159,7 @@ it("speaks after writing starts, waits for both completions and leaves reading t
     session=runtime.service.getSession(session.id);
     expect(session.direction?.phase).toBe("moving");
     runtime.service.completeStageAction(session.id,session.epoch,session.direction!.actionId);
-    await vi.advanceTimersByTimeAsync(1999);
-    expect(runtime.service.getSession(session.id).direction?.surface).toBe("board");
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(0);
     expect(runtime.service.getSession(session.id).direction?.surface).toBe("slides");
   }finally{runtime.close();}
 });
@@ -353,7 +351,8 @@ it("keeps the completed board through its explanation and lowers the screen only
   const slideIndex=plan.actions.findIndex(a=>a.type==="speak" && a.surface==="slides");
   expect(plan.actions.slice(0,slideIndex).filter(a=>a.type==="speak")).toHaveLength(2);
   expect(plan.actions.filter(a=>a.type==="show_blackboard")).toHaveLength(1);
-  expect(plan.actions.slice(slideIndex-2,slideIndex)).toEqual([{type:"pause",durationMs:2000},{type:"camera",view:"lecture"}]);
+  expect(plan.actions.some(action=>action.type==="pause")).toBe(false);
+  expect(plan.actions[slideIndex-1]).toEqual({type:"camera",view:"lecture"});
  }finally{runtime.close();}
 });
 

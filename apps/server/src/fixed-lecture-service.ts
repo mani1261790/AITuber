@@ -712,7 +712,7 @@ export class FixedLectureService {
         const speechIndex = actions.findIndex((item, offset) => offset > index && item.type === "speak");
         const speech = actions[speechIndex];
         if (speech?.type === "speak" && !actions.slice(index + 1, speechIndex).some(item => item.type === "show_slides" || item.type === "show_blackboard" || item.type === "pause")) {
-          const after = () => this.#runAction(runtime,unitId,epoch,[{type:"pause",durationMs:2000},...actions.slice(speechIndex+1)],0);
+          const after = () => this.#runAction(runtime,unitId,epoch,actions.slice(speechIndex+1),0);
           const fail = () => this.#haltExecution(runtime,"板書の表示完了を確認できませんでした。教室画面を確認して再開してください。");
           const pending = {started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:after};
           this.#projection.set(runtime,pending);
@@ -925,7 +925,7 @@ export class FixedLectureService {
     if (candidate.drawing) {
       this.#directions.set(runtime,{actionId:randomUUID(),phase:"drawing",position:"right",targetId:null,camera:"lecture",surface:"board",drawing:candidate.drawing!,source:"generated",reason:null});
       const fail=()=>this.#haltExecution(runtime,"板書の完了を確認できませんでした。教室画面を確認して再開してください。");
-      this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>{runtime.timer=setTimeout(()=>{runtime.timer=null;this.#completeSupplement(runtime,pending);},2000);}});
+      this.#projection.set(runtime,{started:Date.now(),timer:setTimeout(fail,12000),fail,stageDone:false,speechDone:false,next:()=>this.#completeSupplement(runtime,pending)});
       const introduction=candidate.preparationSpeechText?.trim();
       let arrived=false, introduced=!introduction, started=false;
       const beginBoard=()=>{
