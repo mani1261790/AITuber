@@ -219,9 +219,8 @@ describe("LiveSupplementService", () => {
       current=lecture.getSession(session.id);
       expect(current.direction?.phase).toBe("moving");
       lecture.completeStageAction(session.id,current.epoch,current.direction!.actionId);
-      vi.advanceTimersByTime(100);
       expect(lecture.getSession(session.id).liveSupplement?.status).toBe("playing");
-      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(100);
       expect(lecture.getSession(session.id).liveSupplement?.status).toBe("completed");
       expect(questions.list(session.id)[0]?.resolution).toBe("answered");
     } finally {rmSync(directory,{recursive:true,force:true});}
