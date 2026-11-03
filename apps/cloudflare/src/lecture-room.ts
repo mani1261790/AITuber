@@ -146,7 +146,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
     const {lecture,settings,authoring,questions,pedagogy,afterClass}=this.services;
     if(path==='/api/operator/snapshot' && request.method==='GET') {
       const session=lecture.getCurrentSession();
-      return json(200,{catalog:this.services.packages.getCatalog(),courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:38,authoringFailure:authoring.failure,settings:settings.get()});
+      return json(200,{catalog:this.services.packages.getCatalog(),courses:lecture.listCourses(),session,classroom:session?this.classrooms.create(session.id):null,jobs:authoring.list(),mediaPlaybackRevision:2,storageAccountingVersion:2,authoringRevision:5,assessmentRevision:1,supplementRevision:38,authoringFailure:authoring.failure,settings:settings.get()});
     }
     if(path==='/api/material-catalog'){
       if(request.headers.get('x-aituber-surface')!=='operator')return json(403,{error:'forbidden'});

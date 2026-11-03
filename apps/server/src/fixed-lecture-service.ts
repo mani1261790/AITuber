@@ -168,7 +168,7 @@ export class FixedLectureService {
     const runtime = this.#currentSessionId ? this.#sessions.get(this.#currentSessionId) : null;
     if (!runtime) return null;
     const direction=this.#directions.get(runtime);
-    return { liveSupplement:runtime.liveSupplement,
+    return { liveSupplement:runtime.liveSupplement, ...(this.#pausedSlide.has(runtime)?{pausedSlide:this.#pausedSlide.get(runtime)!}:{}),
       presentation:direction ? {surface:direction.surface ?? "slides",drawing:direction.drawing ?? null,position:direction.position,camera:direction.camera} : null,
       previousSpeech:this.#previousSpeech.get(runtime) ?? "", questionAnswer:this.#questionAnswer.get(runtime) ?? null, interruption:this.#interruption.get(runtime) ?? null,
       executionFailure: runtime.speech.failure, version: 1 as const, id: runtime.id, course: runtime.course, configuredDurationMinutes: runtime.configuredDurationMinutes,
@@ -203,6 +203,7 @@ export class FixedLectureService {
       runtime.pausedAtMs = manuallyPaused ? paused ?? Date.now() : null;
     }
     if (state.status === "PAUSED") runtime.pausedAtMs ??= Date.now();
+    if(manuallyPaused&&saved.pausedSlide)this.#pausedSlide.set(runtime,saved.pausedSlide);
     if(saved.presentation) this.#directions.set(runtime,{...saved.presentation,actionId:randomUUID(),phase:"resting",targetId:null,traveling:false,source:"generated",reason:null});
     this.#previousSpeech.set(runtime,saved.previousSpeech ?? "");
     if(saved.questionAnswer) this.#questionAnswer.set(runtime,saved.questionAnswer);

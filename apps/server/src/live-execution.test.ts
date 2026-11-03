@@ -438,3 +438,14 @@ it.each([false,true])('resumes narrated slides at their paused offset, traveling
  service.command(view.id,{command:'resume'});await vi.advanceTimersByTimeAsync(0);
  const resumed=service.getSnapshot(view.id);expect(resumed.session.speech.playing).toBe(true);expect(resumed.audioOffsetMs).toBe(3400);expect(resumed.session.speech.text).toBe('動画の説明');
 });
+it('keeps a travelling slide bookmark after the cloud runtime is restored',async()=>{
+ vi.useFakeTimers();const store=new LectureEventStore(':memory:');resources.push(store);
+ const course=JSON.parse(JSON.stringify(quadraticFunctionsFixture)) as import('@aituber/contracts').CoursePackage;for(const scene of course.scenes)scene.slide={sourceId:course.sources[0]!.id,pageNumber:1};
+ const planner=async()=>({source:'generated' as const,reason:null,actions:[{type:'speak' as const,text:'動画の説明',surface:'slides' as const,position:'left' as const}]});
+ const options={store,courses:[course],planner,speechProvider:new TestToneSpeechProvider(20000),voiceId:'test',requireLiveExecution:true};
+ const initial=new FixedLectureService(options);resources.push(initial);const session=initial.createSession(request);await vi.advanceTimersByTimeAsync(0);
+ initial.command(session.id,{command:'pause',playbackPositionMs:5200});const checkpoint=initial.exportCheckpoint()!;initial.close();
+ const restored=new FixedLectureService(options);resources.push(restored);expect(restored.restoreCheckpoint(checkpoint)).toBe(false);
+ restored.command(session.id,{command:'resume'});await vi.advanceTimersByTimeAsync(0);
+ expect(restored.getSnapshot(session.id).audioOffsetMs).toBe(5200);expect(restored.getSession(session.id).speech.text).toBe('動画の説明');
+});
