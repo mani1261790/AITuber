@@ -453,7 +453,7 @@ export class FixedLectureService {
         this.#pausedSlide.set(runtime,{...cursor,direction,offsetMs:Math.min(runtime.speech.durationMs,position??speechOffsetMs(runtime.speech))});
       }
       this.#cancelSpeech(runtime);
-      if(direction)this.#directions.set(runtime,{...direction,phase:'resting',traveling:false,targetId:null});
+      if(direction&&this.#pausedSlide.has(runtime))this.#directions.set(runtime,{...direction,phase:'resting',traveling:false,targetId:null});
       const previousEpoch = runtime.state.epoch;
       this.#apply(runtime, { type: "PAUSE_REQUESTED", epoch: previousEpoch });
       this.#store.advanceEpoch(runtime.id);
