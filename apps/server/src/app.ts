@@ -34,7 +34,9 @@ const unavailableApi: LectureApi = {
   subscribe: () => () => undefined, getSpeechAudio: () => { throw new RangeError("Unknown speech artifact"); }, command: () => { throw new RangeError("Unknown session"); },
 };
 
-export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi, afterClass?: AfterClassApi, packages?: PackageEditorService): Server {
+import type {VideoExportService} from "./video-export-service.ts";
+
+export function createApp(api: LectureApi = unavailableApi, settings?: SettingsApi, authoring?: AuthoringApi, questions?: QuestionApi, pedagogy?: PedagogyApi, afterClass?: AfterClassApi, packages?: PackageEditorService, videoExports?: VideoExportService): Server {
   const classrooms = new ClassroomRegistry();
   const streams = new Map<string, Set<{ send(value: string): void; readyState: number }>>();
   const webSockets = new WebSocketServer({ noServer: true });
@@ -49,6 +51,18 @@ export function createApp(api: LectureApi = unavailableApi, settings?: SettingsA
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
+      if(url.pathname==='/api/video-exports'){
+        requireSurface(request,'operator');
+        if(request.method==='GET')return json(response,200,{available:Boolean(videoExports),jobs:videoExports?.list()??[]});
+        if(!videoExports)throw new TypeError('バックグラウンド描画ワーカーが接続されていません');
+        if(request.method==='POST'){const body=await readJson<{courseId:string}>(request);return json(response,202,{job:videoExports.start(body.courseId)});}
+      }
+      const exportMatch=url.pathname.match(/^\/api\/video-exports\/(export\.[a-f0-9-]+)(?:\/(file|cancel))?$/);
+      if(exportMatch){requireSurface(request,'operator');if(!videoExports)throw new TypeError('描画ワーカーが利用できません');const id=exportMatch[1]!;
+        if(request.method==='GET'&&exportMatch[2]==='file')return videoExports.download(id,response);
+        if(request.method==='POST'&&exportMatch[2]==='cancel')return json(response,200,{job:videoExports.cancel(id)});
+        if(request.method==='GET')return json(response,200,{job:videoExports.get(id)});
+      }
       if (request.method === "GET" && url.pathname === "/healthz") return json(response, 200, { status: "ok" });
       if (request.method === "GET" && url.pathname === "/api/operator/snapshot") {
         requireSurface(request, "operator");

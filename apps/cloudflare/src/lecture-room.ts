@@ -245,6 +245,7 @@ export class LectureRoom extends DurableObject<AppEnv> {
       this.services.lecture.close();this.initialized=false;this.initialize();
       return json(200,{...result,courses:this.services.lecture.listCourses()});
     }
+    const renderPackage=path.match(/^\/api\/render-package\/([^/]+)$/);if(renderPackage&&request.method==='GET')return json(200,{course:lecture.getCourse(decodeURIComponent(renderPackage[1]))});
     if(path==='/api/courses' &&request.method==='GET')return json(200,{courses:lecture.listCourses()});
     if(path==='/api/sessions/current'&&request.method==='GET'){const session=lecture.getCurrentSession();return json(200,{session,classroom:session?this.classrooms.create(session.id):null});}
     if(path==='/api/sessions'&&request.method==='POST'){const session=lecture.createSession(await read<CreateSessionRequest>());return json(201,{session,classroom:this.classrooms.create(session.id)});}

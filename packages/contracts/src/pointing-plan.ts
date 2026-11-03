@@ -4,7 +4,7 @@ export function pointingAnchorValid(text:string,cue:{start:number;end:number;quo
 export function pointingIssues(course:ReadonlyCoursePackage):string[]{
  const errors:string[]=[];
  for(const script of course.performance?.units??[]){const unit=course.teachingUnits.find(u=>u.id===script.unitId),scene=course.scenes.find(s=>s.id===unit?.sceneId);
-  for(const beat of script.beats){errors.push(...motionIssues(beat));const p=beat.pointing;if(!p)continue;
+  for(const beat of script.beats){errors.push(...motionIssues(beat));for(const cue of beat.media??[]){if(!pointingAnchorValid(beat.text,cue))errors.push('動画の再生区間を台本から選び直してください');if(beat.surface==='board'||!scene?.slide)errors.push('動画はPDFスライド上で指定してください');}const p=beat.pointing;if(!p)continue;
    if(p.mode!=='manual')continue;
    const seen=new Set<string>();let end=0;
    for(const cue of [...p.cues].sort((a,b)=>a.start-b.start)){

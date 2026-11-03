@@ -1,0 +1,347 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "pdf-richmedia-prototype",
+  "version": 1,
+  "status": "available",
+  "contentHash": "sha256:1561a7b96134f4e6f9f727bf41534db06e73439ea63c66e0fcbe2abd1e89470a",
+  "title": "動画入りPDF・同期検証",
+  "targetLevel": "動画再生の検証",
+  "durationMinutes": 2,
+  "sources": [
+    {
+      "id": "source.08bd7de719c067957508b2f7",
+      "kind": "pdf",
+      "fileName": "video-slides.pdf",
+      "contentHash": "sha256:911eb1dfdc584364637e36474b2e4c11730d7f47e6e0ed030c698a83fdb1fa0e",
+      "rights": {
+        "basis": "owned",
+        "note": "OIF / Mani制作。講義画像内モデル・衣装、Lucideアイコン等の第三者素材の出典とライセンスを同梱。"
+      },
+      "pageCount": 2
+    }
+  ],
+  "learningGoals": [
+    {
+      "id": "goal-1",
+      "description": "動画と音声が同期することを確認する"
+    }
+  ],
+  "concepts": [],
+  "scenes": [
+    {
+      "id": "scene-1",
+      "title": "動画と台本の同期",
+      "templateId": "document",
+      "slide": {
+        "sourceId": "source.08bd7de719c067957508b2f7",
+        "pageNumber": 1
+      },
+      "targetIds": []
+    },
+    {
+      "id": "scene-2",
+      "title": "動画と台本の同期",
+      "templateId": "document",
+      "slide": {
+        "sourceId": "source.08bd7de719c067957508b2f7",
+        "pageNumber": 2
+      },
+      "targetIds": []
+    }
+  ],
+  "semanticTargets": [],
+  "teachingUnits": [
+    {
+      "id": "main-1",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-1",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+      "captionText": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 16000,
+      "sourceIds": [
+        "source.08bd7de719c067957508b2f7"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "一般来場者や高校生が初めて聞く説明。優しく落ち着いた、お淑やかなお姉さんとして、穏やかな敬語で話す。まず何ができるかを伝え、そのあと仕組みを説明する。用語は具体的な動作と結び付ける。例題は何を計算するかから話し、元の数値を省略しない。質問を歓迎し、聞き手を対等な相手として尊重する。過剰な女性語や毎文の「ね」は避ける。OIFでの共有は今後の目標として説明する。 自分の働きを「AIが」「AIの先生が」と第三者のように語らず、「私が」「私に」を必要なところで使う。「私」を毎文繰り返さず、主語が明らかな文は省略する。"
+      }
+    },
+    {
+      "id": "main-2",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-1"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "captionText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.08bd7de719c067957508b2f7"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "一般来場者や高校生が初めて聞く説明。優しく落ち着いた、お淑やかなお姉さんとして、穏やかな敬語で話す。まず何ができるかを伝え、そのあと仕組みを説明する。用語は具体的な動作と結び付ける。例題は何を計算するかから話し、元の数値を省略しない。質問を歓迎し、聞き手を対等な相手として尊重する。過剰な女性語や毎文の「ね」は避ける。OIFでの共有は今後の目標として説明する。 自分の働きを「AIが」「AIの先生が」と第三者のように語らず、「私が」「私に」を必要なところで使う。「私」を毎文繰り返さず、主語が明らかな文は省略する。"
+      }
+    },
+    {
+      "id": "main-3",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-2"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "captionText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.08bd7de719c067957508b2f7"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "一般来場者や高校生が初めて聞く説明。優しく落ち着いた、お淑やかなお姉さんとして、穏やかな敬語で話す。まず何ができるかを伝え、そのあと仕組みを説明する。用語は具体的な動作と結び付ける。例題は何を計算するかから話し、元の数値を省略しない。質問を歓迎し、聞き手を対等な相手として尊重する。過剰な女性語や毎文の「ね」は避ける。OIFでの共有は今後の目標として説明する。 自分の働きを「AIが」「AIの先生が」と第三者のように語らず、「私が」「私に」を必要なところで使う。「私」を毎文繰り返さず、主語が明らかな文は省略する。"
+      }
+    },
+    {
+      "id": "main-4",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-3"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "captionText": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.08bd7de719c067957508b2f7"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "一般来場者や高校生が初めて聞く説明。優しく落ち着いた、お淑やかなお姉さんとして、穏やかな敬語で話す。まず何ができるかを伝え、そのあと仕組みを説明する。用語は具体的な動作と結び付ける。例題は何を計算するかから話し、元の数値を省略しない。質問を歓迎し、聞き手を対等な相手として尊重する。過剰な女性語や毎文の「ね」は避ける。OIFでの共有は今後の目標として説明する。 自分の働きを「AIが」「AIの先生が」と第三者のように語らず、「私が」「私に」を必要なところで使う。「私」を毎文繰り返さず、主語が明らかな文は省略する。"
+      }
+    }
+  ],
+  "assessments": [],
+  "preGeneratedSupplements": [],
+  "pronunciationDictionary": [],
+  "schedule": {
+    "orderedUnitIds": [
+      "main-1",
+      "main-2",
+      "main-3",
+      "main-4"
+    ],
+    "orderedItemIds": [
+      "main-1",
+      "main-2",
+      "main-3",
+      "main-4"
+    ],
+    "optionalUnitIds": []
+  },
+  "performance": {
+    "version": 1,
+    "units": [
+      {
+        "unitId": "main-1",
+        "beats": [
+          {
+            "text": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+            "targetId": null,
+            "camera": "material",
+            "position": "left",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "media": [
+              {
+                "id": "video-cue",
+                "filename": "motion.mp4",
+                "start": 23,
+                "end": 73,
+                "quote": "いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+                "muted": false
+              }
+            ],
+            "walkWhileSpeaking": true,
+            "gesture": "emphasize"
+          }
+        ]
+      },
+      {
+        "unitId": "main-2",
+        "beats": [
+          {
+            "text": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "media": [
+              {
+                "id": "video-cue",
+                "filename": "motion.mp4",
+                "start": 0,
+                "end": 69,
+                "quote": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+                "muted": false
+              }
+            ],
+            "walkWhileSpeaking": true,
+            "gesture": "explain"
+          }
+        ]
+      },
+      {
+        "unitId": "main-3",
+        "beats": [
+          {
+            "text": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "board",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "walkWhileSpeaking": true,
+            "gesture": "explain",
+            "blackboardMarkdown": "動画・音声・動作を同じ時計で進める\n\n$$t=\\frac{n}{30}$$",
+            "boardReason": "固定フレーム時刻を示す",
+            "transitionText": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。"
+          }
+        ]
+      },
+      {
+        "unitId": "main-4",
+        "beats": [
+          {
+            "text": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "walkWhileSpeaking": true,
+            "gesture": "explain"
+          }
+        ]
+      }
+    ],
+    "readings": [
+      {
+        "text": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+        "parts": [
+          {
+            "text": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が",
+            "reading": "ここでは、動画が入った資料を使って説明します。いま、動画を再生します。青い四角が"
+          },
+          {
+            "text": "動いていますね。授業を一時停止すると、動画も同じ位置で止まります。",
+            "reading": "動いていますね。授業を一時停止すると、動画も同じ位置で止まります。"
+          }
+        ]
+      },
+      {
+        "text": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録できるので、あとから見返すときにも、そのまま確認できます。",
+        "parts": [
+          {
+            "text": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録",
+            "reading": "次のページでも、台本に合わせて動画を再生できます。動画の動きと音声をまとめて収録"
+          },
+          {
+            "text": "できるので、あとから見返すときにも、そのまま確認できます。",
+            "reading": "できるので、あとから見返すときにも、そのまま確認できます。"
+          }
+        ]
+      }
+    ]
+  }
+}

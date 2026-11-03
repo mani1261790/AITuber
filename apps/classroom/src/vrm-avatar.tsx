@@ -31,7 +31,8 @@ type AvatarMotion = "normal" | "mouth-open" | "pointing" | "reaction";
 
 export interface MotionPreviewOptions { pace: number; stride: number }
 
-export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress, onReady }: { readPointTarget?: (()=>string|null|undefined)|undefined; autoPointTarget?: string | null; materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
+export interface FrameDriver {step?: (delta:number)=>void;sample?:()=>{x:number;yaw:number}}
+export function VrmAvatar({ frameDriver, readPointTarget, autoPointTarget = null, materialReady = true, propAction, modelUrl = teacherModelUrl, look = "anime", listening = false, speaking, readSpeechClock, readSpeechLevel, inspectFeet = false, inspectFace = false, preview, state, mouthOpen, targetId, lessonImage = null, projecting = false, onSelect, direction, onStageComplete, onStageProgress, onReady }: { frameDriver?: FrameDriver | undefined; readPointTarget?: (()=>string|null|undefined)|undefined; autoPointTarget?: string | null; materialReady?: boolean; propAction?: StagePropAction | undefined; modelUrl?: string; listening?: boolean; speaking?: boolean | undefined; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; look?: ClassroomLook; inspectFeet?: boolean; inspectFace?: boolean; preview?: MotionPreviewOptions | undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; state: AvatarMotion; mouthOpen: boolean; targetId: string | null; lessonImage?: LessonImage | null; projecting?: boolean; onSelect?: (id: string) => void }) {
   const inspectRef = useRef(inspectFeet);
   useEffect(() => { inspectRef.current = inspectFeet; }, [inspectFeet]);
   const faceInspectRef = useRef(inspectFace);
@@ -56,7 +57,7 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
     camera.position.set(-.15, 2.05, 7.1);
     camera.lookAt(-.15, 2.05, 0);
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+    const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer:Boolean(frameDriver), alpha: true, antialias: true, powerPreference: "high-performance" });
     renderer.setClearAlpha(0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -115,6 +116,7 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
     for (const surface of room.children.slice(2)) { surface.scale.set(.82,.82,1); surface.position.x = surface.position.x*.82-.65; surface.position.y = (surface.position.y-1.65)*.82+2; }
     let currentImage: LessonImage | null = null;
     let texture: THREE.CanvasTexture | null = null;
+    let mediaRevision=-1;
     let boardTexture: THREE.CanvasTexture | null = null;
     let curtain = Number(stageRef.current.projecting);
     const propMotion=new StagePropMotion(),propVisuals=new StagePropVisuals(scene);
@@ -312,12 +314,14 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
     let eraseArea:EraseArea|undefined;
     let propAcknowledged="";
     let propAcknowledgedAt=-Infinity;
-    const render = () => {
+    let fixedTime=0;
+    const render = (step?:number) => {
       if (disposed) return;
       // Root travel, gait speed and pose solvers must advance on the same timestep.
-      const delta = Math.min(clock.getDelta(), 1 / 30);
+      const delta = frameDriver ? (step??0) : Math.min(clock.getDelta(), 1 / 30);
+      if(frameDriver)fixedTime+=delta;
       animeLook.update(delta);
-      const time = clock.elapsedTime;
+      const time = frameDriver ? fixedTime : clock.elapsedTime;
       if (appliedLook !== lookRef.current) {
         appliedLook = lookRef.current; animeLook.apply(appliedLook);
         // Retain cel colors and skin shadow separation instead of the filmic highlight washout.
@@ -330,8 +334,9 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
         renderer.domElement.dataset.look = appliedLook;
       }
 
+      if(texture && currentImage?.mediaSurface && currentImage.mediaSurface.revision!==mediaRevision){texture.needsUpdate=true;mediaRevision=currentImage.mediaSurface.revision;}
       if (currentImage !== stageRef.current.lessonImage) {
-        currentImage = stageRef.current.lessonImage;
+        currentImage = stageRef.current.lessonImage;mediaRevision=-1;
         const anisotropy = renderer.capabilities.getMaxAnisotropy();
         texture = updateLessonTexture(texture, currentImage?.canvas ?? null, anisotropy);
         if(!boardTexture){
@@ -541,12 +546,13 @@ export function VrmAvatar({ readPointTarget, autoPointTarget = null, materialRea
         if(base && tip)renderer.domElement.dataset.propGrip=JSON.stringify(base.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()),.5).toArray());
       }
       renderer.render(scene, camera);
-      animationFrame = window.requestAnimationFrame(render);
+      if(!frameDriver)animationFrame = window.requestAnimationFrame(()=>render());
     };
+    if(frameDriver){frameDriver.step=render;frameDriver.sample=()=>({x:avatar?.scene.position.x??0,yaw:avatar?.scene.rotation.y??0});}
     render();
 
     return () => {
-      disposed = true;
+      disposed = true;if(frameDriver)delete frameDriver.step;
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       window.removeEventListener("resize", resize);

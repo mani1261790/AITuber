@@ -1,3 +1,4 @@
+import {createPdfMediaSurface,type MediaMoment} from "./pdf-media.ts";
 import {spokenSlideTarget} from "./slide-pointing.ts";
 import { renderPdfSlide, type SlideAccess } from "./pdf-slide.ts";
 import { measureBoardReveal, type BoardReveal } from "./board-reveal.ts";
@@ -12,19 +13,22 @@ import { TargetView } from "./target-view.tsx";
 import { VrmAvatar } from "./vrm-avatar.tsx";
 import type { MascotPresentation } from "@aituber/presentation";
 
-export interface LessonImage { contentKey?: string; canvas: HTMLCanvasElement; boardCanvas: HTMLCanvasElement; regions: ImageRegion[]; boardRegions: ImageRegion[]; drawingId?: string; boardReveal?: BoardReveal }
+export interface LessonImage { mediaSurface?: ReturnType<typeof createPdfMediaSurface>; contentKey?: string; canvas: HTMLCanvasElement; boardCanvas: HTMLCanvasElement; regions: ImageRegion[]; boardRegions: ImageRegion[]; drawingId?: string; boardReveal?: BoardReveal }
 interface ImageRegion { id: string; text?: string; x: number; y: number; width: number; height: number; anchorX: number }
 
-export function LessonStage({readPointTarget, spokenText = "", slideAccess, listening = false, speaking, readSpeechClock, readSpeechLevel, scene, notes = [], noteText, presentation, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady }: { readPointTarget?: (()=>string|null|undefined)|undefined; slideAccess?: SlideAccess | undefined; listening?: boolean; speaking?: boolean | undefined; spokenText?: string; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
+export function LessonStage({frameDriver,onImage,readMediaMoment,readPointTarget, spokenText = "", slideAccess, listening = false, speaking, readSpeechClock, readSpeechLevel, scene, notes = [], noteText, presentation, projecting, onSelect, direction, onStageComplete, onStageProgress, onReady }: { frameDriver?: import("./vrm-avatar.tsx").FrameDriver | undefined; onImage?: ((image:LessonImage)=>void)|undefined; readMediaMoment?: (()=>MediaMoment|null)|undefined; readPointTarget?: (()=>string|null|undefined)|undefined; slideAccess?: SlideAccess | undefined; listening?: boolean; speaking?: boolean | undefined; spokenText?: string; readSpeechClock?: (()=>{elapsed:number;duration:number}|null)|undefined; readSpeechLevel?: (()=>number|undefined)|undefined; direction?: LessonDirectionView | null | undefined; onReady?: (()=>void)|undefined; onStageComplete?: ((actionId: string) => void) | undefined; onStageProgress?: ((actionId: string, writingStarted?: boolean) => void) | undefined; scene: StageScene; notes?: StageTarget[]; noteText?: string | undefined; presentation: MascotPresentation; projecting: boolean; onSelect(id: string): void }) {
+  const mediaReader=useRef(readMediaMoment);mediaReader.current=readMediaMoment;
+  const [mediaError,setMediaError]=useState("");
   const pdfCache = useRef<{ key: string; result: Awaited<ReturnType<typeof renderPdfSlide>> } | null>(null);
   const source = useRef<HTMLDivElement>(null);
   const boardSource = useRef<HTMLDivElement>(null);
   const [image, setImage] = useState<LessonImage | null>(null);
   const [error, setError] = useState(false);
   const drawing = direction?.drawing;
-  const contentKey = JSON.stringify({ slide:scene.slide, slideAccess, title: scene.title, targets: scene.targets.filter(t => t.visible).map(t => ({ ...t, focused: false })), notes, noteText, drawing });
+  const contentKey = JSON.stringify({ slide:scene.slide, slideAccess, title: scene.title, targets: scene.targets.filter(t => t.visible).map(t => ({ ...t, focused: false })), notes, noteText, drawing:drawing??null });
   useEffect(() => {
     let active = true;
+    let mediaSurface:ReturnType<typeof createPdfMediaSurface>|undefined;
     const controller = new AbortController();
     if (!source.current || !boardSource.current) return;
     // Freeze this revision while fonts and image resources are loaded asynchronously.
@@ -32,7 +36,7 @@ export function LessonStage({readPointTarget, spokenText = "", slideAccess, list
     const boardNode = boardSource.current.cloneNode(true) as HTMLDivElement;
     document.body.append(node);
     document.body.append(boardNode);
-    setError(false);
+    setError(false);setMediaError("");
     void (async () => {
       await document.fonts.ready;
       if (!active) return;
@@ -54,7 +58,8 @@ export function LessonStage({readPointTarget, spokenText = "", slideAccess, list
       if (!active) return;
       if(pdfSlide)pdfCache.current={key:pdfKey,result:pdfSlide};
       else pdfCache.current=null;
-      const canvas = pdfSlide?.canvas ?? await toCanvas(node, { ...options, fontEmbedCSS });
+      if(pdfSlide?.media.length){mediaSurface=createPdfMediaSurface(pdfSlide.canvas,pdfSlide.media,()=>mediaReader.current?.()??null,setMediaError,Boolean(frameDriver));}
+      const canvas = mediaSurface?.canvas ?? pdfSlide?.canvas ?? await toCanvas(node, { ...options, fontEmbedCSS });
       if (!active) return;
       let boardCanvas: HTMLCanvasElement;
       if (drawing?.svg || (!drawing?.markdown && !notes.length && !noteText)) {
@@ -82,15 +87,16 @@ export function LessonStage({readPointTarget, spokenText = "", slideAccess, list
       }); };
       const svgRegion = drawing?.svg ? await paintBlackboardSvg(drawing,boardCanvas) : null;
       const boardReveal=measureBoardReveal(boardNode);
-      if (active) setImage({contentKey, ...(boardReveal ? {boardReveal} : {}), canvas, boardCanvas, regions: pdfSlide?.regions ?? measure(node), boardRegions: svgRegion ? [svgRegion] : measure(boardNode), ...(drawing ? {drawingId:drawing.id} : {}) });
+      if (active) {const next={contentKey,...(mediaSurface?{mediaSurface}:{}), ...(boardReveal ? {boardReveal} : {}), canvas, boardCanvas, regions: pdfSlide?.regions ?? measure(node), boardRegions: svgRegion ? [svgRegion] : measure(boardNode), ...(drawing ? {drawingId:drawing.id} : {}) };setImage(next);onImage?.(next);}
     })().catch(() => { if (active) setError(true); }).finally(() => { node.remove(); boardNode.remove(); });
-    return () => { active = false; controller.abort(); };
+    return () => { active = false; controller.abort();mediaSurface?.dispose(); };
   }, [contentKey]);
   return <>
     <div className="lesson-image-source" aria-hidden="true" inert ref={source}><h2>{scene.title}</h2><div className="image-targets">{scene.targets.filter(t => t.visible).map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}</div></div>
     <div className="lesson-image-source lesson-image-source--board" aria-hidden="true" inert ref={boardSource}>{drawing?.markdown ? <BoardMarkdown text={drawing.markdown} id={drawing.id}/> : (notes.length > 0 || noteText) && <><h2>補足メモ</h2><div className="image-targets">{notes.map(target => <TargetView key={target.id} target={{...target, focused:false}} onSelect={() => {}} />)}{noteText && <RichText text={noteText} />}</div></>}</div>
-    <VrmAvatar readPointTarget={readPointTarget} autoPointTarget={projecting && speaking && direction?.position !== "center" && image?.contentKey === contentKey ? spokenSlideTarget(spokenText,scene.targets,image?.regions??[]) : null} materialReady={Boolean(image && image.contentKey === contentKey)} listening={listening} speaking={speaking} readSpeechClock={readSpeechClock} readSpeechLevel={readSpeechLevel} state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onReady={onReady} onStageComplete={onStageComplete} onStageProgress={onStageProgress} />
+    <VrmAvatar frameDriver={frameDriver} readPointTarget={readPointTarget} autoPointTarget={projecting && speaking && direction?.position !== "center" && image?.contentKey === contentKey ? spokenSlideTarget(spokenText,scene.targets,image?.regions??[]) : null} materialReady={Boolean(image && image.contentKey === contentKey)} listening={listening} speaking={speaking} readSpeechClock={readSpeechClock} readSpeechLevel={readSpeechLevel} state={presentation.state} mouthOpen={presentation.mouthOpen} targetId={presentation.targetId} lessonImage={image} projecting={projecting} onSelect={onSelect} direction={direction} onReady={onReady} onStageComplete={onStageComplete} onStageProgress={onStageProgress} />
     <div className="sr-only" aria-label="教材の内容"><h2>{scene.title}</h2>{scene.targets.filter(t => t.visible).map(target => <p key={target.id}>{target.label}: {target.content}</p>)}</div>
+    {mediaError && <span role="alert">{mediaError}</span>}
     {!image && <span className="stage-loading" role="status">{error ? "教材画像を作成できません。再読み込みしてください。" : "教材を準備中…"}</span>}
     {image && direction?.phase === "planning" && <span className="stage-loading director-planning" role="status">次の説明を準備中…</span>}
     <details className="stage-credits"><summary>素材</summary><p>Classroom by <a href="https://www.blender.org/download/demo-files/" target="_blank" rel="noreferrer">Christophe Seux</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0</a><br />配置・縮尺・質感を調整しています。</p></details>

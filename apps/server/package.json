@@ -12,6 +12,7 @@
     "@aituber/storage": "workspace:*",
     "jose": "^6",
     "pdfjs-dist": "6.2.108",
+    "playwright-core": "1.65.0-alpha-2026-10-30",
     "unpdf": "1.8.1",
     "ws": "8.21.3"
   },

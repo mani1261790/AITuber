@@ -51,7 +51,7 @@ try {
       secrets[name] = process.env[name];
     }
     // Hosted SIWC registration is provisioned by OpenAI; never substitute Codex credentials.
-    for (const name of ["CHATGPT_CLIENT_ID", "CHATGPT_CLIENT_SECRET", "CHATGPT_REDIRECT_URI", "CHATGPT_PLAN_USAGE_ENABLED"]) {
+    for (const name of ["CHATGPT_CLIENT_ID", "CHATGPT_CLIENT_SECRET", "CHATGPT_REDIRECT_URI", "CHATGPT_PLAN_USAGE_ENABLED", "RENDER_AGENT_TOKEN"]) {
       if (process.env[name]) secrets[name] = process.env[name];
     }
     const bucketUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets`;

@@ -554,3 +554,6 @@ button:focus-visible, summary:focus-visible { outline: 3px solid #b6e6c7; outlin
 .stage-controls { pointer-events: none; }
 .stage-controls button { pointer-events: auto; }
 .classroom-export{padding:0!important;max-width:none!important;width:100%;height:100vh;display:flex;flex-direction:column}.classroom-export .lesson-header,.classroom-export .lecture-rail,.classroom-export .lesson-ended,.classroom-export .stage-controls,.classroom-export .caption{display:none!important}.classroom-export .broadcast-layout{display:block;flex:1;min-height:0}.classroom-export .broadcast-main{height:100%;min-height:0}.classroom-export .stage{width:100%;height:auto;min-height:0;aspect-ratio:16/9;border-radius:0}.video-recording{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 18px;background:#f5f7f5;color:#213c2f;flex-shrink:0}.video-recording p{margin:0}.video-recording button,.video-recording a{padding:10px 16px;background:#285c47;color:white;border:0;border-radius:8px;min-height:44px;font:inherit;text-decoration:none}.video-recording button:disabled{opacity:.5}
+body:has([data-offline-render]) { margin:0; overflow:hidden; }
+body:has([data-offline-render]) .vrm-avatar {width:1280px;height:720px;position:relative;}
+body:has([data-offline-render]) .stage-credits {display:none;}

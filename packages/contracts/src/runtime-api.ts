@@ -167,6 +167,7 @@ export interface CreateSessionRequest {
 
 export interface SessionCommandRequest {
   readonly command: "pause" | "resume" | "finish" | "answer";
+  readonly playbackPositionMs?: number;
   readonly answer?: string;
   readonly assessmentEvaluation?: AssessmentEvaluationView;
 }

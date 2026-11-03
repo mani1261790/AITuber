@@ -214,6 +214,7 @@ function ClassroomApp() {
     return compilePointingPlan(plan,session.speech.text??'',session.speech.segments);
   }, [session?.course.performance,session?.speech.unitId,session?.speech.text,session?.speech.segments]);
 
+  const mediaBeat=useMemo(()=>session?.course.performance?.units.find(u=>u.unitId===session.speech.unitId)?.beats.flatMap(b=>expandMotionBeat(JSON.parse(JSON.stringify(b)))).find(b=>b.text===session.speech.text),[session?.course.performance,session?.speech.unitId,session?.speech.text]);
   const displayUnit = session?.course.teachingUnits.find((unit) => unit.id === session.displayUnitId) ?? null;
   const supplementCandidate = session?.liveSupplement?.status === "playing" ? session.liveSupplement.candidate : null;
   const activeSpeechSegment = session?.speech.playing ? session.speech.segments.find((segment) => speechElapsedMs >= segment.startMs && speechElapsedMs < segment.endMs) ?? null : null;
@@ -324,7 +325,11 @@ function ClassroomApp() {
           {error && <p className="error" role="alert">{error}</p>}
 
           {scene && <section className="stage" aria-label={scene.title}>
-            <LessonStage readPointTarget={()=>{
+            <LessonStage readMediaMoment={()=>{
+              const audio=audioRef.current;
+              if(!audio||audio.getAttribute('src')!==session.speech.audioUrl||!projecting||supplementCandidate)return null;
+              return {key:session.speech.audioUrl??'',elapsedMs:audio.currentTime*1000,playing:session.status==='TEACHING'&&session.speech.playing&&!audio.paused&&!audio.ended,text:session.speech.text??'',segments:session.speech.segments,cues:mediaBeat?.media??[]};
+            }} readPointTarget={()=>{
               if(!projecting)return undefined;
               if(session.direction?.phase==='projecting'||session.direction?.traveling||session.direction?.phase==='moving')return null;
               if(!session.speech.playing)return pointAt(NaN);
@@ -420,4 +425,4 @@ const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("Classroom root element was not found");
 if (new URLSearchParams(location.search).has("motion-lab")) {
   void import("./motion-lab.tsx").then(({mountMotionLab})=>mountMotionLab(root));
-} else createRoot(root).render(<StrictMode><ClassroomApp /></StrictMode>);
+} else if(new URLSearchParams(location.search).has("offline-render")){void import("./offline-render.tsx").then(({mountOfflineRender})=>mountOfflineRender(root));} else createRoot(root).render(<StrictMode><ClassroomApp /></StrictMode>);

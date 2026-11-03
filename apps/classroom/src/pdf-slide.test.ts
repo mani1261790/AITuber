@@ -5,7 +5,7 @@ vi.mock("pdfjs-dist", () => ({GlobalWorkerOptions:{}, getDocument:({data}:{data:
   structuredClone(data, {transfer:[data.buffer]});
   return {promise:Promise.resolve({getPage:async()=>({
     getViewport:()=>({width:1280,height:720}),
-    render:()=>({promise:Promise.resolve()}),getTextContent:async()=>({items:[]})
+    getAnnotations:async()=>[],render:()=>({promise:Promise.resolve()}),getTextContent:async()=>({items:[]})
   })}),destroy:async()=>{}};
 }}));
 afterEach(()=>{vi.unstubAllGlobals();vi.resetModules();});

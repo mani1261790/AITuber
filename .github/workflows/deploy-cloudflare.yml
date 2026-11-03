@@ -53,6 +53,7 @@ jobs:
         run: pnpm deploy:cloudflare
         env:
           AITUBER_SERVER_ONLY: ${{ inputs.server_only }}
+          RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
           OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}
           FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
           FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
@@ -65,6 +66,7 @@ jobs:
       - name: Verify authenticated operator rollout
         run: node scripts/verify-cloud-operator.mjs
         env:
+          RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
           OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}
       - name: Verify deployed assessment narration
         run: node scripts/verify-cloud-narration.mjs

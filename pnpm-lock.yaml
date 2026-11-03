@@ -182,6 +182,9 @@ importers:
       pdfjs-dist:
         specifier: 6.2.108
         version: 6.2.108
+      playwright-core:
+        specifier: 1.65.0-alpha-2026-10-30
+        version: 1.65.0-alpha-2026-10-30
       unpdf:
         specifier: 1.8.1
         version: 1.8.1(@napi-rs/canvas@1.0.9)
@@ -1472,6 +1475,11 @@ packages:
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
+
+  playwright-core@1.65.0-alpha-2026-10-30:
+    resolution: {integrity: sha512-LPMw8B/HRQKMcJeXTqWSrkB/AfCKKmbDQMbu0p7zg8MgibOWaKMjZWR/StAtrQkOxvOmZEju1o1TnPgdoOCwrg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
@@ -2780,6 +2788,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.65.0-alpha-2026-10-30: {}
 
   postcss@8.5.28:
     dependencies:

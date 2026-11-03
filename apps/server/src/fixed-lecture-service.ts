@@ -62,6 +62,9 @@ export class FixedLectureService {
   readonly #planner: LessonPlanner | null;
   readonly #requireLiveExecution: boolean;
   readonly #waitForClassroom: boolean;
+  readonly #actionCursor = new WeakMap<RuntimeSession,{unitId:string;actions:readonly LessonAction[];index:number}>();
+  readonly #pausedSlide = new WeakMap<RuntimeSession,{unitId:string;actions:readonly LessonAction[];index:number;direction:LessonDirectionView;offsetMs:number}>();
+  readonly #resumeOffset = new WeakMap<RuntimeSession,number>();
   readonly #directions = new WeakMap<RuntimeSession, LessonDirectionView>();
   readonly #lastStagePosition = new WeakMap<RuntimeSession, LessonDirectionView["position"]>();
   readonly #reviewAudio = new WeakMap<RuntimeSession, Map<string, {controller:AbortController; promise:Promise<SpeechArtifact>}>>();
@@ -443,6 +446,12 @@ export class FixedLectureService {
   command(sessionId: string, request: SessionCommandRequest): FixedSessionView {
     const runtime = this.#requireSession(sessionId);
     if (request.command === "pause") {
+      const cursor=this.#actionCursor.get(runtime),direction=this.#directions.get(runtime);
+      const position=request.playbackPositionMs;
+      if(position!==undefined&&(!Number.isFinite(position)||position<0))throw new TypeError("Invalid playback position");
+      if(runtime.state.status==='TEACHING'&&runtime.speech.playing&&cursor?.actions[cursor.index]?.type==='speak'&&direction?.surface==='slides'&&direction.phase==='speaking'&&!direction.traveling){
+        this.#pausedSlide.set(runtime,{...cursor,direction,offsetMs:Math.min(runtime.speech.durationMs,position??speechOffsetMs(runtime.speech))});
+      }
       this.#cancelSpeech(runtime);
       const previousEpoch = runtime.state.epoch;
       this.#apply(runtime, { type: "PAUSE_REQUESTED", epoch: previousEpoch });
@@ -450,6 +459,12 @@ export class FixedLectureService {
     } else if (request.command === "resume") {
       this.#apply(runtime, { type: "RECOVERY_STARTED", epoch: runtime.state.epoch });
       this.#apply(runtime, { type: "RECOVERY_COMPLETED", epoch: runtime.state.epoch });
+      const paused=this.#pausedSlide.get(runtime);this.#pausedSlide.delete(runtime);
+      if(paused&&runtime.state.status==='TEACHING'&&runtime.state.activeUnitId===paused.unitId){
+        this.#apply(runtime,{type:'UNIT_PRESENTED',epoch:runtime.state.epoch,unitId:paused.unitId});
+        this.#directions.set(runtime,{...paused.direction,actionId:randomUUID()});this.#resumeOffset.set(runtime,paused.offsetMs);
+        this.#runAction(runtime,paused.unitId,runtime.state.epoch,paused.actions,paused.index);return this.getSession(runtime.id);
+      }
       if (runtime.state.status === "PREPARING") this.#prepareOpening(runtime);
       if (runtime.state.status === "CHECKPOINT" && runtime.assessmentId) {const assessment=runtime.course.assessments.find(item=>item.id===runtime.assessmentId);if(assessment)this.#presentAssessment(runtime,assessment);}
       if (runtime.state.status === "BRANCHING" && runtime.pendingSupplement) { if(!runtime.timer && !runtime.speechAbort && !runtime.speech.playing) this.#activateSupplement(runtime); } else this.#schedule(runtime);
@@ -675,6 +690,7 @@ export class FixedLectureService {
 
   #runAction(runtime: RuntimeSession, unitId: string, epoch: number, actions: readonly LessonAction[], index: number) {
     if (runtime.state.epoch !== epoch || runtime.state.status !== "TEACHING") return;
+    this.#actionCursor.set(runtime,{unitId,actions,index});
     const action = actions[index];
     if (!action) {
       const direction = this.#directions.get(runtime)!;
@@ -860,6 +876,8 @@ export class FixedLectureService {
   }
 
   #startPlayback(runtime: RuntimeSession, unitId: string, epoch: number, speech: FixedSessionView["speech"]) {
+    const offset=this.#resumeOffset.get(runtime);this.#resumeOffset.delete(runtime);
+    if(offset!==undefined)speech={...speech,startedAt:new Date(Date.now()-Math.min(offset,speech.durationMs)).toISOString()};
     runtime.speech = speech;
     this.#publish(runtime);
     this.#waitForSpeech(runtime, speech, () => {

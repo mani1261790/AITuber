@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { AfterClassStore, DataRetentionStore, LearningEvidenceStore, LectureEventStore, LiveSupplementStore, QuestionStore, ResourceBudgetStore } from "@aituber/storage";
 import { BudgetedSpeechProvider, CachedSpeechProvider, FISH_STANDARD_VOICE_ID, FishAudioTtsProvider, IrodoriTtsProvider, TestToneSpeechProvider, type TextToSpeechProvider } from "@aituber/providers";
+import {VideoExportService} from "./video-export-service.ts";
+import {fileURLToPath} from "node:url";
 import { createApp } from "./app.ts";
 import { FixedLectureService } from "./fixed-lecture-service.ts";
 import { LlmSettingsStore } from "./llm-settings-store.ts";
@@ -73,6 +75,7 @@ const llmSettings = new LlmSettingsStore(llmSettingsPath, process.env, resourceB
 const preparedArtifacts = new PreparedArtifacts(llmSettingsPath + ".prepared");
 const preparationProvider = () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } };
 const preparedReadings = new PreparedReadings(preparationProvider, preparedArtifacts);
+const exportSpeechProvider=speechProvider;
 if (speechProvider && !ttsTestMode) speechProvider = new ReadingSpeechProvider(speechProvider, preparedReadings, () => lecture.getCurrentSession()?.course.pronunciationDictionary ?? [], () => lecture.getCurrentSession()?.course.performance?.readings ?? []);
 const packageProvider=()=>llmSettings.createProvider("authoring");
 const packagePlanner=createWholeLecturePlanner(packageProvider,preparedArtifacts,new PreparedReadings(packageProvider,preparedArtifacts));
@@ -85,7 +88,8 @@ const questions = new QuestionQueueService({ classifier: createCommentClassifier
 pedagogy = new PedagogyService({ store: evidenceStore, lecture, questions, ...(ttsTestMode ? {} : { evaluator: createAssessmentEvaluator(() => llmSettings.createProvider("runtime")) }) });
 const supplements = new LiveSupplementService({ store: supplementStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
 const afterClass = new AfterClassService({ store: afterClassStore, questions, lecture, llm: () => { try { return llmSettings.createProvider("runtime"); } catch { return null; } } });
-const server = createApp(lecture, llmSettings, authoring, questions, pedagogy, afterClass, packages);
+const videoExports=exportSpeechProvider&&voiceId?new VideoExportService({directory:process.env.AITUBER_VIDEO_EXPORT_DIR??fileURLToPath(new URL('../../../.data/video-exports/',import.meta.url)),repo:fileURLToPath(new URL('../../../',import.meta.url)),getCourse:id=>lecture.getCourse(id),readSource:hash=>authoring.readSource(hash),speech:exportSpeechProvider,voiceId}):undefined;
+const server = createApp(lecture, llmSettings, authoring, questions, pedagogy, afterClass, packages,videoExports);
 
 server.listen(port, host, () => {
   const lanHost = process.env.AITUBER_LAN_HOST ?? host;

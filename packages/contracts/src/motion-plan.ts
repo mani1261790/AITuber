@@ -23,7 +23,8 @@ export function expandMotionBeat(beat:Beat):Beat[]{
  const segment=(start:number,end:number,overrides:Partial<Beat>={})=>{
   const text=beat.text.slice(start,end);if(!text.trim())return;
   const pointing=beat.pointing?.mode==='manual'?{mode:'manual' as const,cues:beat.pointing.cues.filter(c=>c.start<end&&c.end>start).map(c=>{const a=Math.max(start,c.start),b=Math.min(end,c.end);return {...c,start:a-start,end:b-start,quote:beat.text.slice(a,b)};})}:beat.pointing;
-  out.push({...state,text,...(pointing?{pointing}:{}),...overrides});state={...state,blackboardMarkdown:null};
+  const media=beat.media?.filter(c=>c.start<end&&c.end>start).map(c=>{const a=Math.max(start,c.start),b=Math.min(end,c.end);return {...c,start:a-start,end:b-start,quote:beat.text.slice(a,b)};});
+  out.push({...state,text,...(media?{media}:{}),...(pointing?{pointing}:{}),...overrides});state={...state,blackboardMarkdown:null};
  };
  for(let i=0;i<cues.length;i++){
   const c=cues[i]!;segment(offset,c.start);

@@ -165,6 +165,7 @@ export const LectureBeatSchema = closedObject({
   staging: Type.Optional(Type.Union([Type.Literal("auto"),Type.Literal("manual")])),
   pointing:Type.Optional(PointingPlanSchema),
   motions:Type.Optional(Type.Array(MotionCueSchema,{maxItems:16})),
+  media:Type.Optional(Type.Array(closedObject({id:Identifier,filename:NonEmptyText,start:Type.Integer({minimum:0}),end:Type.Integer({minimum:1}),quote:NonEmptyText,muted:Type.Boolean()}),{maxItems:8})),
   text: Type.String({minLength:1,maxLength:600}), targetId: Type.Union([Identifier,Type.Null()]),
   camera: Type.Union([Type.Literal("lecture"),Type.Literal("material")]),
   position: Type.Union([Type.Literal("left"),Type.Literal("center"),Type.Literal("right")]),
