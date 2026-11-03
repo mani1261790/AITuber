@@ -330,7 +330,7 @@ function ClassroomApp() {
               const audio=audioRef.current;
               const previous=pausedMediaMoment.current;
               if(session.status==='PAUSED'&&previous)return {...previous,playing:false};
-              if(previous?.text===session.speech.text&&audio&&audio.currentTime*1000+50<audioFloorMs)return {...previous,playing:false};
+              if(previous?.text===session.speech.text&&audio&&(audio.readyState<2||audio.seeking))return {...previous,playing:false};
               if(!audio||audio.getAttribute('src')!==session.speech.audioUrl||!projecting||supplementCandidate)return null;
               const moment={key:session.speech.audioUrl??'',elapsedMs:audio.currentTime*1000,playing:session.status==='TEACHING'&&session.speech.playing&&!audio.paused&&!audio.ended,text:session.speech.text??'',segments:session.speech.segments,cues:mediaBeat?.media??[]};pausedMediaMoment.current=moment;return moment;
             }} readPointTarget={()=>{
