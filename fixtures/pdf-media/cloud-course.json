@@ -1,0 +1,441 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "pdf-video-production-check-v3-20261103",
+  "version": 1,
+  "status": "available",
+  "contentHash": "sha256:bf631803ebb2203bdb5ee7029b98378a055022ce1f641d41fccf7fba04359c7e",
+  "title": "動画入りPDF・動作確認",
+  "targetLevel": "動画再生の検証",
+  "durationMinutes": 2,
+  "sources": [
+    {
+      "id": "source.911eb1dfdc584364637e3647",
+      "kind": "pdf",
+      "fileName": "video-slides.pdf",
+      "contentHash": "sha256:911eb1dfdc584364637e36474b2e4c11730d7f47e6e0ed030c698a83fdb1fa0e",
+      "rights": {
+        "basis": "owned",
+        "note": "同期検証用に作成したPDFと動画"
+      },
+      "pageCount": 2
+    },
+    {
+      "id": "source.78921a3635ee13400b0ad63d",
+      "kind": "instructor-note",
+      "fileName": "verification-protocol.txt",
+      "contentHash": "sha256:78921a3635ee13400b0ad63d849201705ccc4c11b11ce0a7c53e95becb3583c6",
+      "rights": {
+        "basis": "owned",
+        "note": "実装と試験動画に基づく動作確認手順"
+      }
+    }
+  ],
+  "learningGoals": [
+    {
+      "id": "goal-1",
+      "description": "動画と音声が同期することを確認する"
+    }
+  ],
+  "concepts": [],
+  "scenes": [
+    {
+      "id": "scene-1",
+      "title": "動画と台本の同期",
+      "templateId": "document",
+      "slide": {
+        "sourceId": "source.911eb1dfdc584364637e3647",
+        "pageNumber": 1
+      },
+      "targetIds": [
+        "video-region-0"
+      ]
+    },
+    {
+      "id": "scene-2",
+      "title": "動画と台本の同期",
+      "templateId": "document",
+      "slide": {
+        "sourceId": "source.911eb1dfdc584364637e3647",
+        "pageNumber": 2
+      },
+      "targetIds": [
+        "video-region-1"
+      ]
+    }
+  ],
+  "semanticTargets": [
+    {
+      "id": "video-region-0",
+      "sceneId": "scene-1",
+      "kind": "diagram",
+      "label": "動画",
+      "content": "動画と音声の同期",
+      "pageRegion": {
+        "x": 0.08,
+        "y": 0.2,
+        "width": 0.67,
+        "height": 0.67
+      },
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647"
+      ]
+    },
+    {
+      "id": "video-region-1",
+      "sceneId": "scene-2",
+      "kind": "diagram",
+      "label": "動画",
+      "content": "動画と音声の同期",
+      "pageRegion": {
+        "x": 0.08,
+        "y": 0.2,
+        "width": 0.67,
+        "height": 0.67
+      },
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647"
+      ]
+    }
+  ],
+  "teachingUnits": [
+    {
+      "id": "main-1",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-1",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。",
+      "captionText": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 16000,
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647",
+        "source.78921a3635ee13400b0ad63d"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "落ち着いた敬語で、確認する手順を説明する。"
+      }
+    },
+    {
+      "id": "main-2",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-1"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。",
+      "captionText": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647",
+        "source.78921a3635ee13400b0ad63d"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "落ち着いた敬語で、確認する手順を説明する。"
+      }
+    },
+    {
+      "id": "main-3",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-2"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかります。",
+      "captionText": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかります。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかります。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647",
+        "source.78921a3635ee13400b0ad63d"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "落ち着いた敬語で、確認する手順を説明する。"
+      }
+    },
+    {
+      "id": "main-4",
+      "kind": "main",
+      "learningGoalIds": [
+        "goal-1"
+      ],
+      "prerequisiteUnitIds": [
+        "main-3"
+      ],
+      "postconditions": [
+        "動画の再生を確認"
+      ],
+      "sceneId": "scene-2",
+      "boardPatches": [],
+      "focusTargetIds": [],
+      "speechText": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめましょう。これで確認は終わりです。",
+      "captionText": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめましょう。これで確認は終わりです。",
+      "teachingPlan": {
+        "keyPoints": [
+          "動画の同期"
+        ],
+        "explanationFlow": [
+          "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめましょう。これで確認は終わりです。"
+        ]
+      },
+      "skippable": false,
+      "estimatedDurationMs": 8000,
+      "sourceIds": [
+        "source.911eb1dfdc584364637e3647",
+        "source.78921a3635ee13400b0ad63d"
+      ],
+      "speakingGuidance": {
+        "requiredPhrases": [],
+        "avoidPhrases": [],
+        "explanationNotes": "落ち着いた敬語で、確認する手順を説明する。"
+      }
+    }
+  ],
+  "assessments": [],
+  "preGeneratedSupplements": [],
+  "pronunciationDictionary": [],
+  "schedule": {
+    "orderedUnitIds": [
+      "main-1",
+      "main-2",
+      "main-3",
+      "main-4"
+    ],
+    "orderedItemIds": [
+      "main-1",
+      "main-2",
+      "main-3",
+      "main-4"
+    ],
+    "optionalUnitIds": []
+  },
+  "performance": {
+    "version": 1,
+    "units": [
+      {
+        "unitId": "main-1",
+        "beats": [
+          {
+            "text": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。",
+            "targetId": null,
+            "camera": "material",
+            "position": "left",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "media": [
+              {
+                "id": "video-cue",
+                "filename": "motion.mp4",
+                "start": 22,
+                "end": 98,
+                "quote": "いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。",
+                "muted": false
+              }
+            ],
+            "walkWhileSpeaking": true,
+            "gesture": "emphasize"
+          }
+        ]
+      },
+      {
+        "unitId": "main-2",
+        "beats": [
+          {
+            "text": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "media": [
+              {
+                "id": "video-cue",
+                "filename": "motion.mp4",
+                "start": 0,
+                "end": 49,
+                "quote": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。",
+                "muted": false
+              }
+            ],
+            "walkWhileSpeaking": true,
+            "gesture": "explain"
+          }
+        ]
+      },
+      {
+        "unitId": "main-3",
+        "beats": [
+          {
+            "text": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかります。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "board",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "walkWhileSpeaking": true,
+            "gesture": "explain",
+            "blackboardMarkdown": "時刻 t（秒）とフレーム番号 n（0から）\n\n$$t=\\frac{n}{30}$$\n\n1秒間に30フレーム",
+            "boardReason": "固定フレーム時刻を示す",
+            "transitionText": "この動画では、一秒間に三十枚の画像を順に表示します。"
+          }
+        ]
+      },
+      {
+        "unitId": "main-4",
+        "beats": [
+          {
+            "text": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめましょう。これで確認は終わりです。",
+            "targetId": null,
+            "camera": "material",
+            "position": "right",
+            "surface": "slides",
+            "staging": "manual",
+            "pointing": {
+              "mode": "off",
+              "cues": []
+            },
+            "walkWhileSpeaking": true,
+            "gesture": "explain"
+          }
+        ]
+      }
+    ],
+    "readings": [
+      {
+        "text": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声が同じ位置から続くか見てみましょう。",
+        "parts": [
+          {
+            "text": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動",
+            "reading": "これから、動画と声のタイミングを確かめます。いま、動画を再生します。青い四角の動"
+          },
+          {
+            "text": "きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声",
+            "reading": "きと、八百八十ヘルツの検査音を確かめてください。一時停止してから再開し、動画と声"
+          },
+          {
+            "text": "が同じ位置から続くか見てみましょう。",
+            "reading": "が同じ位置から続くか見てみましょう。"
+          }
+        ]
+      },
+      {
+        "text": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生されることを確かめます。",
+        "parts": [
+          {
+            "text": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生される",
+            "reading": "二枚目でも、声に合わせて動画を再生してみましょう。音声と動画が重なって再生される"
+          },
+          {
+            "text": "ことを確かめます。",
+            "reading": "ことを確かめます。"
+          }
+        ]
+      },
+      {
+        "text": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかります。",
+        "parts": [
+          {
+            "text": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画",
+            "reading": "今度は黒板です。ここでは一秒間に三十枚の画像を描きます。エヌは最初をゼロとした画"
+          },
+          {
+            "text": "像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかりま",
+            "reading": "像の番号、ティーは秒単位の時刻です。番号を三十で割ると、その画像の時刻がわかりま"
+          },
+          {
+            "text": "す。",
+            "reading": "す。"
+          }
+        ]
+      },
+      {
+        "text": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめましょう。これで確認は終わりです。",
+        "parts": [
+          {
+            "text": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめ",
+            "reading": "スライドに戻りました。黒板から画面へ切り替わるときも、声が途切れずに続くか確かめ"
+          },
+          {
+            "text": "ましょう。これで確認は終わりです。",
+            "reading": "ましょう。これで確認は終わりです。"
+          }
+        ]
+      },
+      {
+        "text": "この動画では、一秒間に三十枚の画像を順に表示します。",
+        "parts": [
+          {
+            "text": "この動画では、一秒間に三十枚の画像を順に表示します。",
+            "reading": "この動画では、一秒間に三十枚の画像を順に表示します。"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -28,11 +28,14 @@ for t in timeline['audio']:
 probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-count_frames','-show_streams','-of','json',str(job/'lecture.mp4')]))
 v=next(s for s in probe['streams'] if s['codec_type']=='video');assert int(v['nb_read_frames'])==timeline['frames'];assert v['avg_frame_rate']=='30/1'
 subprocess.run(['ffmpeg','-v','error','-i',str(job/'lecture.mp4'),'-f','null','-'],check=True)
+media_tracks=[track for track in timeline['audio'] if track['file'].startswith('media-')]
 for sample in timeline['samples']:
- if sample['unit'] not in ('main-1','main-2') or not sample.get('media'):continue
- elapsed=sample['speechElapsed'];cue=4.6 if sample['unit']=='main-1' else 0
- if elapsed is not None and elapsed>cue:
-  assert abs(sample['media'][0]['time']-(elapsed-cue))<1/30+.001
+ if not sample.get('media'):continue
+ absolute=sample['frame']/timeline['fps']
+ for track in media_tracks:
+  if track['start']+.05 < absolute < track['start']+track['duration']-.05:
+   assert abs(sample['media'][0]['time']-(absolute-track['start']))<1/30+.001
+
 report={'frames':timeline['frames'],'duration':timeline['frames']/timeline['fps'],'voice':checks,'embeddedAudio':media,'decode':'passed','mediaFrameSync':'passed'}
 if len(sys.argv)>2:
  slow=json.loads((Path(sys.argv[2])/'timeline.json').read_text())

@@ -6,7 +6,7 @@
 
 Node版AITuberサーバー、ローカルGoogle Chrome、ffmpeg、ffprobeが必要。`pnpm build` 後に通常のNodeサーバーを起動する。FishAudioなど、サーバーの音声設定と参照音源設定を引き継ぐ。既存音声キャッシュも使用する。描画用PCは電源を入れ、スリープを避ける。ユーザー側のブラウザーや端末の描画速度には依存しないが、描画用PCの性能は完成までの時間に影響する。
 
-Cloudflare Workers単体ではNode子プロセス・Chrome・ffmpegを実行しない。この実装の有効範囲はNode版管理画面。Cloudflare本番管理画面と常駐描画サーバーをつなぐリレーは未実装。本番へのデプロイは本検証に含まない。
+Cloudflare Workers単体ではNode子プロセス・Chrome・ffmpegを実行しない。Cloudflare本番管理画面は末尾のCloudflare接続を通じてNode描画サービスへジョブを渡す。以下の初回検証はローカルで行い、その後の本番検証は別記する。
 
 既定保存先 `.data/video-exports`。`AITUBER_VIDEO_EXPORT_DIR` で変更可能。ffmpeg/ffprobeの実行ファイルは `FFMPEG_PATH` / `FFPROBE_PATH` で指定できる。描画は同時1件、最大30分、1280×720・30fps、H.264/AAC。最終MP4は512MB以下。音声準備中のサーバー停止は失敗扱い。描画開始後は独立した子プロセスで動き、ファイルに状態を保存する。失敗を自動で連続再試行しない。
 
@@ -57,3 +57,17 @@ NumPy、ffmpeg/ffprobeが必要。MP4のフレーム数、全編デコード、�
 設定ファイル `.data/render-agent.json`（0600）には `origin`, `token`, `fishApiKey`, `voiceId` を置く。値はGitに入れない。`pnpm --filter @aituber/server... build` と教室アプリのビルド後、`node scripts/cloud-render-agent.mjs` で起動する。macOSではLaunchAgentで常駐させる。PC停止中は新規開始を不可にし、途中のジョブは管理画面から中止できる。エラーを自動生成で繰り返さない。
 
 転送は95MB以下。超過時は失敗を表示し、ローカルの完成物は `.data/cloud-exports` に残す。描画用PCは起動が必要。本番管理画面を操作する端末での描画は不要。
+
+## 本番での確認（2026-11-03）
+
+- 実装コミット `178e487` を本番へ反映。[デプロイと境界検証](https://github.com/mani1261790/AITuber/actions/runs/41636095015)が成功。
+- MacのLaunchAgent `com.oif.aituber-render` が描画サービスを常駐実行する。
+- 本番管理画面で `pdf-video-production-check-v3-20261103` の書き出しを開始し、ブラウザーを閉じた後も完了した。再度管理画面を開いてMP4をダウンロードし、生成元とのSHA-256一致を確認。
+- ジョブ `export.c201dbf4-2511-401a-baba-ec16d27a7b6a`、66.233秒、1,987フレーム。音声相関0.989以上、最大時間差5.34ms。埋め込み動画の映像・880Hz検査音、黒板の数式描画、スライド復帰を確認。全編デコード成功。
+- 本番に保存された動画入りPDFは元ファイルとバイト一致。未ログイン401、不正エージェント認証401、別オリジン403、重複開始409を確認。
+- 既存講義は3/17単元で一時停止していたため、そのまま保持した。本番のライブ講義での一時停止・再開の通し確認は、既存講義の終了に対する利用者の回答待ち。MP4確認と同一視しない。
+- 検証成果物は `output/cloud-render-verification/`。公開URLではなく管理画面認証付きでダウンロードする。
+
+検証教材を再登録する場合は、PDF生成とビルドの後 `node scripts/prepare-richmedia-import.mjs` で `output/pdf-media/cloud-import.json` を作る。この処理自体は送信しない。元PDF、ページプレビュー、動画参照と確認手順の資料をまとめ、ローカルで形式検査する。同じIDの二重登録は不可。取り込み時の本番審査も必要。
+
+R2の条件付き書き込みと保存APIは[公式Workers API仕様](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)に従う。
