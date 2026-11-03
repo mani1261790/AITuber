@@ -75,6 +75,7 @@ function ClassroomApp() {
   const [reactionActive, setReactionActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const pausedMediaMoment=useRef<import("./pdf-media.ts").MediaMoment|null>(null);
   const retrySpeechRef = useRef<(() => void) | null>(null);
   const readSpeechLevel = useSpeechEnvelope(audioRef,session?.speech.audioUrl);
   const previousStatusRef = useRef<FixedSessionView["status"] | null>(null);
@@ -327,8 +328,11 @@ function ClassroomApp() {
           {scene && <section className="stage" aria-label={scene.title}>
             <LessonStage readMediaMoment={()=>{
               const audio=audioRef.current;
+              const previous=pausedMediaMoment.current;
+              if(session.status==='PAUSED'&&previous)return {...previous,playing:false};
+              if(previous?.text===session.speech.text&&audio&&audio.currentTime*1000+50<audioFloorMs)return {...previous,playing:false};
               if(!audio||audio.getAttribute('src')!==session.speech.audioUrl||!projecting||supplementCandidate)return null;
-              return {key:session.speech.audioUrl??'',elapsedMs:audio.currentTime*1000,playing:session.status==='TEACHING'&&session.speech.playing&&!audio.paused&&!audio.ended,text:session.speech.text??'',segments:session.speech.segments,cues:mediaBeat?.media??[]};
+              const moment={key:session.speech.audioUrl??'',elapsedMs:audio.currentTime*1000,playing:session.status==='TEACHING'&&session.speech.playing&&!audio.paused&&!audio.ended,text:session.speech.text??'',segments:session.speech.segments,cues:mediaBeat?.media??[]};pausedMediaMoment.current=moment;return moment;
             }} readPointTarget={()=>{
               if(!projecting)return undefined;
               if(session.direction?.phase==='projecting'||session.direction?.traveling||session.direction?.phase==='moving')return null;

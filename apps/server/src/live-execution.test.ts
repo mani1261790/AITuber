@@ -428,13 +428,13 @@ it('keeps the initial PDF slide visible while the first plan is pending',async()
  const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  expect(service.getSession(session.id).direction).toMatchObject({phase:'planning',surface:'slides'});
 });
-it('resumes a narrated slide at its paused audio offset without replanning',async()=>{
- vi.useFakeTimers();const planner=vi.fn(async()=>({source:'generated' as const,reason:null,actions:[{type:'speak' as const,text:'動画の説明',surface:'slides' as const}]}));
+it.each([false,true])('resumes narrated slides at their paused offset, traveling=%s',async(traveling)=>{
+ vi.useFakeTimers();const planner=vi.fn(async()=>({source:'generated' as const,reason:null,actions:[{type:'speak' as const,text:'動画の説明',surface:'slides' as const,...(traveling?{position:'left' as const}:{})}]}));
  const service=create(planner,new TestToneSpeechProvider(20000));const course=JSON.parse(JSON.stringify(quadraticFunctionsFixture)) as import("@aituber/contracts").CoursePackage;for(const scene of course.scenes)scene.slide={sourceId:course.sources[0]!.id,pageNumber:1};service.registerCourse(course);const session=service.createSession(request);await vi.advanceTimersByTimeAsync(0);
  let view=service.getSession(session.id);if(view.direction?.phase==='projecting')service.completeStageAction(view.id,view.epoch,view.direction.actionId);
  view=service.getSession(session.id);expect(view.speech.playing).toBe(true);
  service.command(view.id,{command:'pause',playbackPositionMs:3400});await vi.advanceTimersByTimeAsync(2000);
- expect(service.getSession(view.id).speech.playing).toBe(false);
+ expect(service.getSession(view.id).speech.playing).toBe(false);expect(service.getSession(view.id).direction?.surface).toBe('slides');
  service.command(view.id,{command:'resume'});await vi.advanceTimersByTimeAsync(0);
  const resumed=service.getSnapshot(view.id);expect(resumed.session.speech.playing).toBe(true);expect(resumed.audioOffsetMs).toBe(3400);expect(resumed.session.speech.text).toBe('動画の説明');
 });

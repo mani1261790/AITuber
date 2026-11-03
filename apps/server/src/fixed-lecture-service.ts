@@ -449,10 +449,11 @@ export class FixedLectureService {
       const cursor=this.#actionCursor.get(runtime),direction=this.#directions.get(runtime);
       const position=request.playbackPositionMs;
       if(position!==undefined&&(!Number.isFinite(position)||position<0))throw new TypeError("Invalid playback position");
-      if(runtime.state.status==='TEACHING'&&runtime.speech.playing&&cursor?.actions[cursor.index]?.type==='speak'&&direction?.surface==='slides'&&direction.phase==='speaking'&&!direction.traveling){
+      if(runtime.state.status==='TEACHING'&&runtime.speech.playing&&cursor?.actions[cursor.index]?.type==='speak'&&direction?.surface==='slides'&&direction.phase==='speaking'){
         this.#pausedSlide.set(runtime,{...cursor,direction,offsetMs:Math.min(runtime.speech.durationMs,position??speechOffsetMs(runtime.speech))});
       }
       this.#cancelSpeech(runtime);
+      if(direction)this.#directions.set(runtime,{...direction,phase:'resting',traveling:false,targetId:null});
       const previousEpoch = runtime.state.epoch;
       this.#apply(runtime, { type: "PAUSE_REQUESTED", epoch: previousEpoch });
       this.#store.advanceEpoch(runtime.id);
@@ -783,7 +784,7 @@ export class FixedLectureService {
           this.#speakUnit(runtime,unitId,action.text);return;
         }
         this.#travelArrived.delete(runtime);
-        const traveling=Boolean(action.position && action.position!==direction.position);
+        const traveling=Boolean(action.position && (action.position!==direction.position || direction.traveling));
         update({phase:"speaking",gesture:action.gesture ?? "explain",...(traveling && action.position ? {position:action.position,targetId:null,traveling:true} : {})}); this.#previousSpeech.set(runtime,((actions.slice(0,index).some(prior=>prior.type==="speak") ? (this.#previousSpeech.get(runtime) ?? "")+" " : "")+action.text).slice(-2000));
         this.#speechNext.set(runtime, () => {
           if (!traveling || this.#travelArrived.has(runtime)) { this.#travelArrived.delete(runtime); next(); }
