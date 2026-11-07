@@ -52,6 +52,7 @@ jobs:
       - name: Build and deploy
         run: pnpm deploy:cloudflare
         env:
+          RENDER_DISPATCH_TOKEN: ${{ secrets.RENDER_DISPATCH_TOKEN }}
           AITUBER_SERVER_ONLY: ${{ inputs.server_only }}
           RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
           OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}

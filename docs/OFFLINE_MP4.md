@@ -10,6 +10,12 @@ Cloudflare Workers単体ではNode子プロセス・Chrome・ffmpegを実行し�
 
 既定保存先 `.data/video-exports`。`AITUBER_VIDEO_EXPORT_DIR` で変更可能。ffmpeg/ffprobeの実行ファイルは `FFMPEG_PATH` / `FFPROBE_PATH` で指定できる。描画は同時1件、最大30分、1280×720・30fps、H.264/AAC。最終MP4は512MB以下。音声準備中のサーバー停止は失敗扱い。描画開始後は独立した子プロセスで動き、ファイルに状態を保存する。失敗を自動で連続再試行しない。
 
+## 本番のクラウド書き出し
+
+Cloudflareが教材を固定してR2に保存し、このリポジトリの `render-mp4.yml` を指定ジョブIDで一度だけ起動する。GitHubホストのUbuntuでChromeとffmpegを実行し、MP4を認証付きでR2に戻す。常駐PCや定期起動は不要。既存の音声・描画・容量上限を使い、中止後は結果を受け付けない。
+
+Actions secret `RENDER_DISPATCH_TOKEN` にはこのリポジトリに限定した fine-grained token（Actions: read/write）を設定してデプロイする。アカウント全体のCLIトークンは使用しない。`RENDER_AGENT_TOKEN` は実行機とCloudflare間の別の認証。受付に失敗したときは管理画面から再度開始できる。ジョブが異常終了して受付に残った場合は「中止」で解除できる。
+
 ## 処理と同期
 
 1. 保存済みの台本・元PDF・読み方・指差し指定をジョブに固定する。単元をまたいで黒板/スライドの状態を引き継いで動作列に変換する。
@@ -50,7 +56,7 @@ NumPy、ffmpeg/ffprobeが必要。MP4のフレーム数、全編デコード、�
 
 最終チェック: 全体型チェック、121ファイル731テスト、各アプリのビルド、変更実装のESLintを通過。管理画面からダウンロードしたMP4と生成元MP4のSHA-256一致を確認。中止の最終再検証は export.c84a3735-6c77-4f86-a552-cf0450553cad で、Node/ffmpeg終了とダウンロードHTTP 400を確認。
 
-## Cloudflare接続（2026-11-03）
+## 旧Mac描画方式の記録（2026-11-03）
 
 `render-exports.ts` が本番の受付・進捗・中止・ダウンロードをR2で管理する。専用の `RENDER_AGENT_TOKEN` で認証されたPC側 `scripts/cloud-render-agent.mjs` が30秒おきにジョブを取得する。PCへの着信やポート公開は不要。教材は開始時に固定され、元PDFはそのジョブが参照するものだけ取得できる。進捗の更新は5秒間隔、SQLの読み取りは使わない。開始時だけ公開済み教材を講義サービスから読む。
 

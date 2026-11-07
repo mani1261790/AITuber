@@ -1,7 +1,7 @@
 import {renderExports} from './render-exports';
 import { storageQuotaError } from "./storage-error";
 import { authenticated, issueSession, loginHtml, sameOrigin, sameSecret } from "./auth.ts";
-export type AppEnv = Env & { OPERATOR_PASSWORD: string; RENDER_AGENT_TOKEN?: string; CHATGPT_CLIENT_ID?: string; CHATGPT_CLIENT_SECRET?: string; CHATGPT_REDIRECT_URI?: string; CHATGPT_PLAN_USAGE_ENABLED?: string; FISH_API_KEY?: string; FISH_VOICE_ID?: string; OPENAI_API_KEY?: string; AITUBER_TTS_TEST_MODE?: "tone" | "failure" };
+export type AppEnv = Env & { OPERATOR_PASSWORD: string; RENDER_AGENT_TOKEN?: string; RENDER_DISPATCH_TOKEN?: string; CHATGPT_CLIENT_ID?: string; CHATGPT_CLIENT_SECRET?: string; CHATGPT_REDIRECT_URI?: string; CHATGPT_PLAN_USAGE_ENABLED?: string; FISH_API_KEY?: string; FISH_VOICE_ID?: string; OPENAI_API_KEY?: string; AITUBER_TTS_TEST_MODE?: "tone" | "failure" };
 export { LectureRoom } from "./lecture-room";
 const secureHeaders={"cache-control":"no-store","x-content-type-options":"nosniff","referrer-policy":"no-referrer","x-frame-options":"DENY"};
 export default {

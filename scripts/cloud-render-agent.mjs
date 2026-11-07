@@ -1,42 +1,39 @@
-import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
 import {VideoExportService} from '../apps/server/dist/video-export-service.js';
 import {CachedSpeechProvider,FishAudioTtsProvider} from '../packages/providers/dist/index.js';
-const repo=fileURLToPath(new URL('../',import.meta.url));
-const settings=JSON.parse(fs.readFileSync(process.env.AITUBER_RENDER_CONFIG??path.join(repo,'.data/render-agent.json'),'utf8'));
-const origin=new URL(settings.origin);if(origin.protocol!=='https:')throw Error('HTTPS required');
-const directory=path.join(repo,'.data/cloud-exports');fs.mkdirSync(directory,{recursive:true});
-const lock=path.join(directory,'agent.pid');if(fs.existsSync(lock)){const pid=Number(fs.readFileSync(lock,'utf8'));let alive=false;try{process.kill(pid,0);alive=true;}catch{/* Stale PID or removed lock. */}if(alive)throw Error('Render agent already running');}fs.writeFileSync(lock,String(process.pid));process.on('exit',()=>{try{fs.unlinkSync(lock);}catch{/* Stale PID or removed lock. */}});
-const pause=ms=>new Promise(r=>setTimeout(r,ms));
-async function request(endpoint,options={}){const r=await fetch(new URL('/api/render-agent/'+endpoint,origin),{...options,headers:{authorization:'Bearer '+settings.token,...options.headers},signal:AbortSignal.timeout(120000)});if(!r.ok){const error=new Error('Render relay HTTP '+r.status);error.status=r.status;throw error;}return r;}
-const speech=new CachedSpeechProvider(new FishAudioTtsProvider({apiKey:settings.fishApiKey}),path.join(repo,'.data/speech-cache'));
-let active=null;
-while(true){
- try{
-  const {job,course}=await(await request('poll',{method:'POST'})).json();
-  if(!job){active=null;await pause(30000);continue;}
-  const mapping=path.join(directory,job.id+'.json');
-  if(!active||active.remote!==job.id){
-   const sources=new Map();for(const source of course.sources.filter(s=>s.kind==='pdf')){const bytes=new Uint8Array(await(await request(job.id+'/source?id='+encodeURIComponent(source.id))).arrayBuffer());sources.set(source.contentHash,bytes);}
-   const service=new VideoExportService({directory:path.join(directory,job.id),repo,getCourse:()=>course,readSource:hash=>{const bytes=sources.get(hash);if(!bytes)throw Error('Unknown source');return bytes;},speech,voiceId:settings.voiceId});
-   let local;if(fs.existsSync(mapping))local=JSON.parse(fs.readFileSync(mapping,'utf8')).local;else{local=service.start(course.id).id;fs.writeFileSync(mapping,JSON.stringify({local}),{mode:0o600});}
-   active={remote:job.id,service,local};
+const id=process.env.RENDER_JOB_ID;
+if(!/^export\.[a-f0-9-]{36}$/.test(id??''))throw Error('Invalid job');
+const root=process.cwd(), directory=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'aituber-'));
+const endpoint='https://aituber.mani1261790.workers.dev/api/render-agent/'+id+'/';
+const request=async(action,options={})=>fetch(endpoint+action,{...options,headers:{authorization:'Bearer '+process.env.RENDER_AGENT_TOKEN,...options.headers},signal:AbortSignal.timeout(120000)});
+const checked=async(action,options)=>{const r=await request(action,options);if(!r.ok)throw Error(action.split('?')[0]+' HTTP '+r.status);return r;};
+const status=(status,frames,error)=>checked('status',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({status,frames,error})});
+const claim=await request('claim',{method:'POST'});
+if(claim.status===409){console.log('Job no longer queued');process.exit(0);}
+if(!claim.ok)throw Error('Claim HTTP '+claim.status);
+let service,local;
+try{
+ const {course}=await claim.json(),sources=new Map();
+ for(const s of course.sources.filter(s=>s.kind==='pdf'))sources.set(s.contentHash,new Uint8Array(await(await checked('source?id='+encodeURIComponent(s.id))).arrayBuffer()));
+ service=new VideoExportService({directory:path.join(directory,'jobs'),repo:root,getCourse:()=>course,readSource:hash=>sources.get(hash),speech:new CachedSpeechProvider(new FishAudioTtsProvider({apiKey:process.env.FISH_API_KEY}),path.join(directory,'audio')),voiceId:process.env.FISH_VOICE_ID});
+ local=service.start(course.id).id;
+ for(;;){
+  const remote=await(await checked('status')).json();if(remote.job.status==='cancelled'){service.cancel(local);break;}
+  const j=service.get(local);
+  if(j.status==='failed'||j.status==='cancelled')throw Error(j.error??'Render failed');
+  if(j.status==='complete'){
+   const file=path.join(service.dir(local),'lecture.mp4'),size=fs.statSync(file).size;
+   if(size>95*1024*1024)throw Error('MP4 exceeds 95 MB');
+   await status('encoding',j.frames);
+   await checked('file',{method:'PUT',body:fs.createReadStream(file),duplex:'half',headers:{'content-type':'video/mp4','content-length':String(size)}});
+   console.log('Uploaded',id,j.frames,'frames');break;
   }
-  while(active){
-   const {job:remote}=await(await request(job.id+'/status')).json();if(['cancelled','failed'].includes(remote.status)){active.service.cancel(active.local);active=null;break;}
-   const local=active.service.get(active.local);
-   if(local.status==='complete'){
-    const file=path.join(active.service.dir(active.local),'lecture.mp4');const size=fs.statSync(file).size;if(size>95*1024*1024)throw Error('MP4 exceeds cloud transfer limit (95 MB)');
-    await request(job.id+'/status',{method:'PUT',body:JSON.stringify({status:'encoding',frames:local.frames}),headers:{'content-type':'application/json'}});
-    await request(job.id+'/file',{method:'PUT',body:fs.createReadStream(file),duplex:'half',headers:{'content-type':'video/mp4','content-length':String(size)}});console.log(new Date().toISOString(),'completed',job.id);active=null;break;
-   }
-   await request(job.id+'/status',{method:'PUT',body:JSON.stringify({status:local.status==='cancelled'?'failed':local.status,frames:local.frames,error:local.error}),headers:{'content-type':'application/json'}});
-   if(['failed','cancelled'].includes(local.status)){active=null;break;}
-   await pause(5000);
-  }
- }catch(error){
-  console.error(new Date().toISOString(),error.message);
-  if(active&&error.status===409){active.service.cancel(active.local);active=null;}
-  else if(active&&error.status===undefined){active.service.cancel(active.local);try{await request(active.remote+'/status',{method:'PUT',body:JSON.stringify({status:'failed',frames:0,error:error.message}),headers:{'content-type':'application/json'}});}catch{/* Leave the recorded job for operator inspection. */}active=null;}
-  await pause(30000);
+  await status(j.status,j.frames);
+  await new Promise(resolve=>setTimeout(resolve,5000));
  }
+}catch(e){
+ if(local)service.cancel(local);
+ await status('failed',0,'クラウドでの書き出しに失敗しました。').catch(()=>{});
+ throw e;
 }

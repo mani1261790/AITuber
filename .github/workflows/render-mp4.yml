@@ -1,0 +1,43 @@
+name: Render lecture MP4
+run-name: Render ${{ inputs.job_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  render:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      RENDER_JOB_ID: ${{ inputs.job_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @aituber/server... build && pnpm --filter @aituber/classroom build
+      - run: command -v google-chrome && sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - run: node scripts/cloud-render-agent.mjs
+        env:
+          RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
+          FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
+          FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
+      - name: Release failed job
+        if: failure() || cancelled()
+        env:
+          RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
+        run: |
+          [[ "$RENDER_JOB_ID" =~ ^export\.[a-f0-9-]{36}$ ]] || exit 1
+          curl -sS --max-time 15 -o /dev/null -X PUT -H "Authorization: Bearer $RENDER_AGENT_TOKEN" -H 'Content-Type: application/json' --data '{"status":"failed","frames":0,"error":"クラウド描画が終了しました。再度開始してください。"}' "https://aituber.mani1261790.workers.dev/api/render-agent/$RENDER_JOB_ID/status"
