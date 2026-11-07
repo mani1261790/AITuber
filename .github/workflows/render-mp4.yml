@@ -29,13 +29,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @aituber/server... build && pnpm --filter @aituber/classroom build
       - run: command -v google-chrome && sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Exercise hosted renderer without production data
+        if: inputs.job_id == 'preflight'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install pypdf reportlab
+          "$RUNNER_TEMP/venv/bin/python" scripts/create-richmedia-fixture.py "$RUNNER_TEMP/pdf-smoke"
+          node scripts/smoke-hosted-render.mjs "$RUNNER_TEMP/pdf-smoke"
       - run: node scripts/cloud-render-agent.mjs
+        if: inputs.job_id != 'preflight'
         env:
           RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
           FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
           FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
       - name: Release failed job
-        if: failure() || cancelled()
+        if: (failure() || cancelled()) && inputs.job_id != 'preflight'
         env:
           RENDER_AGENT_TOKEN: ${{ secrets.RENDER_AGENT_TOKEN }}
         run: |
